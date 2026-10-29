@@ -1,7 +1,7 @@
 # AGENTS.md — Avroqen coding agent instructions
 
 ## Scope and authority
-These instructions apply recursively to this repo. Preparation docs exist before November 1, 2026. Do not generate the application implementation before the official hackathon start. Avroqen is a **provisional** name. Read `README.md`, `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`, `docs/CONTRACT_SPEC.md`, `docs/ATTESTATION_PROTOCOL.md`, `docs/TEST_PLAN.md`, and organizer `HACKATHON.md` before coding.
+These instructions apply recursively to this repo. Preparation docs exist before November 1, 2026. Do not generate the application implementation before the official hackathon start. Avroqen is the owner-confirmed product name. Read `README.md`, `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`, `docs/CONTRACT_SPEC.md`, `docs/ATTESTATION_PROTOCOL.md`, `docs/TEST_PLAN.md`, and organizer `HACKATHON.md` before coding.
 
 ## Mandatory safety constraints
 1. Never let agent LLM control owner/verifier custody keys, policy authorizations, or onchain transfers directly.
