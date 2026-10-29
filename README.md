@@ -1,6 +1,6 @@
 # Avroqen — pre-build planning pack
 
-**Status:** provisional product name (pending availability review and owner's final approval). **Prior name:** MandateFlow. **Prepared:** 2026-10-29. **Implementation:** NOT STARTED. Official hackathon development starts 2026-11-01 00:00 UTC.
+**Status:** Avroqen is the owner-confirmed product name. **Prior working name:** MandateFlow. **Prepared:** 2026-10-29. **Implementation:** NOT STARTED. Official hackathon development starts 2026-11-01 00:00 UTC.
 
 **Proposed product line (draft, not approved marketing copy):** Task-bound financial authority for autonomous agents.
 
