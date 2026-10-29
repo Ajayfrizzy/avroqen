@@ -1,7 +1,7 @@
 # Product requirements document — Avroqen v1.0
 
 ## 1. Product
-Working name **Avroqen** (pending final name clearance). Category: agent financial authorization / payments security infrastructure. Users: business owners, treasury operators, agent builders, independent verifiers, reviewers/auditors. Problem: an AI agent may be able to initiate a spend that passes basic numerical wallet constraints yet violates the business task or relies on agent-fabricated evidence. Avroqen binds financial authority to owner-approved task mandates and controls settlement outside the AI runtime.
+Product name **Avroqen** (owner-confirmed). Category: agent financial authorization / payments security infrastructure. Users: business owners, treasury operators, agent builders, independent verifiers, reviewers/auditors. Problem: an AI agent may be able to initiate a spend that passes basic numerical wallet constraints yet violates the business task or relies on agent-fabricated evidence. Avroqen binds financial authority to owner-approved task mandates and controls settlement outside the AI runtime.
 
 ## 2. Product principles
 1. Agents propose; they do not control the authorization policy or evidence authority.
