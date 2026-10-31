@@ -1,5 +1,13 @@
 # Architecture decision log
 
+## M0 preparation — October 31, 2026
+
+Foundation implementation remains blocked until November 1 at 00:00 UTC by
+AGENTS.md and CODEX_BOOTSTRAP.md. The preparation plan and verification status
+are recorded in [M0_FOUNDATION.md](M0_FOUNDATION.md). This entry changes no
+financial authority, resolves no open security decision, and does not establish
+M0 completion or passing CI.
+
 ## Settled design choices
 - **D001:** Avroqen is the owner-confirmed product name, replacing the previous working label MandateFlow. Retain technical history; owner reports having verified name availability, but no legal trademark opinion is claimed.
 - **D002:** Contract-controlled custody in `MandateVault` with owner-approved allocation and withdrawal; account-held funds outside vault remain untouched.
