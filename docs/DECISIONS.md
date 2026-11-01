@@ -137,3 +137,14 @@ scope; DevTools showing an owning host in its Domain column is not evidence that
 Domain attribute was sent. Human Android TLS/session-attribute observations are
 recorded separately. iOS is deferred by explicit owner instruction. No authentication
 or financial authority policy was changed to satisfy tests.
+
+## M1 hackathon integration acceptance — 2026-11-01
+
+Owner clarification: Avroqen is a hackathon testnet prototype. External independent
+security audit is not a prerequisite for merging M1 for hackathon development.
+Accept M1 integration based on its milestone evidence, green required CI and no
+confirmed critical/high blocking defects. Independent review remains not performed;
+manual negative-wallet gaps and deferred iOS remain explicit. This scopes M1
+integration only, not production security approval or a waiver of TEST_PLAN release
+review, M2+ financial gates, or canonical authority boundaries. Final merge requires
+the owner's authorization. No runtime security policy changes.

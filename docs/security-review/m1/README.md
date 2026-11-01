@@ -1,5 +1,16 @@
 # M1 security-review evidence package
 
+**Current integration disposition (2026-11-01):** the owner permits M1 hackathon
+testnet integration without an external independent audit. No confirmed critical
+or high-severity blocking defect was identified in the reviewed M1 paths at
+`c0d4063197432a65bd9a936a526b7c1ef51ee338`; foundation/rust passed in
+[run 41317104005](https://github.com/Ajayfrizzy/avroqen/actions/runs/41317104005).
+This supersedes older draft-only/unpushed/independent-review-as-integration-gate
+language below. Independent review remains NOT PERFORMED and this package remains
+its handoff, not an audit. Residual risks and manual gaps remain open; iOS is
+deferred. See M1_REPORT.md for the current scoped acceptance and merge boundary.
+
+
 **Purpose:** independent-review handoff for draft PR #5, not an independent audit.
 Prepared by the same coding assistant that implemented/reviewed M1. No independent
 reviewer has approved these controls. Passing automated tests is bounded evidence,

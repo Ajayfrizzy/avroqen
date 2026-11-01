@@ -1,19 +1,62 @@
 # M1 — identity, organizations and agent access
 
-**Assessment:** automated verification and evidence are prepared for a review-only
-push; final M1 acceptance and independent security approval are not claimed.
-**Branch:** `feat/m1-identity-access`; PR #5 stays draft against `staging`.
-**Base reviewed/pushed commit:** `64cad66d5a7dc4b6d716a05470c15347f166c082`.
+**Assessment:** M1 meets hackathon testnet integration acceptance; no confirmed
+critical/high-severity blocking defect was identified in the reviewed paths.
+This is implementation-team review, not independent security or production approval.
+**Branch:** `feat/m1-identity-access`; PR #5 targets `staging`.
+**Implementation reviewed:** `c0d4063197432a65bd9a936a526b7c1ef51ee338`.
 **M0 baseline:** `84ffd209d767660d0cae5c369aa2aa52a54148e8`.
-**Verification date:** November 1, 2026 (Africa/Lagos reporting context).
+**Integration decision date:** November 1, 2026.
 
-The **Final negative-case verification** section at the end records the current
-local run and supersedes historical test counts/pending statuses below. The
-[manual acceptance ledger](M1_WALLET_ACCEPTANCE.md#current-manual-evidence--owner-confirmations-2026-11-01)
-is consolidated from owner confirmations. iOS is explicitly **DEFERRED** and is not
-a blocker to current Android verification. Independent review remains **NOT DONE**.
-New local work must receive a fresh hosted CI run after a review-only push; prior
-CI results do not attest to it. Earlier sections are retained as dated history.
+The **Hackathon integration disposition** below supersedes historical draft-only,
+unpushed and independent-review-as-merge-gate statements in this report. Earlier
+entries remain evidence history, not current delivery instructions. The owner
+explicitly clarified that external independent audit is not a prerequisite for M1
+hackathon integration. Independent review remains NOT PERFORMED; iOS is DEFERRED.
+
+## Hackathon integration disposition
+
+Reviewed NEP-413 serialization and Ed25519 verification, finalized FullAccess RPC
+checks, account/network/origin/browser binding, atomic challenge consumption and
+session issuance, expiry/logout/CSRF, role/tenant-scoped queries, agent disabling,
+and message-only SDK integration with rejecting key custody and patched logging.
+No confirmed critical or high-severity vulnerability was identified in those paths.
+This bounded source/evidence review does not assert that no vulnerabilities exist.
+No runtime controls or authority boundaries changed for this disposition.
+
+Implementation commit `c0d4063197432a65bd9a936a526b7c1ef51ee338` passed both
+`foundation` and `rust` in [hosted run 41317104005](https://github.com/Ajayfrizzy/avroqen/actions/runs/41317104005).
+The PR targets `staging`, was mergeable, and had zero review threads (including
+zero unresolved threads) at this review. This documentation-only follow-up must
+also receive green checks on its exact head before merge readiness is reported.
+Final merge remains subject to the owner's authorization; no merge is authorized
+by this report. Local evidence: 77 TypeScript/API/database, 8 Chromium and 1 Rust
+scaffold tests, plus builds, container/database/outage, HTTPS and secret checks.
+
+Desktop and Android owner-confirmed wallet results remain in the
+[manual ledger](M1_WALLET_ACCEPTANCE.md#current-manual-evidence--owner-confirmations-2026-11-01).
+[Negative wallet cases](security-review/m1/NEGATIVE_AUTH_CASES.md) remain NOT RUN
+manually: delayed signing, existing account mismatch, eligible existing
+network/restricted/missing-key fixtures, popup blocking and remote wallet-window
+closure. Missing fixtures remain blocked; no keys should be created to fill that
+gap. Automated negative tests are not mislabeled as human tests. iOS is explicitly
+deferred. These compatibility evidence gaps are retained, not manufactured as
+confirmed exploitable defects or waived as passed.
+
+Residual risks remain: trusted finalized RPC, up to 15-minute session validity after
+wallet-key removal, dependency-wide SDK review, other concurrency interleavings,
+shared proxy rate budgets, retention, and production ingress/CSP/database privilege
+policies. They are not confirmed critical/high defects blocking this limited
+hackathon integration. Independent professional review and production-hardening
+assessment remain necessary before meaningful real-money production use; M1 is
+not approved for that use. The local HTTPS helper is development tooling only.
+
+M2 and subsequent milestones retain every canonical invariant: app sessions/roles
+never replace owner wallet transaction signatures; agents receive no custody,
+verifier or policy authority; onchain policy/spending checks, independent evidence,
+checked atomic accounting, authenticated callbacks, idempotency and conservative
+unknown-outcome handling remain mandatory. This disposition does not waive future
+milestone tests, authorize funding, mainnet deployment or repository publication.
 
 ## Preparation and approved design
 
