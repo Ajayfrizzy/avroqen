@@ -57,3 +57,20 @@ CI gates are implemented, with hosted results recorded in M0_REPORT.md. The owne
 has authorized a feature-branch commit/push and PR against staging for review.
 Merge, deployment and repository visibility changes remain unauthorized. Required
 branch-check configuration is outstanding; staging was unprotected at review.
+
+## D012 — M1 identity policy proposal (pending owner approval)
+
+M1 starts from the confirmed M0 merge `84ffd209d767660d0cae5c369aa2aa52a54148e8`
+on `feat/m1-identity-access`. See M1_DESIGN.md for the proposed NEP-413 login
+policy and alternatives. Owner approval of the active full-access Ed25519 key
+policy was requested before implementing wallet verification or session issuance.
+The official NEP requires full-access message signing; restricted agent keys must
+not silently become wallet-owner login credentials. No approval is inferred from
+elapsed time. This entry is a proposal, not a settled authorization decision.
+
+Independent preparation adds transactional, checksummed PostgreSQL migrations and
+schema constraints for identity records. Tests use temporary schemas, never wallet
+credentials. No login endpoint, wallet connector, organization authorization API,
+agent credential or financial method is introduced by this preparatory change.
+M1 remains incomplete until the approved authentication, sessions, RBAC/UI and full
+adversarial acceptance suite are implemented and verified.

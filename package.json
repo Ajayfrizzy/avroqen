@@ -26,7 +26,9 @@
     "test:secrets": "node scripts/scan-secrets.mjs",
     "test:wasm": "node scripts/check-wasm.mjs",
     "test:workflow": "node scripts/check-workflow.mjs",
-    "test:containers": "node scripts/check-containers.mjs"
+    "test:containers": "node scripts/check-containers.mjs",
+    "db:migrate": "node --env-file=.env --import tsx scripts/migrate.ts",
+    "test:identity-db": "node --env-file=.env node_modules/vitest/vitest.mjs run tests/database"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
