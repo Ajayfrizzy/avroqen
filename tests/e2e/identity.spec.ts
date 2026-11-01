@@ -201,3 +201,156 @@ test("session loading and expiry states are visible", async ({ page }) => {
     "Your session ended",
   );
 });
+
+// Real installed SDK dialog cancellation; no wallet proof or authenticated API is simulated.
+test("Meteor cancellation stays signed out and retry requests a fresh challenge", async ({
+  page,
+}) => {
+  let challenges = 0;
+  let verifications = 0;
+  await page.route("**/api/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/config"))
+      return route.fulfill({
+        json: { network: "testnet", origin: "http://127.0.0.1:3000" },
+      });
+    if (path.endsWith("/session"))
+      return route.fulfill({
+        status: 401,
+        json: { error: "SESSION_REQUIRED" },
+      });
+    if (path.endsWith("/challenge"))
+      return route.fulfill({
+        json: {
+          challengeId: `fixture-${++challenges}`,
+          message: "Test-only login challenge",
+          nonce: Buffer.alloc(32, challenges).toString("base64"),
+          recipient: "http://127.0.0.1:3000",
+        },
+      });
+    if (path.endsWith("/verify")) verifications++;
+    return route.fulfill({ status: 500 });
+  });
+  await page.goto("/workspace");
+  await page.getByLabel("NEAR account").fill("alice.testnet");
+  const button = page.getByRole("button", {
+    name: "Connect wallet & sign message",
+  });
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    await button.click();
+    // Invoke the SDK component's actual close handler (the same handler as its close UI).
+    await page.waitForFunction(() =>
+      Array.from(document.querySelectorAll("*")).some(
+        (node) =>
+          node.tagName.startsWith("METEOR-") &&
+          typeof (node as HTMLElement & { closeAction?: unknown })
+            .closeAction === "function",
+      ),
+    );
+    await expect(
+      page
+        .getByRole("main")
+        .getByText("Wallet sign-in canceled. No transaction was sent."),
+    ).toHaveCount(0);
+    await page.evaluate(() => {
+      const node = Array.from(document.querySelectorAll("*")).find(
+        (node) =>
+          node.tagName.startsWith("METEOR-") &&
+          typeof (node as HTMLElement & { closeAction?: unknown })
+            .closeAction === "function",
+      );
+      (node as HTMLElement & { closeAction: () => void }).closeAction();
+    });
+    await expect(page.getByRole("main").getByRole("status")).toHaveText(
+      "Wallet sign-in canceled. No transaction was sent.",
+    );
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+    await expect(button).toBeEnabled();
+    expect(challenges).toBe(attempt);
+    expect(verifications).toBe(0);
+    await expect(
+      page.getByRole("heading", { name: /Signed in as/ }),
+    ).toHaveCount(0);
+  }
+});
+
+// Explicit API simulation: delayed org A data must not replace the selected org B.
+test("organization selection ignores stale agent responses and clears previous controls", async ({
+  page,
+}) => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started: () => void = () => {};
+  const requested = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/config"))
+      return route.fulfill({
+        json: { network: "testnet", origin: "http://127.0.0.1:3000" },
+      });
+    if (path.endsWith("/session"))
+      return route.fulfill({
+        json: {
+          accountId: "alice.testnet",
+          network: "testnet",
+          csrfToken: "ui-fixture",
+          expiresAt: new Date(Date.now() + 900000).toISOString(),
+        },
+      });
+    if (path.endsWith("/organizations"))
+      return route.fulfill({
+        json: {
+          organizations: [
+            { id: "org-a", name: "First", role: "owner" },
+            { id: "org-b", name: "Second", role: "viewer" },
+          ],
+          nextOffset: null,
+        },
+      });
+    if (path.includes("/org-a/")) {
+      started();
+      await gate;
+      return route.fulfill({
+        json: {
+          agents: [
+            {
+              id: "agent-a",
+              name: "Stale agent",
+              accountId: "agent.testnet",
+              disabledAt: null,
+            },
+          ],
+          nextOffset: null,
+        },
+      });
+    }
+    return route.fulfill({ json: { agents: [], nextOffset: null } });
+  });
+  await page.goto("/workspace");
+  const select = page.getByLabel("Select organization");
+  await select.selectOption("org-a");
+  await requested;
+  await expect(page.getByText("Loading agents…")).toBeVisible();
+  await select.selectOption("org-b");
+  await expect(
+    page.getByRole("heading", { name: "Agents in Second" }),
+  ).toBeVisible();
+  await expect(page.getByText("No agents registered.")).toBeVisible();
+  const staleResponse = page.waitForResponse((response) =>
+    response.url().includes("/org-a/agents"),
+  );
+  release();
+  await (await staleResponse).finished();
+  await expect(page.getByText("Stale agent", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Register agent record" }),
+  ).toHaveCount(0);
+  await select.selectOption("");
+  await expect(
+    page.getByRole("heading", { name: "Agents in Second" }),
+  ).toHaveCount(0);
+});

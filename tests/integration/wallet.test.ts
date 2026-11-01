@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { signChallenge } from "../../apps/web/app/workspace/wallet.js";
+import { normalizeWalletProof } from "../../apps/web/app/workspace/wallet-proof.js";
 
 const fixtures = vi.hoisted(() => ({
   createAction: vi.fn(),
@@ -19,8 +20,8 @@ it("wallet connector requests only NEP-413 signing and refuses key custody", asy
   fixtures.prompt.mockResolvedValue({
     signedMessage: {
       accountId: "alice.testnet",
-      publicKey: "public-fixture",
-      signature: "signature-fixture",
+      publicKey: { toString: () => `ed25519:${"1".repeat(32)}` },
+      signature: new Uint8Array(64).fill(7),
     },
   });
   fixtures.createAction.mockResolvedValue({
@@ -32,11 +33,14 @@ it("wallet connector requests only NEP-413 signing and refuses key custody", asy
     message: "Exact server challenge",
     recipient: "https://app.example.test",
   };
-  expect(await signChallenge(challenge, "testnet")).toEqual({
-    accountId: "alice.testnet",
-    publicKey: "public-fixture",
-    signature: "signature-fixture",
-  });
+  const result = await signChallenge(challenge, "testnet");
+  expect(typeof result.publicKey).toBe("string");
+  expect(typeof result.signature).toBe("string");
+  expect(result.accountId).toBe("alice.testnet");
+  expect(String(result.publicKey) === `ed25519:${"1".repeat(32)}`).toBe(true);
+  expect(
+    String(result.signature) === Buffer.alloc(64, 7).toString("base64"),
+  ).toBe(true);
   expect(fixtures.setLoggingLevel).toHaveBeenCalledWith("none");
   expect(fixtures.createAction).toHaveBeenCalledWith({
     id: "near::sign_in_and_sign_message",
@@ -64,7 +68,7 @@ it("wallet connector requests only NEP-413 signing and refuses key custody", asy
   expect(await config.storage.getItem("fixture")).toBeNull();
 });
 it("propagates wallet cancellation without reporting successful authentication", async () => {
-  fixtures.prompt.mockRejectedValue(new Error("Wallet cancelled"));
+  fixtures.prompt.mockRejectedValue(new Error("Action was cancelled"));
   await expect(
     signChallenge(
       {
@@ -75,5 +79,61 @@ it("propagates wallet cancellation without reporting successful authentication",
       },
       "testnet",
     ),
-  ).rejects.toThrow("Wallet cancelled");
+  ).rejects.toThrow("Wallet sign-in canceled. No transaction was sent.");
+});
+
+it("normalizes binary signatures byte-for-byte and rejects malformed wallet shapes", () => {
+  const key = { toString: () => `ed25519:${"1".repeat(32)}` };
+  for (const signature of [
+    new Uint8Array(64).map((_, i) => (i * 71) % 256),
+    Buffer.alloc(64, 255),
+  ]) {
+    const result = normalizeWalletProof({
+      accountId: "alice.testnet",
+      publicKey: key,
+      signature,
+    });
+    expect(
+      Buffer.from(result.signature, "base64").equals(Buffer.from(signature)),
+    ).toBe(true);
+    expect(typeof JSON.parse(JSON.stringify(result)).signature).toBe("string");
+  }
+  for (const value of [
+    null,
+    {},
+    {
+      accountId: "invalid account",
+      publicKey: key,
+      signature: new Uint8Array(64),
+    },
+    {
+      accountId: "alice.testnet",
+      publicKey: {},
+      signature: new Uint8Array(64),
+    },
+    {
+      accountId: "alice.testnet",
+      publicKey: { toString: () => "secp256k1:unsupported" },
+      signature: new Uint8Array(64),
+    },
+    {
+      accountId: "alice.testnet",
+      publicKey: key,
+      signature: new Uint8Array(63),
+    },
+    {
+      accountId: "alice.testnet",
+      publicKey: key,
+      signature: Array(64).fill(0),
+    },
+    {
+      accountId: "alice.testnet",
+      publicKey: key,
+      signature: "already-encoded-unexpected-shape",
+    },
+  ]) {
+    expect(() => normalizeWalletProof(value)).toThrow(
+      "Invalid wallet message response",
+    );
+  }
 });

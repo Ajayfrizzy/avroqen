@@ -3,6 +3,7 @@ import { agentInput, challengeInput, organizationInput } from "@avroqen/domain";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type Challenge, signChallenge } from "./wallet";
+import { WalletSignInError } from "./wallet-errors";
 
 type Session = {
   accountId: string;
@@ -60,6 +61,7 @@ export default function Workspace() {
   const [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [account, setAccount] = useState(""),
     [organizations, setOrganizations] = useState<Org[]>([]),
     [selected, setSelected] = useState("");
@@ -74,6 +76,11 @@ export default function Workspace() {
   const org = organizations.find((o) => o.id === selected);
   const canManage = org && ["owner", "admin"].includes(org.role);
   const fail = useCallback((reason: unknown) => {
+    if (reason instanceof WalletSignInError) {
+      if (reason.kind === "canceled") setNotice(reason.message);
+      else setError(reason.message);
+      return;
+    }
     setError(
       reason instanceof Error && reason.name === "ZodError"
         ? "Check the account format and required fields."
@@ -174,6 +181,7 @@ export default function Workspace() {
   async function run(work: () => Promise<void>) {
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       await work();
     } catch (reason) {
@@ -203,6 +211,7 @@ export default function Workspace() {
           enabled.
         </p>
       </aside>
+      {notice && <p role="status">{notice}</p>}
       {error && (
         <p role="alert" className="error">
           {error}

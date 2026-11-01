@@ -1,0 +1,44 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index 0e33403187be41c099ba3103dcd42386e08b9966..38ccecc2edc8073492f32c602cbf72a35437c1cf 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -8316,7 +8316,7 @@ var MeteorPostMessenger = class {
+ 						this.updateConnection(currentConnection.uid, { status: EDappActionConnectionStatus.closed_success });
+ 						this.sendComs();
+ 						waitMillis(300).then(() => {
+-							console.log("Ending success with data", data);
++							// Avroqen: never log authentication payloads or connection state.
+ 							currentConnection.resolve({
+ 								success: true,
+ 								endTags: [],
+@@ -8420,7 +8420,7 @@ var MeteorPostMessenger = class {
+ 			endTags: [],
+ 			forceExecutionTargetConfig
+ 		};
+-		console.log("Starting execution for V1", newConnection);
++		// Avroqen: never log authentication payloads or connection state.
+ 		const promise = new Promise((resolve, reject) => {
+ 			newConnection.resolve = resolve;
+ 			newConnection.reject = (error) => {
+diff --git a/dist/index.js b/dist/index.js
+index a040faf3b55f5f3fbeef8ac44bfd291495354359..3df355262787fb0e912a1e5447982e0a876dbd41 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -8285,7 +8285,7 @@ var MeteorPostMessenger = class {
+ 						this.updateConnection(currentConnection.uid, { status: EDappActionConnectionStatus.closed_success });
+ 						this.sendComs();
+ 						waitMillis(300).then(() => {
+-							console.log("Ending success with data", data);
++							// Avroqen: never log authentication payloads or connection state.
+ 							currentConnection.resolve({
+ 								success: true,
+ 								endTags: [],
+@@ -8389,7 +8389,7 @@ var MeteorPostMessenger = class {
+ 			endTags: [],
+ 			forceExecutionTargetConfig
+ 		};
+-		console.log("Starting execution for V1", newConnection);
++		// Avroqen: never log authentication payloads or connection state.
+ 		const promise = new Promise((resolve, reject) => {
+ 			newConnection.resolve = resolve;
+ 			newConnection.reject = (error) => {

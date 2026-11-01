@@ -73,11 +73,14 @@ Sources:
 Meteor SDK 3.24.1 provides the message-only action. The app passes the server's
 message/nonce/recipient without callbackUrl (Borsh Option=None; stored callback
 field is empty). No transaction, access-key creation, transfer account or private
-key import action is requested. Connector logging is disabled, metadata is in
+key import action is requested. Connector logging is disabled, and a pinned pnpm
+patch removes two unconditional V1 console calls that bypassed that setting and exposed connection/proof data.
+The patch changes logging only in both SDK entrypoints; metadata is in
 memory, and any attempt to obtain/store a private key through its key-store
 provider throws. The mobile bridge is disabled rather than enabling key-transfer
-features. Responsive UI is tested; human wallet popup/mobile compatibility still
-needs verification. See D012 and M1_REPORT.md for test evidence and limitations.
+features. Responsive UI is tested; the owner has confirmed desktop Meteor
+login/cancel/retry. Actual Android/iOS and trusted HTTPS compatibility still need
+verification. See D012 and M1_REPORT.md for test evidence and limitations.
 
 Sources: https://github.com/near/wallet-selector/blob/main/packages/meteor-wallet/src/lib/meteor-wallet.ts
 and the published @meteorwallet/sdk 3.24.1 README/types/source. Dependency code is

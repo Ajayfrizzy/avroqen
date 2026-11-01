@@ -46,6 +46,9 @@
   "pnpm": {
     "overrides": {
       "@tanstack/react-query": "5.101.2"
+    },
+    "patchedDependencies": {
+      "@meteorwallet/sdk@3.24.1": "patches/@meteorwallet__sdk@3.24.1.patch"
     }
   }
 }

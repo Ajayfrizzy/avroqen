@@ -6,13 +6,13 @@ import {
   listInput,
   organizationInput,
   organizationParams,
-  verifyInput,
 } from "@avroqen/domain";
 import cookie from "@fastify/cookie";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type pg from "pg";
 import type { IdentityConfig } from "./config.js";
 import { csrfFor, hash, verifyMessage } from "./crypto.js";
+import { parseVerification } from "./validation.js";
 
 export interface IdentityOptions {
   pool: pg.Pool;
@@ -235,7 +235,21 @@ export async function identityRoutes(
     };
   });
   app.post("/api/auth/verify", async (request, reply) => {
-    const input = verifyInput.parse(request.body);
+    const parsed = parseVerification(request.body);
+    if (!parsed.success) {
+      // Fixed event plus allowlisted field/category pairs only. No request logging.
+      console.info(
+        JSON.stringify({
+          event: "AUTH_VERIFY_SCHEMA_REJECTED",
+          issues: parsed.issues,
+        }),
+      );
+      await audit(pool, "login_denied", "INVALID_REQUEST");
+      return reply
+        .code(400)
+        .send({ error: "INVALID_REQUEST", issues: parsed.issues });
+    }
+    const input = parsed.data;
     const browser = request.cookies[loginName];
     if (
       input.network !== config.network ||

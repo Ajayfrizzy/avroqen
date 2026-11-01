@@ -106,3 +106,18 @@ M1 pre-PR review additionally binds session lookup and pending proof verificatio
 to the current configured origin. Changing PUBLIC_ORIGIN invalidates prior-origin
 challenges/sessions; the M1 popup protocol rejects nonempty callback URLs. A failing
 PostgreSQL regression demonstrated the prior gap and now passes.
+
+M1 cancellation UX clarification (2026-11-01): classify only pinned Meteor SDK
+explicit cancellation tags or its exact connector-cancel Error as neutral status.
+Popup failures take precedence; unknown errors remain failures. Cancellation aborts
+before backend verification and retry obtains a fresh challenge. This changes no
+identity or financial authority. Source-verified SDK shapes and automated connector
+cancellation do not replace manual signing-popup validation.
+
+M1 dependency review (2026-11-01): Meteor SDK 3.24.1's V1 messenger contains two
+unconditional console calls that bypass `setLoggingLevel("none")`, exposing its
+connection state and successful response payload. A hash-locked pnpm patch removes
+only those calls in ESM/CommonJS entrypoints. No signing, transport, key permission,
+nonce, session or authorization logic changes. A test checks both installed
+artifacts after frozen installation. Dependency-wide independent review is still
+required; this is not a claim that all unused SDK capabilities have been audited.
