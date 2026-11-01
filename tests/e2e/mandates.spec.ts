@@ -308,3 +308,72 @@ test("altered server challenge is not sent to the wallet", async ({ page }) => {
     ),
   ).toBe(false);
 });
+
+for (const reducedMotion of ["reduce", "no-preference"] as const) {
+  test(`mandate actions reveal and focus their section on mobile: ${reducedMotion}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ reducedMotion });
+    await setup(page);
+    const create = page.getByRole("button", { name: "Create a draft" });
+    await create.focus();
+    await page.keyboard.press("Enter");
+    const draft = page.getByRole("heading", { name: "Create immutable draft" });
+    await expect(draft).toBeFocused();
+    expect((await draft.boundingBox())?.y).toBeLessThan(200);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.getByRole("button", { name: "Create a draft" }).click();
+    await expect(draft).toBeVisible();
+    await expect(draft).toBeFocused();
+    await page.getByRole("button", { name: "Review exact terms" }).click();
+    const review = page.getByRole("heading", {
+      name: "Review mandate consent",
+    });
+    await expect(review).toBeFocused();
+    expect((await review.boundingBox())?.y).toBeLessThan(500);
+    await expect(draft).toHaveCount(0);
+    await page.getByRole("button", { name: "Request revocation" }).click();
+    const revoke = page.getByRole("heading", {
+      name: "Revoke offchain consent",
+    });
+    await expect(revoke).toBeFocused();
+    expect((await revoke.boundingBox())?.y).toBeLessThan(500);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+}
+test("review loading disables duplicate actions and handles failure without opening stale review", async ({
+  page,
+}) => {
+  await setup(page);
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  let count = 0;
+  await page.route(`**/mandates/${policy.mandateId}`, async (route) => {
+    count++;
+    await gate;
+    await route.fulfill({
+      status: 503,
+      json: { error: "SERVICE_UNAVAILABLE" },
+    });
+  });
+  const button = page.getByRole("button", { name: "Review exact terms" });
+  await button.click();
+  await expect(button).toBeDisabled();
+  await expect(page.getByRole("main").getByRole("status")).toContainText(
+    "Request in progress",
+  );
+  release();
+  await expect(page.getByRole("main").getByRole("alert")).toBeVisible();
+  await expect(button).toBeEnabled();
+  expect(count).toBe(1);
+  await expect(page.getByRole("region", { name: "Policy review" })).toHaveCount(
+    0,
+  );
+});

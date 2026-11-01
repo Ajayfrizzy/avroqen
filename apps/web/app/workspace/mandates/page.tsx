@@ -175,6 +175,20 @@ export default function Mandates() {
   const [formOpen, setFormOpen] = useState(false),
     [orgNext, setOrgNext] = useState<number | null>(null),
     [agentNext, setAgentNext] = useState<number | null>(null);
+  const draftHeading = useRef<HTMLHeadingElement>(null);
+  const reviewHeading = useRef<HTMLHeadingElement>(null);
+  const submitting = useRef(false);
+  useEffect(() => {
+    const heading = review
+      ? reviewHeading.current
+      : formOpen
+        ? draftHeading.current
+        : null;
+    if (heading) {
+      heading.focus({ preventScroll: true });
+      heading.scrollIntoView({ block: "start", behavior: "instant" });
+    }
+  }, [formOpen, review]);
   const [scopeFailed, setScopeFailed] = useState(false);
   const [reload, setReload] = useState(0);
   const generation = useRef(0),
@@ -315,6 +329,8 @@ export default function Mandates() {
     return () => clearTimeout(timer);
   }, [session]);
   async function run(work: () => Promise<void>) {
+    if (submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     setError("");
     setNotice("");
@@ -323,6 +339,7 @@ export default function Mandates() {
     } catch (e) {
       if (live.current) fail(e);
     } finally {
+      submitting.current = false;
       if (live.current) setBusy(false);
     }
   }
@@ -333,10 +350,14 @@ export default function Mandates() {
     ]);
   }
   async function openReview(v: MandateView, a: ConsentAction) {
+    setReview(undefined);
+    setFormOpen(false);
+    const version = generation.current;
     const fresh = await api<MandateView>(
       `/organizations/${selected}/mandates/${v.policy.mandateId}`,
       session,
     );
+    if (!live.current || version !== generation.current) return;
     setReview(fresh);
     setAction(a);
     setConfirmed(false);
@@ -449,8 +470,17 @@ export default function Mandates() {
                 <button
                   disabled={busy}
                   type="button"
+                  aria-expanded={formOpen}
+                  aria-controls="mandate-draft-form"
                   onClick={() => {
-                    setFormOpen(!formOpen);
+                    setFormOpen(true);
+                    if (formOpen) {
+                      draftHeading.current?.focus({ preventScroll: true });
+                      draftHeading.current?.scrollIntoView({
+                        block: "start",
+                        behavior: "instant",
+                      });
+                    }
                     setReview(undefined);
                   }}
                 >
@@ -535,8 +565,10 @@ export default function Mandates() {
             )}
           </section>
           {formOpen && org.role === "owner" && (
-            <section className="panel">
-              <h2>Create immutable draft</h2>
+            <section id="mandate-draft-form" className="panel">
+              <h2 ref={draftHeading} tabIndex={-1}>
+                Create immutable draft
+              </h2>
               <p>
                 Saved terms cannot be edited. Corrections require a new mandate
                 and fresh signature.
@@ -741,7 +773,7 @@ export default function Mandates() {
               aria-label="Policy review"
             >
               <p className="eyebrow">REVIEW BEFORE SIGNING</p>
-              <h2>
+              <h2 ref={reviewHeading} tabIndex={-1}>
                 {action === "REVOKE_CONSENT"
                   ? "Revoke offchain consent"
                   : "Review mandate consent"}
@@ -846,11 +878,7 @@ export default function Mandates() {
           )}
         </>
       )}
-      {busy && (
-        <p role="status">
-          Request in progress. Review the message in your wallet.
-        </p>
-      )}
+      {busy && <p role="status">Request in progress…</p>}
     </main>
   );
 }

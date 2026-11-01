@@ -41,18 +41,38 @@ async function api<T>(
       ...(session ? { "X-CSRF-Token": session.csrfToken } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
+  }).catch(() => {
+    throw new ApiError(
+      0,
+      "Network connection failed. Check your connection, then refresh the agent list before retrying; the request may have reached the server.",
+    );
   });
-  if (!response.ok)
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    const messages: Record<string, string> = {
+      AGENT_ALREADY_REGISTERED:
+        "This agent is already registered in this organization. Use its existing record in the agent list.",
+      AGENT_PREVIOUSLY_DISABLED:
+        "This agent was previously disabled in this organization and cannot be registered again. Review its disabled record or register a different agent account.",
+      INVALID_REQUEST:
+        "Check the account format and required fields, then submit again.",
+    };
     throw new ApiError(
       response.status,
-      response.status === 401
-        ? "Your session ended. Sign in again."
-        : response.status === 403
-          ? "You are not authorized for this action."
-          : response.status === 429
-            ? "Too many requests. Please wait a minute."
-            : "The request could not be completed. Please retry.",
+      (data &&
+      typeof data.error === "string" &&
+      Object.hasOwn(messages, data.error)
+        ? messages[data.error]
+        : undefined) ??
+        (response.status === 401
+          ? "Your session ended. Sign in again."
+          : response.status === 403
+            ? "You are not authorized for this action."
+            : response.status === 429
+              ? "Too many requests. Please wait a minute."
+              : "The request could not be completed. Refresh the list before retrying; if the problem continues, report this error."),
     );
+  }
   return response.json() as Promise<T>;
 }
 export default function Workspace() {
@@ -73,6 +93,7 @@ export default function Workspace() {
   const [orgNext, setOrgNext] = useState<number | null>(null),
     [agentNext, setAgentNext] = useState<number | null>(null);
   const requestVersion = useRef(0);
+  const submitting = useRef(false);
   const org = organizations.find((o) => o.id === selected);
   const canManage = org && ["owner", "admin"].includes(org.role);
   const fail = useCallback((reason: unknown) => {
@@ -179,6 +200,8 @@ export default function Workspace() {
     return () => clearTimeout(timer);
   }, [session]);
   async function run(work: () => Promise<void>) {
+    if (submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     setError("");
     setNotice("");
@@ -187,6 +210,7 @@ export default function Workspace() {
     } catch (reason) {
       fail(reason);
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }

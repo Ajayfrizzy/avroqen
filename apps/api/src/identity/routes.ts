@@ -405,10 +405,22 @@ export async function identityRoutes(
       const identity = await session(request, db, true);
       await membership(db, identity, orgId, true);
       const id = randomUUID();
-      await db.query(
-        "INSERT INTO registered_agents (id,org_id,network,near_account,display_name) VALUES ($1,$2,$3,$4,$5)",
+      const inserted = await db.query(
+        "INSERT INTO registered_agents (id,org_id,network,near_account,display_name) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (org_id,network,near_account) DO NOTHING RETURNING id",
         [id, orgId, identity.network, input.accountId, input.name],
       );
+      if (inserted.rowCount !== 1) {
+        const existing = await db.query(
+          "SELECT disabled_at FROM registered_agents WHERE org_id=$1 AND network=$2 AND near_account=$3 FOR SHARE",
+          [orgId, identity.network, input.accountId],
+        );
+        deny(
+          409,
+          existing.rows[0]?.disabled_at
+            ? "AGENT_PREVIOUSLY_DISABLED"
+            : "AGENT_ALREADY_REGISTERED",
+        );
+      }
       await audit(
         db,
         "agent_registered",

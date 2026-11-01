@@ -1113,3 +1113,50 @@ it.each(["session", "membership"])(
     }
   },
 );
+
+it("distinguishes active and disabled duplicates without reactivation or duplicate audit", async () => {
+  const headers = await login();
+  const org = (
+    await app.inject({
+      method: "POST",
+      url: "/api/organizations",
+      headers,
+      payload: { name: "Duplicates" },
+    })
+  ).json().id;
+  const url = `/api/organizations/${org}/agents`,
+    payload = { name: "Agent", accountId: "agent.testnet" };
+  const results = await Promise.all([
+    app.inject({ method: "POST", url, headers, payload }),
+    app.inject({ method: "POST", url, headers, payload }),
+  ]);
+  expect(results.map((r) => r.statusCode).sort()).toEqual([201, 409]);
+  expect(results.find((r) => r.statusCode === 409)?.json().error).toBe(
+    "AGENT_ALREADY_REGISTERED",
+  );
+  const id = results.find((r) => r.statusCode === 201)?.json().id;
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: `${url}/${id}/disable`,
+        headers,
+        payload: {},
+      })
+    ).statusCode,
+  ).toBe(200);
+  const disabled = await app.inject({ method: "POST", url, headers, payload });
+  expect(disabled.statusCode).toBe(409);
+  expect(disabled.json()).toEqual({ error: "AGENT_PREVIOUSLY_DISABLED" });
+  const rows = (await pool.query("SELECT disabled_at FROM registered_agents"))
+    .rows;
+  expect(rows).toHaveLength(1);
+  expect(rows[0].disabled_at).not.toBeNull();
+  expect(
+    (
+      await pool.query(
+        "SELECT count(*)::int AS n FROM security_audit_records WHERE event='agent_registered'",
+      )
+    ).rows[0].n,
+  ).toBe(1);
+});

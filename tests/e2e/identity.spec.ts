@@ -354,3 +354,66 @@ test("organization selection ignores stale agent responses and clears previous c
     page.getByRole("heading", { name: "Agents in Second" }),
   ).toHaveCount(0);
 });
+
+for (const [code, expected] of [
+  ["AGENT_ALREADY_REGISTERED", "already registered"],
+  ["AGENT_PREVIOUSLY_DISABLED", "previously disabled"],
+  ["INVALID_REQUEST", "Check the account format"],
+  ["PRIVATE_DATABASE_ERROR", "Refresh the list before retrying"],
+  ["NETWORK", "Network connection failed"],
+] as const) {
+  test(`agent registration gives safe actionable feedback: ${code}`, async ({
+    page,
+  }) => {
+    await page.route("**/api/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith("/config"))
+        return route.fulfill({
+          json: { network: "testnet", origin: "http://127.0.0.1:3000" },
+        });
+      if (path.endsWith("/session"))
+        return route.fulfill({
+          json: {
+            accountId: "alice.testnet",
+            network: "testnet",
+            csrfToken: "fixture",
+            expiresAt: new Date(Date.now() + 900000).toISOString(),
+          },
+        });
+      if (path.endsWith("/organizations"))
+        return route.fulfill({
+          json: {
+            organizations: [{ id: "org", name: "Org", role: "owner" }],
+            nextOffset: null,
+          },
+        });
+      if (route.request().method() === "POST") {
+        if (code === "NETWORK") return route.abort("internetdisconnected");
+        return route.fulfill({
+          status:
+            code === "INVALID_REQUEST"
+              ? 400
+              : code === "PRIVATE_DATABASE_ERROR"
+                ? 503
+                : 409,
+          json: { error: code, detail: "secret database details" },
+        });
+      }
+      return route.fulfill({ json: { agents: [], nextOffset: null } });
+    });
+    await page.goto("/workspace");
+    await page.getByLabel("Select organization").selectOption("org");
+    await page.getByLabel("Agent name").fill("Agent");
+    await page.getByLabel("Agent NEAR account").fill("agent.testnet");
+    await page.getByRole("button", { name: "Register agent record" }).click();
+    await expect(page.getByRole("main").getByRole("alert")).toContainText(
+      expected,
+    );
+    await expect(page.getByRole("main")).not.toContainText(
+      "secret database details",
+    );
+    await expect(
+      page.getByRole("button", { name: "Register agent record" }),
+    ).toBeEnabled();
+  });
+}

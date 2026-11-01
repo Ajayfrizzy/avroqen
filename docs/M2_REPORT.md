@@ -1,7 +1,8 @@
 # M2 — typed mandates, wallet consent and revocation
 
-Status: implementation and local verification complete for draft review, with
-real-wallet M2 acceptance still pending. This is offchain preparation, not deployed
+Status: implementation is in draft review. The owner has confirmed mandate
+creation, wallet-signed offchain approval, revocation and persistence on both
+desktop and Android. The UX follow-up below records subsequent fixes and checks. This is offchain preparation, not deployed
 MandateVault authority, financial execution or independent security approval.
 
 Branch: `feat/m2-typed-mandates`. Baseline: M1 PR #5 merge
@@ -102,9 +103,21 @@ results are not presented as hosted results. PR checks identify the exact commit
    tests or waived security gates. The initial lock observer lacked its test
    application_name; fixed that observer before reproducing the actual race.
 
-## Manual M2 acceptance — NOT RUN
+## Manual M2 acceptance — owner-confirmed desktop and Android
 
-M1 desktop/Android results do not establish M2 long-message compatibility. Use an
+On November 1, 2026, the owner confirmed successful M2 mandate creation,
+wallet-signed offchain approval, revocation and persistence on BOTH desktop and
+Android. These are owner-reported end-user results, not observation of server-side
+nonce consumption, RPC finality, SQL locks or audit behavior. Exact browser/wallet
+versions, per-case timestamps and separate negative-case results were not supplied.
+No broader message-truncation, independent security or iOS pass is inferred.
+
+The owner also reported generic feedback when re-registering a disabled agent and
+poor visibility of draft/review/revocation actions. These usability findings are
+addressed in the follow-up below. The new UX itself still needs owner retesting.
+
+The following procedure remains available for repeat testing and unconfirmed cases.
+M1 desktop/Android results alone did not establish M2 long-message compatibility. Use an
 existing unfunded testnet wallet and the existing private HTTPS setup; never
 provide private keys, create access keys, request funds or export authentication
 payloads. iOS remains deferred by owner instruction.
@@ -153,8 +166,9 @@ payloads. iOS remains deferred by owner instruction.
   shared proxy rate budgets, production ingress/CSP/DB least privilege and broader
   SDK review remain operational work, not a claim of production readiness.
 - Independent security review is not performed or represented by self-review.
-  M2 real-wallet acceptance remains pending, including full-message readability
-  on desktop/Android. iOS deferred. No real funds or chain receipts are applicable.
+  Desktop/Android positive M2 flows are owner-confirmed as recorded above. Separate
+  negative-wallet cases, full-message truncation boundaries and this UX follow-up
+  on physical devices remain unconfirmed. iOS deferred. No real funds or chain receipts are applicable.
 - S01–S20 financial scenarios, attestation verification, actual budget accounting,
   onchain permission/revocation and settlement require M3+; none are passed by M2.
 
@@ -182,3 +196,50 @@ All canonical financial/security invariants remain in force for subsequent work.
   dependency directories, Rust or dependency-lock changes included.
 - Hosted checks are to run on the implementation commit in the draft PR. This
   local addendum predates that run; the PR check URLs provide its exact-head result.
+
+
+## Owner-testing UX follow-up — November 1, 2026
+
+Root cause: the (org, network, account) uniqueness constraint correctly prevented
+re-registration, but the generic PostgreSQL uniqueness mapping produced
+ALREADY_EXISTS, which the UI rendered as an undifferentiated retry message.
+Registration now uses atomic INSERT ON CONFLICT DO NOTHING, then an authorized,
+org/network-scoped lookup to distinguish AGENT_ALREADY_REGISTERED from
+AGENT_PREVIOUSLY_DISABLED. Neither branch inserts a duplicate, reactivates an agent
+or records a successful registration. Existing session, Origin/CSRF, membership,
+role and audit failure controls remain in force; raw database errors are not shown.
+
+UI messages direct users to the existing active/disabled record or another account.
+Invalid input, network failure and unexpected service errors are distinct. Network
+errors warn that the request may have reached the server and advise refreshing
+before retrying. Unknown server details are never rendered. Synchronous ref guards
+block duplicate submissions before React commits the disabled button state.
+
+Create a draft reveals (never toggles closed) the form. Review and revocation fetch
+fresh authorized data, clear stale review state, and then reveal the result. Each
+successful reveal focuses its heading and scrolls it into view without animation;
+repeated draft clicks work, including scrolled/mobile/reduced-motion contexts.
+The draft button exposes expanded/control semantics. Hover, pressed, focus and
+disabled styling adds feedback without motion or new dialogs/navigation. Loading
+status appears only for actual asynchronous requests. Existing wallet, consent,
+nonce, revocation and financial-authority boundaries are unchanged.
+
+Verification results for this follow-up are recorded below after completion.
+
+Follow-up local results: `pnpm check` PASS (37 unit + 13 integration + 13
+adversarial), `pnpm test:identity-db` PASS (55 PostgreSQL), `pnpm build` PASS,
+`pnpm test:e2e` PASS (23 Chromium). The two mobile/reduced-motion interaction cases
+also passed after strengthening them to activate Create a draft with Enter.
+Total **118 TypeScript/API/database tests + 23 browser tests + 1 Rust scaffold**.
+Rust fmt/Clippy/tests/Wasm, workflow validation and secret scanning passed.
+An initial test tuple inferred an optional expected string; TypeScript caught it,
+and a readonly tuple fixed the fixture before the full suite passed. No runtime
+check or assertion was relaxed. Keyboard/mobile tests are automation, not new
+physical Android or screen-reader observations. No dependency/migration changes.
+
+The follow-up Docker rebuild with the private HTTPS override passed with frozen
+installs and healthy web/API/database; migration checks remained intact. Container
+isolation, database connectivity, smoke and trusted local HTTPS checks all passed.
+Existing owner records were preserved. This is a local development rebuild, not
+public deployment. Final Git diff/whitespace and secret checks are clean. Hosted
+foundation/rust results for the follow-up commit are recorded on draft PR #6.
