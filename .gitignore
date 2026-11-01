@@ -14,3 +14,5 @@ next-env.d.ts
 *.pem
 *.key
 .near-credentials/
+# Local TLS CA and leaf credentials; never review, commit or upload.
+.local/

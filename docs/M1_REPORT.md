@@ -1,16 +1,19 @@
 # M1 — identity, organizations and agent access
 
-**Assessment:** prepared for continued draft review; final M1 acceptance is not
-claimed. The owner confirmed desktop Meteor testnet login, organization/agent
-persistence, logout UI, sign-in recovery, cancellation messaging and successful
-retry. Android/iOS, trusted HTTPS/Secure-cookie behavior, second-wallet manual
-isolation and independent security review remain outstanding. See **Current review
-verification** below for the latest results. Earlier dated sections are historical
-investigation evidence; their NOT RUN/local-only statements are superseded only
-where explicitly confirmed in the current section.
-**Branch:** `feat/m1-identity-access`; owner authorized push and a draft PR to `staging`.
-**Baseline:** M0 merge `84ffd209d767660d0cae5c369aa2aa52a54148e8`.
-**Verification date:** November 1, 2026, after the official UTC start.
+**Assessment:** automated verification and evidence are prepared for a review-only
+push; final M1 acceptance and independent security approval are not claimed.
+**Branch:** `feat/m1-identity-access`; PR #5 stays draft against `staging`.
+**Base reviewed/pushed commit:** `64cad66d5a7dc4b6d716a05470c15347f166c082`.
+**M0 baseline:** `84ffd209d767660d0cae5c369aa2aa52a54148e8`.
+**Verification date:** November 1, 2026 (Africa/Lagos reporting context).
+
+The **Final negative-case verification** section at the end records the current
+local run and supersedes historical test counts/pending statuses below. The
+[manual acceptance ledger](M1_WALLET_ACCEPTANCE.md#current-manual-evidence--owner-confirmations-2026-11-01)
+is consolidated from owner confirmations. iOS is explicitly **DEFERRED** and is not
+a blocker to current Android verification. Independent review remains **NOT DONE**.
+New local work must receive a fresh hosted CI run after a review-only push; prior
+CI results do not attest to it. Earlier sections are retained as dated history.
 
 ## Preparation and approved design
 
@@ -591,3 +594,324 @@ and smoke passed, with web/API/database healthy and volumes preserved. Redacted
 untracked patch/tests/docs. `git diff --check` passed. No `.env`, credentials,
 node_modules, build output or browser artifacts are included; the small SDK patch
 and its lock metadata are intentional reviewable dependency artifacts.
+
+## Private HTTPS and separate security-review package — 2026-11-01
+
+Prepared [security-review/m1/README.md](security-review/m1/README.md) and its
+[FINDINGS.md](security-review/m1/FINDINGS.md) as a separate handoff covering NEP-413,
+finalized RPC permissions, nonce/browser/replay binding, sessions, CSRF, role
+escalation, tenant isolation and SDK credential exposure. This is an implementation
+self-review package, **not an independent audit**. It identifies evidence closed by
+automation versus device observations, owner policy decisions and independent review.
+
+Baseline PR head remains `64cad66d5a7dc4b6d716a05470c15347f166c082`, draft against
+staging, unmerged. Its foundation/rust hosted run passed; these new local additions
+are not attested by that historical run. No M2, merge, public deployment, financial
+transaction, privileged wallet key or paid service was introduced.
+
+### Private HTTPS setup
+
+- Added explicit `compose.https.yaml` override: PUBLIC_ORIGIN
+  `https://127.0.0.1:8443`, testnet, insecure HTTP exception disabled. Origin changes
+  invalidate old-origin login/session use; database records/volumes are preserved.
+- `pnpm setup:https` generates a local test CA (30 days) and IP-SAN server cert
+  (7 days), retaining private files only under ignored `.local/https` (directory
+  0700, keys 0600). Existing valid certificates are reused. No OS/device trust store
+  is modified automatically. These are TLS certificates, not wallet access keys.
+- `pnpm dev:https` binds only host loopback port 8443 and proxies to fixed loopback
+  web port 3000. It checks Host, rejects absolute/open-proxy targets, removes spoofed
+  forwarding headers, preserves Origin, bounds timeouts and does not log requests,
+  headers, cookies, proofs or raw errors. It is a private acceptance helper, not a
+  production ingress implementation. All Compose published ports stay loopback-only.
+- `.local` is excluded from Git and Docker context; rebuilt non-root application
+  images were checked to contain no `.env`, `.git` or `.local` material.
+- [M1_ANDROID_HTTPS.md](M1_ANDROID_HTTPS.md) provides exact start/stop/rollback,
+  public-CA-only transfer, Android manual trust, USB 8443 forwarding and Meteor
+  login/cancellation/logout/persistence/second-wallet isolation steps. No public
+  tunnel, LAN exposure, certificate-warning bypass or weakened cookie policy.
+
+### Actual automated evidence for this supplement
+
+| Executed check | Result and limit |
+| --- | --- |
+| `pnpm check` | PASS: lint/typechecks, 25 unit + 8 integration + 13 adversarial tests |
+| `pnpm test:identity-db` | PASS: 22 real PostgreSQL tests, isolated temporary schemas |
+| New TLS integration cases | PASS (3): untrusted CA rejected; explicit CA trusted with Origin preserved/spoofed forwarding removed; wrong Host/absolute targets rejected; upstream outage sanitized. No certificate validation bypass |
+| New audit-failure SQL regression | PASS: failed success audit returns 503, creates no session, rolls back nonce consumption; a fresh verification of the same still-valid fixture succeeds after recovery |
+| `pnpm build` | PASS: production Next build and TypeScript |
+| `pnpm setup:https` | PASS: locally generated and chain-verified certificate material; no trust store change |
+| `docker compose -f compose.yaml -f compose.https.yaml up --build -d --wait` | PASS: clean frozen installs, migration, healthy API/web/database |
+| `pnpm test:https` | PASS: CA-verified real TLS endpoint, workspace/config, signed-out session 401, Secure/HttpOnly/SameSite=Strict/Path=/Max-Age=300/__Host challenge cookie and absent Domain; wrong HTTP Origin 403 |
+| `pnpm test:containers`, `pnpm test:database` | PASS: non-root image isolation including absence of `.local`, actual DB connectivity |
+| Parsed Compose exposure/config check | PASS: all published ports bind 127.0.0.1; fixed HTTPS origin; insecure exception false; no config secrets printed |
+
+Total for the executed TS/API/DB suites: **68 tests**. TLS-client checks do not
+establish Android Chrome trust or browser Secure-cookie enforcement. The live check
+requests a synthetic unsigned challenge, discards its body and cookie values, and
+never calls verification or creates a wallet/session. The 8 browser UI tests and
+Rust/Wasm results from `64cad66` remain historical; UI/contract code was not changed
+by this supplement and those suites were not rerun here.
+
+Corrections during preparation: TypeScript required an explicit proxy header-map
+type. Initial TLS integration run lacked sandbox loopback permission and failed;
+authorized rerun used real sockets. A wrong-Host test initially also changed TLS
+SNI implicitly; the test now keeps certificate identity on the loopback IP while
+varying HTTP Host, without disabling chain/hostname verification. Final suites pass.
+
+### Human/device and independent-review status
+
+Owner confirmed an Android phone with the existing Meteor testnet wallet is
+available and can be connected. At the last transport check no device was attached.
+USB authorization/forwarding, Android public-CA installation/trust, A01–A07 wallet
+flows and Secure-cookie browser enforcement remain **NOT RUN**, not passed by host
+TLS tests. Unsupported Meteor mobile/native-bridge flows must remain pending; the
+native bridge stays disabled. Desktop human results above remain valid for their
+reported HTTP context, not automatically for Android/HTTPS.
+
+Independent reviewer signoff remains **NOT RUN**. The package separately flags
+broader SDK data-flow/message-origin review, trusted RPC/stale-session assumptions,
+operational rate/retention/ingress policy and explicit concurrent logout/mutation
+interleaving tests. No newly demonstrated backend authorization bypass was found;
+that bounded self-review conclusion is not a security guarantee. M1 final acceptance
+is not claimed. Changes in this supplement are kept local for review/device testing.
+
+Final preparation checks: redacted `pnpm test:secrets` found no leaks; workflow
+validation, lint and diff whitespace checks passed. Filesystem checks confirmed
+`.local/https` mode 0700 and both private keys mode 0600; Git ignores CA/key/cert
+material. Final Android check found zero authorized devices, so no certificate
+transfer or USB forwarding was performed. The proxy and HTTPS-configured services
+remain running locally for the human steps. No device trust/mobile pass is claimed.
+
+Android connection follow-up (2026-11-01): exactly one authorized USB device was
+observed. Copied only the public `root-ca.crt` to Android Downloads as
+`avroqen-local-ca.crt` and configured USB reverse for 8443 → 8443. No private key,
+API port or database port was transferred/forwarded. `pnpm test:https` passed again.
+This supersedes the earlier no-device observation; Android CA installation, Chrome
+trust, wallet flows and browser cookie enforcement still require human verification.
+
+Android reachability follow-up (2026-11-01): owner reported CA installation succeeded
+but Chrome could not reach the site. The device was authorized, but `adb reverse`
+had no port mappings; the host CA-verified HTTPS check still passed. Restored and
+verified only tcp:8443 → tcp:8443. The reason the mapping disappeared is unknown;
+USB/ADB reconnection can require reapplying it. Device Chrome trust and page-load
+success remain pending human retry; this was a missing transport mapping, not an
+observed certificate rejection.
+The first forwarding-restoration command returned a nonzero exit; a subsequent
+retry succeeded and the mapping was read back as tcp:8443 → tcp:8443. The transient
+ADB failure's cause was not established. Human Chrome retry is still required.
+
+Android reachability confirmed (2026-11-01): after restoring forwarding and opening
+`https://127.0.0.1:8443/workspace` explicitly in Android Chrome, the owner reported
+“Avroqen workspace/sign-in page.” Three phone-side TCP probes reached 127.0.0.1:8443;
+subsequent ADB queries checked return codes and confirmed the rule. Host TLS checks
+passed. Earlier empty forwarding output was interpreted as a missing mapping but
+not every initial list command's exit status was captured; intermittent ADB query
+failure versus actual mapping loss is not conclusively distinguished. No cable,
+Android or certificate defect is established. Current phone page reachability is
+human-confirmed. Explicit certificate/site-information review, wallet login,
+cancellation/logout, Secure-cookie enforcement and second-wallet isolation remain
+pending; the visible sign-in page is not blanket Android wallet acceptance.
+
+
+Android human login confirmation (2026-11-01): owner used a different existing
+testnet account, labeled **B** (public account ID not collected). The owner confirmed
+Meteor displayed the NEP-413 signing prompt with account B, testnet and
+`https://127.0.0.1:8443`, and confirmed the requested signed-in account display in
+Avroqen. **A02 Android real-wallet login: PASS, owner-reported.** This supersedes
+prior pending-login statements only for this observed flow. Browser/wallet version
+numbers and exact observation time were not supplied. No proof, nonce, cookie or
+session token was collected, and no server-internal behavior is claimed manually
+verified. A03 cancellation/retry, A04 logout, A05 persistence, A06 second-wallet
+isolation, A07 browser cookie inspection and independent review remain pending.
+Using B successfully does not prove isolation from A's organization. Detailed
+certificate/site-information inspection is not inferred from successful login.
+
+
+Android second-wallet read-isolation confirmation (2026-11-01): while signed in
+as account B, the owner reported that account A's organization was absent from
+the organization selector. A read-only local DB lookup identified the organization
+owned by `ajayfrizzy.testnet`; no sessions or wallet proofs were accessed. The owner
+then opened that organization's `/api/organizations/:orgId/agents` URL on the phone
+and reported **access denied**. **A06/W13 list visibility and direct cross-account
+agent-read denial: PASS, owner-reported.** The exact HTTP status was not separately
+observed; do not claim a manually captured 403. This does not establish manual
+unauthorized-write, role-escalation or other-network testing; those retain their
+separate automated coverage and pending manual status. Android logout,
+cancellation/retry, persistence, cookie-attribute inspection and independent review
+remain pending. No sensitive request/response payloads were collected.
+
+
+Android logout UI confirmation (2026-11-01): after being instructed to log out
+and refresh the workspace, the owner confirmed return to the sign-in screen.
+**A04/W09 logout-and-refresh UI: PASS, owner-reported.** No retained-cookie replay
+or session-endpoint HTTP status was manually observed in this step; server-side
+invalidation evidence remains the separate automated PostgreSQL tests. Android
+cancellation/retry, persistence and browser cookie inspection remain pending.
+
+
+Android cancellation/retry confirmation (2026-11-01): the owner confirmed that
+canceling Meteor's NEP-413 signing prompt displayed “Wallet sign-in canceled.
+No transaction was sent.” and left the app signed out, and that retrying with
+account B and approving the login message authenticated successfully.
+**A03/W02 signing cancellation and retry: PASS, owner-reported.** This confirms
+observed wallet/UI behavior, not a manually inspected absence of session issuance
+or nonce reuse; those remain separately tested automatically. Popup blocking and
+window-close variants were not reported. Android persistence, explicit certificate
+inspection, browser cookie attributes and independent security review remain pending.
+
+
+Android persistence confirmation (2026-11-01): the owner confirmed all steps in
+the immediately preceding persistence checklist: account B created a test
+organization, registered an agent record, disabled it, refreshed, then logged out
+and signed in again. The organization and agent remained visible and the agent
+remained Disabled. **A05/W12 persistence: PASS, owner-reported.** “Everything listed”
+refers to that checklist, not to every M1 acceptance requirement. No transaction,
+onchain revocation, raw DB inspection or credential creation is inferred.
+
+Current owner-confirmed Android results: real NEP-413 login with B; A's organization
+absent from B's selector and direct agent-read access denied; logout/refresh to the
+sign-in UI; neutral signing cancellation and successful retry; organization/agent
+persistence with disabled status after refresh and reauthentication. Explicit
+certificate/site-information inspection, browser Secure/HttpOnly/SameSite/__Host
+cookie inspection, separate popup variants, other unobserved negative wallet cases,
+iOS testing and independent security review remain pending. Manual results do not
+replace automated server-side authorization evidence. Final M1 acceptance is not
+claimed; PR #5 must remain draft and unmerged.
+
+
+Browser TLS/cookie inspection follow-up (2026-11-01): the supplied DevTools
+Security screenshot shows TLS 1.3, certificate subject/SAN 127.0.0.1, issuer
+Avroqen local acceptance CA, validity November 1–8, 2026, and a green main-origin
+lock indicator. After instructions to inspect `__Host-avroqen_session`, the owner
+confirmed all listed attributes: Secure checked, HttpOnly checked, SameSite Strict,
+and Path /. **Inspected-browser TLS details and session-cookie attributes:
+confirmed by screenshot/owner report.** No cookie values or session tokens were
+requested or collected. Cookie Domain/host-only status and login-challenge cookie
+attributes were not part of this manual confirmation. This verifies displayed
+attributes, not all adversarial browser cookie behavior.
+
+The interaction is in the Android testing context, but the owner has not separately
+and unambiguously confirmed that this particular DevTools target was opened using
+Inspect under the connected phone. Preserve this provenance limitation rather than
+claiming device-specific browser inspection solely from the screenshot. Prior
+Android wallet/UI observations remain recorded independently.
+
+Owner explicitly deferred iOS testing for now: **DEFERRED, not passed**, and not a
+blocker to continuing current Android verification. Independent human security
+review and other unobserved negative cases remain pending. This self-review is not
+an independent audit; final M1 acceptance is not claimed.
+
+
+Android DevTools provenance confirmed (2026-11-01): the owner explicitly confirmed
+opening the inspected DevTools window through Inspect beneath the connected Android
+phone at `chrome://inspect/#devices`. This resolves the preceding provenance
+limitation. **Android TLS/certificate-detail inspection and displayed session-cookie
+attributes (Secure, HttpOnly, SameSite=Strict, Path=/): PASS**, based on the supplied
+Security screenshot and owner attribute confirmation. This does not extend to
+unobserved cookie Domain/host-only metadata, challenge-cookie inspection or all
+adversarial browser enforcement cases. No cookie values or tokens were collected.
+Current Android human evidence includes login, second-wallet read isolation,
+logout/refresh, cancellation/retry, persistence with disabled agent state, and the
+TLS/session-cookie inspection above. iOS stays DEFERRED at owner request;
+independent security review and remaining unobserved negative cases remain pending.
+PR #5 must stay draft and unmerged; final M1 acceptance is not claimed.
+
+## Final negative-case verification — 2026-11-01
+
+**Disposition:** prepared for a review-only push of the existing feature branch,
+not final M1 acceptance or merge. No application authentication/authorization rule
+was weakened or changed. This review includes the previously local HTTPS tooling,
+security package and owner-confirmed manual evidence. PR #5 must remain draft.
+
+### Actual automated results for this review candidate
+
+| Command/gate | Result |
+| --- | --- |
+| Frozen install (`--frozen-lockfile --ignore-scripts`) | PASS; no dependency/lock drift |
+| `pnpm check` | PASS: lint/typechecks, **25 unit + 13 integration + 13 adversarial** |
+| `pnpm test:identity-db` | PASS: **26 real PostgreSQL tests** (22 identity + 4 migrations) |
+| `pnpm build` | PASS: production Next build and repository TypeScript |
+| `pnpm test:e2e` | PASS: **8 Chromium tests** |
+| Rust fmt / Clippy with warnings denied / workspace tests | PASS: **1 scaffold test** |
+| `pnpm build:contract`, `pnpm test:wasm` | PASS: disabled scaffold only; no custody/settlement claim |
+| `pnpm test:workflow`, HTTPS Compose config validation | PASS |
+| Clean Docker Compose build/bootstrap with HTTPS override | PASS: frozen installs, migration, healthy web/API/database |
+| Container isolation / database connectivity / HTTP smoke / trusted HTTPS check | PASS: non-root; no .env/.git/.local in images; HTTPS challenge cookie protection and wrong-Origin denial |
+| Controlled database outage (`node scripts/check-outage.mjs`) and recovery | PASS: readiness 503 / health 200 while unavailable; database and HTTPS Compose services restored healthy; smoke and HTTPS checks passed again |
+| Final `pnpm test:secrets`, `pnpm lint`, `git diff --check` | PASS: no leaks detected, lint clean, no whitespace errors |
+
+**77 TypeScript/API/database tests + 8 browser tests + 1 Rust test passed.**
+The first check/build attempt caught an incorrect test-only Fastify overload type
+for a pending request. Corrected it to its actual Promise response type; the complete
+checks and production build were rerun and passed. No runtime security policy or
+assertion was relaxed. New regression evidence:
+
+- Two valid same-account browser challenges cannot exchange cookies or signatures.
+  Both attacks return 401 with zero sessions/consumption; each original proof can
+  subsequently succeed in its own context, and subsequent replay fails.
+- Challenge issuance, session issuance, challenge deletion and logout deletion use
+  Secure, HttpOnly, SameSite=Strict, Path=/ and **no Domain attribute**. Names use
+  `__Host-`; lifetimes are 300/900 seconds. Absence of Domain gives host-only scope.
+  Assertions retain only metadata, never print cookie values. The live HTTPS check
+  independently verifies challenge attributes/no Domain on the actual local stack.
+- Five SDK error shapes (popup open failed/refused, window closed, user canceled,
+  extension unavailable) reject with the expected sanitized error kind and permit
+  a fresh challenge retry. These are pinned SDK response simulations; they do not
+  claim human/browser popup-policy tests. Existing browser regression uses the real
+  SDK dialog close handler with fixture API responses and observes zero verification
+  calls on cancellation.
+- Scheduled SQL contention tests observe actual lock waits behind session or
+  membership revocation, commit that revocation, then require 401/403 and no agent
+  insertion from the waiting mutation. These test two defined orderings, not every
+  interleaving or an independent lock-graph assessment.
+
+Existing cases were rerun: five-minute issued/expired challenge and expiry during
+RPC; one-use replay and six concurrent consumers; wrong account/network; forged
+and malformed proofs; finalized restricted/missing-key parser; RPC failure closed;
+15-minute sessions, logout/rotation, Origin/CSRF, tenant/role/disabled-membership
+checks, persistent disabling, migration constraints, audit secrecy and transactional
+audit-failure rollback. Real cryptography/SQL run; RPC permission replies and wallet
+failure objects are explicit fixtures. No real human proof was captured or replayed.
+
+### Confirmed manual evidence and remaining requirements
+
+The consolidated [manual ledger](M1_WALLET_ACCEPTANCE.md#current-manual-evidence--owner-confirmations-2026-11-01)
+records desktop and Android login, persistence/disabled agents, logout and signing
+cancellation/retry. Android additionally has owner-confirmed second-wallet list and
+direct-read denial, TLS/certificate screenshot, and session Secure/HttpOnly/Strict/
+Path attributes with explicitly confirmed remote-phone DevTools provenance. The
+ACCESS_DENIED text is confirmed; the direct-access HTTP 403 was not separately
+captured. No unobserved server-internal behavior is marked manually verified.
+
+Remaining real-wallet compatibility procedures are precisely scoped in
+[NEGATIVE_AUTH_CASES.md](security-review/m1/NEGATIVE_AUTH_CASES.md): delayed signing,
+existing account mismatch, eligible existing network/restricted/missing-key fixtures,
+popup blocking and actual wallet-window closure. They are **NOT RUN manually**;
+missing fixtures are BLOCKED, not instructions to create privileged keys. Replay
+and browser substitution need no manual proof handling; their automated evidence
+is explicit. Additional manual challenge-cookie/host-only observation is not claimed;
+server cookie lifecycle/no-Domain validation is complete and separate from the
+owner's session-cookie observation. **iOS is DEFERRED at owner request.**
+
+Independent human security review remains **NOT PERFORMED**. Residual trust/risk:
+fixed finalized RPC service, app sessions valid up to 15 minutes after wallet-key
+removal, SDK-wide message/credential data-flow review, shared proxy-IP rate limits,
+retention and production ingress/CSP/DB least privilege. Further lock-interleaving
+review remains appropriate. The local TLS helper is not production ingress; the
+short-lived CA's private key stays local and device trust should be removed after
+testing. No new backend authorization bypass was demonstrated by these tests, but
+self-review is not independent assurance and cannot waive these review gates.
+
+### Delivery boundary
+
+The review candidate is to be committed locally on `feat/m1-identity-access` and
+left **unpushed** for a review-only push. The previous hosted run on `64cad66` is
+historical. New `foundation` and `rust` results are required on the new commit after
+pushing; local passes are not reported as hosted CI. No merge, public deployment,
+financial transaction, wallet-key provisioning or M2 implementation occurred.
+
+Final source/diff review includes the local HTTPS helpers, ignore rules, regression
+tests and evidence documents. No credentials, private TLS material, generated build
+outputs or dependency directories are included in the review candidate. The branch
+is ready for a review-only push, subject to new hosted CI and the remaining human
+review requirements above; this is not a declaration of final M1 acceptance.

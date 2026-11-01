@@ -1,4 +1,4 @@
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import { signChallenge } from "../../apps/web/app/workspace/wallet.js";
 import { normalizeWalletProof } from "../../apps/web/app/workspace/wallet-proof.js";
 
@@ -16,6 +16,12 @@ vi.mock("../../apps/web/app/workspace/wallet-sdk", () => ({
       createAction = fixtures.createAction;
     })(),
 }));
+beforeEach(() => {
+  vi.clearAllMocks();
+  fixtures.createAction.mockResolvedValue({
+    promptForExecution: fixtures.prompt,
+  });
+});
 it("wallet connector requests only NEP-413 signing and refuses key custody", async () => {
   fixtures.prompt.mockResolvedValue({
     signedMessage: {
@@ -136,4 +142,47 @@ it("normalizes binary signatures byte-for-byte and rejects malformed wallet shap
       "Invalid wallet message response",
     );
   }
+});
+
+it.each([
+  ["POPUP_WINDOW_OPEN_FAILED", "popup"],
+  ["POPUP_WINDOW_REFUSED", "popup"],
+  ["WINDOW_CLOSED", "canceled"],
+  ["USER_CANCELLED", "canceled"],
+  ["EXT_DIRECT_RESPONSE_FAILED", "unavailable"],
+])("rejects SDK %s safely and allows a fresh retry", async (tag, kind) => {
+  fixtures.prompt
+    .mockRejectedValueOnce(
+      Object.assign(new Error("untrusted detail"), {
+        name: "MeteorActionError",
+        _reason: { endTags: [tag] },
+      }),
+    )
+    .mockResolvedValueOnce({
+      signedMessage: {
+        accountId: "alice.testnet",
+        publicKey: { toString: () => `ed25519:${"1".repeat(32)}` },
+        signature: new Uint8Array(64),
+      },
+    });
+  const challenge = {
+    challengeId: "first",
+    nonce: Buffer.alloc(32).toString("base64"),
+    message: "fixture",
+    recipient: "https://app.example.test",
+  };
+  await expect(signChallenge(challenge, "testnet")).rejects.toMatchObject({
+    kind,
+  });
+  const next = {
+    ...challenge,
+    challengeId: "next",
+    nonce: Buffer.alloc(32, 1).toString("base64"),
+  };
+  const result = await signChallenge(next, "testnet");
+  expect(result.accountId).toBe("alice.testnet");
+  expect(
+    fixtures.createAction.mock.calls[1]?.[0].input.messageParams.state,
+  ).toBe("next");
+  expect(fixtures.prompt).toHaveBeenCalledTimes(2);
 });

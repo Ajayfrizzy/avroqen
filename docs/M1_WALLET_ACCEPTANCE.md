@@ -9,6 +9,16 @@ These are human-reported results, not agent-performed wallet interactions. Exact
 browser/wallet versions and individual observation timestamps were not supplied.
 Automated security evidence is separate in M1_REPORT.md. No transaction was needed.
 
+## Private Android HTTPS follow-up
+
+A separate [Android HTTPS guide](M1_ANDROID_HTTPS.md) now provides a local CA,
+loopback-only TLS proxy and USB forwarding steps. The host TLS/secure-cookie
+header checks pass; Android user-CA trust, browser enforcement and wallet return
+behavior remain pending. Use that guide for Android acceptance instead of the
+older HTTP port-3000 USB recipe below. While the HTTPS override is active, the API
+requires `https://127.0.0.1:8443`; old HTTP-origin sessions cannot authenticate.
+See the separate [security-review evidence package](security-review/m1/README.md).
+
 ## Start the local environment
 
 Exact desktop URL: **http://127.0.0.1:3000/workspace**.
@@ -143,8 +153,8 @@ case remain pending, regardless of automated coverage.
 | W04 | Select a different existing network identity while app remains testnet | Refusal/rejection; mainnet-only key state cannot authorize testnet session | Existing other-network identity; no transaction |
 | W05 | Attempt login with pre-existing restricted or absent key fixture | Wallet refuses, or API returns 401; no session | Existing fixture and signing-capable wallet; do not create/remove/import keys |
 | W06 | Leave fresh message prompt open longer than 5 minutes, then sign | Expired challenge rejected; fresh login needed | Desktop or Android; wait measured from challenge creation |
-| W07 | Resend successful verification once in browser devtools | HTTP 401; no second session | Browser devtools; proof kept local only |
-| W08 | Repeat a pending verification in a separate browser context without its login cookie | Rejected; no session | Second profile/incognito context, not necessarily second device |
+| W07 | Automated replay with isolated fixtures | HTTP 401; no second session | No human proof handling required |
+| W08 | Automated substitution of another valid browser cookie | Rejected; no session | No human proof handling required |
 | W09 | Logout and reload; separately wait beyond 15 minutes after a new login | `/api/auth/session` 401; privileged operations require login; refresh does not extend expiry | Time to wait; successful login prerequisite |
 | W10 | Inspect cookie attributes on loopback HTTP | HttpOnly, SameSite=Strict, Path=/, no Domain; non-__Host names, no Secure is intentional here | DevTools; record attributes only, never values |
 | W11 | Inspect cookie attributes and real login over trusted local HTTPS | Secure, HttpOnly, SameSite=Strict, Path=/, __Host- names, no Domain | Trusted local HTTPS; NOT CONFIGURED |
@@ -153,13 +163,9 @@ case remain pending, regardless of automated coverage.
 | W14 | Repeat W01/W02/W09/W12 on actual Android Chrome | Correct wallet return, readable UI, correct session/agent behavior | Android device, USB data cable, authorized reverse mapping |
 | W15 | Repeat W01/W02/W09/W12 on actual iOS Safari | Correct wallet return, readable UI, correct session/agent behavior | iOS device and trusted private HTTPS origin; Android USB reverse instructions do not apply |
 
-For W07 use the browser's local Network request resend/replay facility if supported;
-otherwise mark the manual case blocked, retaining the automated replay test result
-separately. Do not export “Copy as cURL” payloads or HAR files into reports. For W08
-use a separate context's local devtools to replay only the pending request body,
-without copying cookies; Origin must still be the exact app origin. If the browser
-has no safe local replay facility, leave this manual row pending. Automated
-PostgreSQL/crypto tests already exercise both failures, but are not manual evidence.
+For W07/W08, use the automated synthetic replay/browser-substitution tests.
+Do not copy or resend human proof bodies, cookies or signatures. Their automated
+passes do not claim manual execution; no additional human proof handling is required.
 
 For W13 note the public org UUID while signed in as A. After logout/sign-in as B,
 open `/api/organizations/ORG_UUID/agents` on the same origin (replace ORG_UUID with
@@ -167,8 +173,10 @@ that actual public ID). Expected 403. Do not grant B membership for this test.
 
 ### HTTPS boundary
 
-No trusted local HTTPS origin/certificate has been configured by this preparation.
-W11 and any wallet that refuses loopback HTTP are **BLOCKED**, not passed. A future
+The initial preparation had no HTTPS setup. The new private HTTPS follow-up is
+now host-verified; see M1_ANDROID_HTTPS.md. W11 remains pending until actual
+Android trust and real-browser behavior are observed. The text below describes
+the original configuration boundary, not a claim that HTTPS is still unconfigured. A future
 private HTTPS setup must have a certificate trusted by the test browser/device,
 proxy to the existing local web service, and set the API's exact PUBLIC_ORIGIN to
 that HTTPS origin with the HTTP exception disabled. Compose currently hardcodes the
@@ -215,38 +223,39 @@ explicit simulations. A public RPC `status` call confirmed testnet reachability,
 not control of any human account/key. Contract checks cover the disabled M0 scaffold;
 S01–S20 custody/settlement integration is not implemented in M1 and is not claimed.
 
-## Manual result ledger — owner confirmation recorded 2026-11-01
+## Current manual evidence — owner confirmations, 2026-11-01
 
-| Scope | Confirmed human observation | Still unverified manually |
+These results supersede earlier pending statuses for the listed observations only.
+No proof/cookie/token values were collected. Exact Chrome/Meteor versions and most
+per-case timestamps were not supplied. All results below are human observations,
+not independent review or manual proof of every server-internal check.
+
+| Case | Desktop Chrome/macOS | Android Chrome over private HTTPS |
 | --- | --- | --- |
-| Desktop W01 | Real Meteor NEP-413 login succeeded on testnet | Detailed message-field/prompt inspection checklist |
-| Desktop W02 | Signing cancellation displayed “Wallet sign-in canceled. No transaction was sent.”; retry authenticated successfully | Separate popup-blocking/window-close behavior; server-side absence of a new session on cancellation |
-| Desktop W12 | Organization creation/retrieval after refresh; agent registration/persistence; disabled status remained visible | Second-wallet access denial and server-side enforcement (automated separately) |
-| Desktop W09 (partial) | Logout returned to signed-out UI; sign-in restored existing organization and agent records | Retained-cookie replay after logout, session endpoint status and actual 15-minute wait |
-| W03/W13 | NOT RUN | Second existing wallet/account substitution and manual tenant isolation |
-| W04/W05 | NOT RUN | Existing other-network/restricted/absent-key fixtures; do not create privileged keys |
-| W06/W07/W08/W10 | NOT RUN | Human challenge-expiry, replay, browser binding and cookie-attribute inspection |
-| Android W14 | NOT RUN; device prerequisite unverified | Actual Android Chrome wallet behavior; USB forwarding is not a device pass |
-| iOS W15 | NOT RUN; device/private HTTPS prerequisites unverified | Actual iOS Safari wallet behavior |
-| HTTPS W11 | BLOCKED on trusted private HTTPS setup | Secure/__Host- cookie browser enforcement and real login over HTTPS |
-| Independent security review | NOT RUN | Review by a reviewer independent of this implementation |
+| NEP-413 login | PASS, account A (`ajayfrizzy.testnet`) | PASS, different existing account B (ID not collected); expected testnet/account/origin message confirmed |
+| Organization/agent persistence | PASS after refresh and re-login | PASS after refresh and re-login; disabled agent status persisted |
+| Logout | PASS, signed-out UI | PASS, signed-out UI after refresh; retained-cookie rejection is automated evidence |
+| Signing cancellation/retry | PASS, neutral message and successful retry | PASS, neutral message and successful retry |
+| Second-wallet read isolation | Not separately claimed | PASS: A's org absent from B's list and direct agents endpoint showed ACCESS_DENIED; HTTP 403 itself was not separately captured |
+| TLS/certificate details | Not separately claimed | PASS: supplied remote DevTools screenshot shows TLS 1.3, 127.0.0.1 subject/SAN, local CA issuer and green main-origin lock; owner explicitly confirmed Inspect targeted the connected phone |
+| Session-cookie displayed attributes | Not separately claimed | PASS: Secure, HttpOnly, SameSite Strict, Path / for __Host-avroqen_session |
+| Challenge-cookie/host-only metadata | Automated server response checks PASS; no human pass claimed | No additional human metadata inspection claimed; DevTools Domain column alone does not establish a Domain attribute was sent |
+| Popup-blocking and actual wallet-window closure | NOT RUN separately | NOT RUN separately |
+| Timed expiry / account-mismatch / existing restricted or other-network fixtures | NOT RUN manually; automated server cases pass | NOT RUN manually; automated server cases pass |
+| iOS | **DEFERRED by owner**, not passed and not part of current Android verification | — |
+| Independent security review | **NOT PERFORMED** | **NOT PERFORMED** |
 
-Confirmed account: `ajayfrizzy.testnet`, Meteor Wallet, desktop Chrome on macOS,
-NEAR Testnet, `http://127.0.0.1:3000/workspace`. Device context comes from the
-reported reproduction; exact version numbers were not supplied. No claim is made
-that the owner inspected DB rows, retained cookies, signature encoding, RPC finality,
-nonce atomicity, CSRF or tenant enforcement during these manual flows. Those are
-covered by the explicitly automated suites. The owner did not report tests against
-the subsequent logging-only SDK patch; frozen-install/browser checks validate that
-patch automatically, and a fresh human smoke remains advisable after loading it.
+Desktop origin was `http://127.0.0.1:3000`; Android origin is
+`https://127.0.0.1:8443`. The owner reported CA installation and phone reachability;
+USB forwarding had intermittent issues before successful testing. No cause beyond
+the observed transport state is asserted. Explicit remote-DevTools provenance was
+subsequently confirmed and is no longer an open uncertainty.
 
-Automated cancellation uses the actual installed SDK dialog close handler with
-fixture challenge/session endpoints. It proves fresh retry challenges, neutral
-status, enabled retry and no verification call for that simulated flow. It does
-not stand in for the owner's separate real signing-popup observation.
-
-For further manual validation, hard-refresh the rebuilt workspace, use only the
-existing unfunded testnet wallet, and approve only NEP-413 login messages. Record
-case ID, device/browser/wallet versions, tested commit, visible outcome and HTTP
-path/status; never record cookies/tokens/proofs, raw console dumps, HARs or `.env`.
-Keep PR #5 draft and unmerged; these results do not establish final M1 acceptance.
+For remaining cases use [NEGATIVE_AUTH_CASES.md](security-review/m1/NEGATIVE_AUTH_CASES.md).
+It separates completed automated negatives from real-wallet compatibility procedures.
+Do not export or manually copy/replay real authentication payloads to reproduce tests
+already covered with synthetic fixtures. Host-only/no-Domain semantics are verified
+by route headers throughout issuance and deletion, independently of the human
+session-cookie attribute observation. More browser evidence remains optional/pending,
+not silently marked passed. PR #5 remains draft and unmerged; final M1 acceptance
+requires the remaining review/acceptance decisions.

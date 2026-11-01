@@ -121,3 +121,19 @@ only those calls in ESM/CommonJS entrypoints. No signing, transport, key permiss
 nonce, session or authorization logic changes. A test checks both installed
 artifacts after frozen installation. Dependency-wide independent review is still
 required; this is not a claim that all unused SDK capabilities have been audited.
+
+M1 private HTTPS acceptance (2026-11-01): use a short-lived local test CA and a
+loopback-only TLS proxy with Android USB reverse on 8443. Only the public CA cert
+may be transferred; trust installation is an explicit human device action. No
+public tunnel/LAN binding or automatic system trust change. The HTTPS Compose
+override fixes the exact HTTPS origin and disables the HTTP exception, preserving
+all cookie/CSRF/identity policies. Certificates are ignored and excluded from images.
+Host TLS validation is not Android browser trust or independent security review.
+
+M1 negative verification closeout (2026-11-01): use isolated synthetic proofs for
+replay, browser substitution and wrong account/network tests; do not ask the owner
+to copy/export real proof bodies. No-Domain response headers establish host-only
+scope; DevTools showing an owning host in its Domain column is not evidence that a
+Domain attribute was sent. Human Android TLS/session-attribute observations are
+recorded separately. iOS is deferred by explicit owner instruction. No authentication
+or financial authority policy was changed to satisfy tests.

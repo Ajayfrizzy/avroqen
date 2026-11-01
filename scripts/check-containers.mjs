@@ -11,7 +11,7 @@ for (const service of ["api", "web"]) {
       service,
       "node",
       "-e",
-      "const fs=require('node:fs'); if(process.getuid()===0 || fs.existsSync('/app/.env') || fs.existsSync('/app/.git')) process.exit(1); console.log('Isolated non-root process');",
+      "const fs=require('node:fs'); if(process.getuid()===0 || fs.existsSync('/app/.env') || fs.existsSync('/app/.git') || fs.existsSync('/app/.local')) process.exit(1); console.log('Isolated non-root process');",
     ],
     { encoding: "utf8" },
   );
