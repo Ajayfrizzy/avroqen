@@ -243,3 +243,44 @@ isolation, database connectivity, smoke and trusted local HTTPS checks all passe
 Existing owner records were preserved. This is a local development rebuild, not
 public deployment. Final Git diff/whitespace and secret checks are clean. Hosted
 foundation/rust results for the follow-up commit are recorded on draft PR #6.
+
+## Final agent-registration UX follow-up — November 1, 2026
+
+The UI now uses the exact owner-requested wording:
+
+- Active: “This agent is already registered in this organization. You can find it in your agent list.”
+- Disabled: “This agent was previously registered but is now disabled. It cannot be registered again. View its existing record in the agent list.”
+
+Stable codes remain AGENT_ALREADY_REGISTERED and AGENT_PREVIOUSLY_DISABLED,
+selected from the actual org/network-scoped stored record after an atomic conflict.
+A generic duplicate error never implies disabled status. The two specific errors
+include the authorized existing agent ID only; the ID is not emitted when audit
+failure converts a response to service-unavailable. No reactivation or duplicate
+registration occurs, and duplicate attempts create no registration-success audit.
+
+“View agent” is an accessible button (an in-page action, not navigation to another
+organization). It retrieves the existing record via the new read-only
+GET /api/organizations/:orgId/agents/:agentId route, rechecking live session and
+membership and scoping the query by organization/network/agent ID. It inserts or
+refreshes the record in the current list and scrolls/focuses it, even if not on the
+currently loaded page. Pagination deduplicates it. Organization changes clear the
+action, and stale fetch results are ignored. Disabled controls remain disabled.
+No existing authentication, consent, revocation or authorization rule changes.
+
+Automated results: `pnpm check` PASS (37 unit, 13 integration, 13 adversarial),
+`pnpm test:identity-db` PASS (56 real PostgreSQL), `pnpm build` PASS,
+`pnpm test:e2e` PASS (27 Chromium). Total **119 TypeScript/API/database + 27 browser
++ 1 Rust scaffold** tests. Rust fmt/Clippy/test/Wasm, workflow validation and secret
+scan passed. One formatter layout mismatch was corrected before the full run;
+no checks bypassed. Four new browser cases verify exact active/disabled text,
+focus/scroll and organization-switch clearing on desktop (1280px) and mobile
+(390px). SQL regressions verify duplicate status/ID, no reactivation or extra
+success audit, unauthorized detail access and wrong-org IDs. No secrets captured.
+
+Manual evidence remains the owner's previously confirmed desktop/Android M2
+creation, approval, revocation and persistence. The final messages and View agent
+flow have NOT yet been confirmed by the owner; browser automation is not a new
+human pass. iOS and outstanding negative-wallet/manual security cases remain
+explicitly pending/deferred. No deployment, merge, transaction or visibility change.
+The pre-existing local web container was restored after browser testing; the new
+production build was tested locally, with hosted checks required on the new PR head.

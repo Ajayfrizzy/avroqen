@@ -23,6 +23,7 @@ class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public agentId?: string,
   ) {
     super(message);
   }
@@ -51,9 +52,9 @@ async function api<T>(
     const data = await response.json().catch(() => ({}));
     const messages: Record<string, string> = {
       AGENT_ALREADY_REGISTERED:
-        "This agent is already registered in this organization. Use its existing record in the agent list.",
+        "This agent is already registered in this organization. You can find it in your agent list.",
       AGENT_PREVIOUSLY_DISABLED:
-        "This agent was previously disabled in this organization and cannot be registered again. Review its disabled record or register a different agent account.",
+        "This agent was previously registered but is now disabled. It cannot be registered again. View its existing record in the agent list.",
       INVALID_REQUEST:
         "Check the account format and required fields, then submit again.",
     };
@@ -71,6 +72,14 @@ async function api<T>(
             : response.status === 429
               ? "Too many requests. Please wait a minute."
               : "The request could not be completed. Refresh the list before retrying; if the problem continues, report this error."),
+      response.status === 409 &&
+        ["AGENT_ALREADY_REGISTERED", "AGENT_PREVIOUSLY_DISABLED"].includes(
+          data?.error,
+        ) &&
+        typeof data?.agentId === "string" &&
+        /^[0-9a-f-]{36}$/.test(data.agentId)
+        ? data.agentId
+        : undefined,
     );
   }
   return response.json() as Promise<T>;
@@ -92,6 +101,18 @@ export default function Workspace() {
     [agentAccount, setAgentAccount] = useState("");
   const [orgNext, setOrgNext] = useState<number | null>(null),
     [agentNext, setAgentNext] = useState<number | null>(null);
+  const [duplicate, setDuplicate] = useState<{
+    orgId: string;
+    agentId: string;
+  } | null>(null);
+  const [focusAgent, setFocusAgent] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focusAgent) return;
+    const record = document.getElementById(`agent-${focusAgent}`);
+    record?.focus({ preventScroll: true });
+    record?.scrollIntoView({ block: "center", behavior: "instant" });
+    setFocusAgent(null);
+  }, [focusAgent]);
   const requestVersion = useRef(0);
   const submitting = useRef(false);
   const org = organizations.find((o) => o.id === selected);
@@ -160,6 +181,7 @@ export default function Workspace() {
   useEffect(() => {
     const version = ++requestVersion.current;
     setAgents([]);
+    setDuplicate(null);
     setAgentNext(null);
     if (!selected || !session) {
       setAgentsLoading(false);
@@ -205,6 +227,7 @@ export default function Workspace() {
     setBusy(true);
     setError("");
     setNotice("");
+    setDuplicate(null);
     try {
       await work();
     } catch (reason) {
@@ -240,6 +263,29 @@ export default function Workspace() {
         <p role="alert" className="error">
           {error}
         </p>
+      )}
+      {duplicate && duplicate.orgId === selected && session && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            void run(async () => {
+              const version = requestVersion.current;
+              const record = await api<Agent>(
+                `/organizations/${duplicate.orgId}/agents/${duplicate.agentId}`,
+                session,
+              );
+              if (version !== requestVersion.current) return;
+              setAgents((old) => [
+                record,
+                ...old.filter((a) => a.id !== record.id),
+              ]);
+              setFocusAgent(record.id);
+            })
+          }
+        >
+          View agent
+        </button>
       )}
       {loading ? (
         <p role="status">Loading your session…</p>
@@ -415,7 +461,7 @@ export default function Workspace() {
               ) : (
                 <ul className="agents">
                   {agents.map((agent) => (
-                    <li key={agent.id}>
+                    <li key={agent.id} id={`agent-${agent.id}`} tabIndex={-1}>
                       <div>
                         <strong>{agent.name}</strong>
                         <p>{agent.accountId}</p>
@@ -464,7 +510,12 @@ export default function Workspace() {
                         `/organizations/${org.id}/agents?offset=${agentNext}`,
                         session,
                       );
-                      setAgents((old) => [...old, ...data.agents]);
+                      setAgents((old) => [
+                        ...old,
+                        ...data.agents.filter(
+                          (a) => !old.some((v) => v.id === a.id),
+                        ),
+                      ]);
                       setAgentNext(data.nextOffset);
                     })
                   }
@@ -484,7 +535,14 @@ export default function Workspace() {
                           name: agentName,
                           accountId: agentAccount,
                         }),
-                      );
+                      ).catch((reason: unknown) => {
+                        if (reason instanceof ApiError && reason.agentId)
+                          setDuplicate({
+                            orgId: org.id,
+                            agentId: reason.agentId,
+                          });
+                        throw reason;
+                      });
                       setAgents((old) => [...old, created]);
                       setAgentName("");
                       setAgentAccount("");

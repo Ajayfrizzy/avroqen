@@ -1147,7 +1147,10 @@ it("distinguishes active and disabled duplicates without reactivation or duplica
   ).toBe(200);
   const disabled = await app.inject({ method: "POST", url, headers, payload });
   expect(disabled.statusCode).toBe(409);
-  expect(disabled.json()).toEqual({ error: "AGENT_PREVIOUSLY_DISABLED" });
+  expect(disabled.json()).toEqual({
+    error: "AGENT_PREVIOUSLY_DISABLED",
+    agentId: id,
+  });
   const rows = (await pool.query("SELECT disabled_at FROM registered_agents"))
     .rows;
   expect(rows).toHaveLength(1);
@@ -1159,4 +1162,54 @@ it("distinguishes active and disabled duplicates without reactivation or duplica
       )
     ).rows[0].n,
   ).toBe(1);
+});
+
+it("agent detail requires current membership and exact tenant scope", async () => {
+  const headers = await login();
+  const org = (
+    await app.inject({
+      method: "POST",
+      url: "/api/organizations",
+      headers,
+      payload: { name: "Detail" },
+    })
+  ).json().id;
+  const url = `/api/organizations/${org}/agents`;
+  const id = (
+    await app.inject({
+      method: "POST",
+      url,
+      headers,
+      payload: { name: "Existing", accountId: "agent.testnet" },
+    })
+  ).json().id;
+  const detail = await app.inject({ url: `${url}/${id}`, headers });
+  expect(detail.statusCode).toBe(200);
+  expect(detail.json().disabledAt).toBeNull();
+  const other = await login("bob.testnet");
+  expect(
+    (await app.inject({ url: `${url}/${id}`, headers: other })).statusCode,
+  ).toBe(403);
+  const otherOrg = (
+    await app.inject({
+      method: "POST",
+      url: "/api/organizations",
+      headers: other,
+      payload: { name: "Other" },
+    })
+  ).json().id;
+  expect(
+    (
+      await app.inject({
+        url: `/api/organizations/${otherOrg}/agents/${id}`,
+        headers: other,
+      })
+    ).statusCode,
+  ).toBe(404);
+  await pool.query("UPDATE memberships SET status='disabled' WHERE org_id=$1", [
+    org,
+  ]);
+  expect((await app.inject({ url: `${url}/${id}`, headers })).statusCode).toBe(
+    403,
+  );
 });

@@ -357,7 +357,7 @@ test("organization selection ignores stale agent responses and clears previous c
 
 for (const [code, expected] of [
   ["AGENT_ALREADY_REGISTERED", "already registered"],
-  ["AGENT_PREVIOUSLY_DISABLED", "previously disabled"],
+  ["AGENT_PREVIOUSLY_DISABLED", "previously registered but is now disabled"],
   ["INVALID_REQUEST", "Check the account format"],
   ["PRIVATE_DATABASE_ERROR", "Refresh the list before retrying"],
   ["NETWORK", "Network connection failed"],
@@ -417,3 +417,90 @@ for (const [code, expected] of [
     ).toBeEnabled();
   });
 }
+
+for (const width of [390, 1280])
+  for (const disabled of [false, true]) {
+    test(`duplicate ${disabled ? "disabled" : "active"} agent message and navigation at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 844 });
+      const id = "00000000-0000-4000-8000-000000000099";
+      const record = {
+        id,
+        name: "Existing record",
+        accountId: "agent.testnet",
+        disabledAt: disabled ? "2026-11-01T00:00:00Z" : null,
+      };
+      await page.route("**/api/**", async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (path.endsWith("/config"))
+          return route.fulfill({
+            json: { network: "testnet", origin: "http://127.0.0.1:3000" },
+          });
+        if (path.endsWith("/session"))
+          return route.fulfill({
+            json: {
+              accountId: "alice.testnet",
+              network: "testnet",
+              csrfToken: "fixture",
+              expiresAt: new Date(Date.now() + 900000).toISOString(),
+            },
+          });
+        if (path.endsWith("/organizations"))
+          return route.fulfill({
+            json: {
+              organizations: [
+                { id: "org", name: "Org", role: "owner" },
+                { id: "other", name: "Other", role: "owner" },
+              ],
+              nextOffset: null,
+            },
+          });
+        if (route.request().method() === "POST")
+          return route.fulfill({
+            status: 409,
+            json: {
+              error: disabled
+                ? "AGENT_PREVIOUSLY_DISABLED"
+                : "AGENT_ALREADY_REGISTERED",
+              agentId: id,
+            },
+          });
+        if (path.endsWith(`/${id}`)) {
+          expect(path).toBe(`/api/organizations/org/agents/${id}`);
+          return route.fulfill({ json: record });
+        }
+        return route.fulfill({ json: { agents: [], nextOffset: null } });
+      });
+      await page.goto("/workspace");
+      await page.getByLabel("Select organization").selectOption("org");
+      await page.getByLabel("Agent name").fill("Attempt");
+      await page.getByLabel("Agent NEAR account").fill("agent.testnet");
+      await page.getByRole("button", { name: "Register agent record" }).click();
+      await expect(page.getByRole("main").getByRole("alert")).toHaveText(
+        disabled
+          ? "This agent was previously registered but is now disabled. It cannot be registered again. View its existing record in the agent list."
+          : "This agent is already registered in this organization. You can find it in your agent list.",
+      );
+      await page
+        .getByRole("button", { name: "View agent", exact: true })
+        .click();
+      const item = page.locator(`[id="agent-${id}"]`);
+      await expect(item).toBeFocused();
+      await expect(item).toBeInViewport();
+      await expect(item).toContainText("Existing record");
+      if (disabled)
+        await expect(
+          item.getByRole("button", { name: "Disable", exact: true }),
+        ).toBeDisabled();
+      await page.getByRole("button", { name: "Register agent record" }).click();
+      await expect(
+        page.getByRole("button", { name: "View agent", exact: true }),
+      ).toBeVisible();
+      await page.getByLabel("Select organization").selectOption("other");
+      await expect(
+        page.getByRole("button", { name: "View agent", exact: true }),
+      ).toHaveCount(0);
+      await expect(item).toHaveCount(0);
+    });
+  }

@@ -24,6 +24,7 @@ class Denied extends Error {
   constructor(
     public status: number,
     public code: string,
+    public agentId?: string,
   ) {
     super(code);
   }
@@ -135,7 +136,12 @@ export async function identityRoutes(
       status = 503;
       code = "SERVICE_UNAVAILABLE";
     }
-    reply.code(status).send({ error: code });
+    reply.code(status).send({
+      error: code,
+      ...(status === 409 && error instanceof Denied && error.agentId
+        ? { agentId: error.agentId }
+        : {}),
+    });
   });
   async function transaction<T>(
     work: (db: pg.PoolClient) => Promise<T>,
@@ -398,6 +404,19 @@ export async function identityRoutes(
       };
     });
   });
+  app.get("/api/organizations/:orgId/agents/:agentId", async (request) => {
+    const { orgId, agentId } = agentParams.parse(request.params);
+    return transaction(async (db) => {
+      const identity = await session(request, db);
+      await membership(db, identity, orgId, false);
+      const result = await db.query(
+        'SELECT id,display_name AS name,near_account AS "accountId",disabled_at AS "disabledAt" FROM registered_agents WHERE id=$1 AND org_id=$2 AND network=$3',
+        [agentId, orgId, identity.network],
+      );
+      if (!result.rows[0]) deny(404, "AGENT_NOT_FOUND");
+      return result.rows[0];
+    });
+  });
   app.post("/api/organizations/:orgId/agents", async (request, reply) => {
     const { orgId } = organizationParams.parse(request.params),
       input = agentInput.parse(request.body);
@@ -411,14 +430,16 @@ export async function identityRoutes(
       );
       if (inserted.rowCount !== 1) {
         const existing = await db.query(
-          "SELECT disabled_at FROM registered_agents WHERE org_id=$1 AND network=$2 AND near_account=$3 FOR SHARE",
+          "SELECT id,disabled_at FROM registered_agents WHERE org_id=$1 AND network=$2 AND near_account=$3 FOR SHARE",
           [orgId, identity.network, input.accountId],
         );
-        deny(
+        if (!existing.rows[0]) deny(409, "ALREADY_EXISTS");
+        throw new Denied(
           409,
-          existing.rows[0]?.disabled_at
+          existing.rows[0].disabled_at
             ? "AGENT_PREVIOUSLY_DISABLED"
             : "AGENT_ALREADY_REGISTERED",
+          existing.rows[0].id,
         );
       }
       await audit(
