@@ -14,9 +14,10 @@ const pool = new pg.Pool({ ...settings, options: `-c search_path=${schema}` });
 const origin = "https://app.example.test";
 let keyAllowed = true;
 let keyUnavailable = false;
+const authConfig = { origin, network: "testnet" as const, secure: true };
 const app = buildApi(async () => {}, {
   pool,
-  config: { origin, network: "testnet", secure: true },
+  config: authConfig,
   verifyKey: async () => {
     if (keyUnavailable) throw new Error("provider secret must never escape");
     return keyAllowed;
@@ -96,6 +97,7 @@ beforeAll(async () => {
   await app.ready();
 });
 beforeEach(async () => {
+  authConfig.origin = origin;
   keyAllowed = true;
   keyUnavailable = false;
   await pool.query(
@@ -401,4 +403,31 @@ it("rotates existing sessions and denies a different signing key", async () => {
       })
     ).statusCode,
   ).toBe(200);
+});
+
+it("invalidates challenges and sessions issued for a previous configured origin", async () => {
+  const headers = await login();
+  const input = await proof();
+  authConfig.origin = "https://app.example.test:8443";
+  const changedHeaders = { ...input.headers, origin: authConfig.origin };
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/api/auth/verify",
+        ...input,
+        headers: changedHeaders,
+      })
+    ).statusCode,
+  ).toBe(401);
+  expect(
+    (await app.inject({ url: "/api/auth/session", headers })).statusCode,
+  ).toBe(401);
+  expect(
+    (
+      await pool.query("SELECT consumed_at FROM auth_challenges WHERE id=$1", [
+        input.payload.challengeId,
+      ])
+    ).rows[0].consumed_at,
+  ).toBeNull();
 });

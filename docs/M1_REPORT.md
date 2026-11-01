@@ -1,9 +1,9 @@
 # M1 — identity, organizations and agent access
 
-**Assessment:** implementation is ready for local review; final M1 acceptance is
+**Assessment:** implementation is prepared for draft GitHub review; final M1 acceptance is
 not claimed. Automated checks below pass. Human real-wallet desktop/mobile
 compatibility, independent security review and hosted CI remain outstanding.
-**Branch:** `feat/m1-identity-access`, local only.
+**Branch:** `feat/m1-identity-access`; owner authorized push and a draft PR to `staging`.
 **Baseline:** M0 merge `84ffd209d767660d0cae5c369aa2aa52a54148e8`.
 **Verification date:** November 1, 2026, after the official UTC start.
 
@@ -48,7 +48,7 @@ Final local runs completed with exit code 0 unless a limitation is explicitly no
 | Command/check | Result |
 | --- | --- |
 | `pnpm check` | Lint, TypeScript, 19 unit + 4 integration + 13 adversarial tests pass; all original M0 tests retained |
-| `pnpm test:identity-db` | 13 tests pass against real local PostgreSQL in isolated temporary schemas |
+| `pnpm test:identity-db` | 14 tests pass against real local PostgreSQL in isolated temporary schemas |
 | `pnpm build` | Next production build (`/`, `/workspace`) and TypeScript pass |
 | `pnpm test:e2e` | 6 Chromium tests pass, including M0 and mobile M1, service errors, org/agent lifecycle, viewer denial, loading/session expiry |
 | `cargo fmt --all -- --check` | Pass |
@@ -103,9 +103,10 @@ cancellation propagation.
    full-access Ed25519 wallet on desktop and mobile, including popup behavior.
    No transaction is required. Native mobile bridge is intentionally disabled;
    the responsive UI/browser tests do not establish native-wallet compatibility.
-2. Hosted GitHub Actions has not run for M1 because work remains local. Independent
-   security review and required branch checks are still needed before acceptance.
-   No PR, push, merge, deployment or visibility change was performed.
+2. Hosted GitHub Actions must pass on the draft PR head; consult the PR checks
+   for authoritative results (local evidence is not hosted CI evidence). Independent
+   security review and required branch checks remain needed before acceptance.
+   Push/draft PR are authorized; merge, deployment and visibility changes are not.
 3. Finalized RPC remains a trusted identity-state source. Revoked keys may retain
    an existing application session until its maximum 15-minute expiry. App sessions
    cannot exercise financial authority. Multi-provider/light-client verification
@@ -126,6 +127,76 @@ cancellation propagation.
 
 Review D012, identity routes, migration constraints and negative-test evidence.
 Perform the human wallet compatibility check; address any failures without
-substituting transactions or restricted keys. After owner review authorizes push,
-run hosted CI and open a PR against staging. Do not merge/deploy until review gates
+substituting transactions or restricted keys. The owner authorized push and a draft PR against staging;
+inspect hosted CI on the final PR head. Do not merge/deploy until review gates
 pass. M2 wallet-signed mandate consent remains separate from application login.
+
+
+## Pre-PR security review of 4a1b15a (2026-11-01)
+
+Reviewed all 34 changed paths against staging, canonical security boundaries and
+all seven project skills. No financial implementation, tracked environment secret,
+generated build output or node_modules was added. Direct dependencies and lockfile
+are intentional; install scripts remain disabled. No non-registry tarball/git/file
+resolutions were added. Secret scanning includes the reviewable untracked tree.
+
+Found and fixed an origin-configuration-change defect: a still-valid challenge
+signed for a prior configured origin could authenticate after the origin changed;
+existing sessions also lacked current-origin revalidation. A regression first
+failed (HTTP 200 instead of 401). Verification now rejects a stored recipient that
+differs from current PUBLIC_ORIGIN or a nonempty callback; session lookup requires
+a challenge for the current origin and absent callback. The test now passes and
+confirms no nonce consumption. This tightens the approved binding, not authority.
+
+Final local review suite: 50 TypeScript/API/database tests (19 unit, 4 integration,
+13 adversarial, 14 PostgreSQL), 6 browser tests, Rust format/Clippy/test, Wasm,
+production builds, workflow validation, secret scan, container isolation and
+PostgreSQL/outage checks. Results remain distinct from manual wallet evidence.
+
+## Exact manual wallet acceptance checklist (not yet executed)
+
+Use existing unfunded/testnet identities in a human-controlled wallet; never paste
+private keys into the app, logs, report or test runner. Record browser/OS, wallet
+version, network, public account/key, UTC time and pass/fail only. Do not retain
+cookies, CSRF tokens or reusable proof material in review artifacts. No account
+creation, AddKey/DeleteKey, transaction signing or funding is required/authorized.
+
+1. **Desktop success:** open the configured origin `/workspace`; enter an existing
+   testnet account with active full-access Ed25519 key. Confirm the popup shows
+   message signing only, correct account, testnet, exact origin/recipient, unique
+   challenge and expiry. Sign; expect the same account/network in the session,
+   organization access, and no transaction/access-key approval prompt.
+2. **Cancel / blocked popup:** cancel the message and separately block the popup.
+   Expect no new authenticated session or success notice; allow popup and retry
+   with a fresh challenge. Record the actual wallet error and recovery UX.
+3. **Account substitution:** request a challenge for account A but choose account B
+   in the wallet. Expect denial and no session for either new proof.
+4. **Network substitution:** while app is configured for testnet, select a mainnet
+   identity/network in the wallet. Expect wallet refusal or API rejection, never
+   a testnet session authorized using mainnet-only key state. Do not transact.
+5. **Restricted / missing key:** with a pre-existing function-call-only key fixture,
+   expect wallet refusal to sign or API 401 if a proof can be produced. A key absent
+   from finalized account state must also fail. If no such fixture is available,
+   mark this manual case pending; automated cases already cover both. Do not add,
+   remove or import keys to satisfy this checklist without separate approval.
+6. **Challenge expiry:** leave a fresh prompt open beyond five minutes, then sign.
+   Expect rejection and a fresh-login requirement, not an issued session.
+7. **Replay / browser binding:** using browser devtools locally, resend a successful
+   verification once; expect 401, no second session. Repeat a pending proof in a
+   separate browser context without its preauthentication cookie; expect rejection.
+8. **Logout / expiry:** sign in, logout and refresh; session endpoint must return
+   401. Sign in again, wait beyond 15 minutes without refreshing the session's age;
+   UI and privileged mutation must require login again. Check HttpOnly/SameSite and
+   Secure/__Host- attributes on an owner-provided HTTPS development origin.
+9. **Mobile:** repeat success, cancellation, popup recovery, logout and organization/
+   agent workflows on actual iOS Safari and Android Chrome using an owner-provided
+   HTTPS development origin reachable by the device. Check wallet return behavior,
+   readability and no horizontal overflow. Native bridge remains disabled; record
+   unsupported wallet/browser combinations as blockers, not passed simulations.
+10. **App-only agent disable:** create an org and agent record, disable it and reload;
+    it stays disabled. Confirm UI claims no onchain revocation and requests no wallet
+    transaction. Verify a second wallet cannot access that org without membership.
+
+Independent security review must separately assess protocol binding, cryptography,
+RPC trust, session/CSRF and tenant access code, SDK dependency exposure, and the
+operational limitations above. This agent's review is not independent assurance.

@@ -101,3 +101,8 @@ of service between users. Production needs a reviewed ingress/IP policy and
 retention/cleanup for expired identity/rate/audit data, not blind trust in headers.
 No session, role, agent record, backend approval or DB write grants financial
 permissions. Contract, worker and verifier authority remain unchanged.
+
+M1 pre-PR review additionally binds session lookup and pending proof verification
+to the current configured origin. Changing PUBLIC_ORIGIN invalidates prior-origin
+challenges/sessions; the M1 popup protocol rejects nonempty callback URLs. A failing
+PostgreSQL regression demonstrated the prior gap and now passes.

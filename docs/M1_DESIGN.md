@@ -23,6 +23,7 @@ wallet; no private key is accepted by the API.
 ## Implemented protocol and boundaries
 
 - Server-selected network; account ID included in the exact challenge message.
+- Changing the configured origin invalidates prior-origin challenges and sessions.
 - NEP-413 tag/Borsh/SHA-256/Ed25519 verification; bind recipient, origin, callback,
   account, network, challenge ID and expiration. 32 random nonce bytes, 5-minute TTL.
 - HttpOnly preauthentication cookie binds the challenge to the initiating browser.

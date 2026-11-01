@@ -165,8 +165,8 @@ export async function identityRoutes(
   ): Promise<Session> {
     const token = tokenOf(request);
     const result = await db.query(
-      `SELECT account_id,network,expires_at,csrf_hash FROM auth_sessions WHERE token_hash=$1 AND network=$2 AND revoked_at IS NULL AND expires_at>clock_timestamp() ${mutation ? "FOR SHARE" : ""}`,
-      [hash(token), config.network],
+      `SELECT account_id,network,expires_at,csrf_hash FROM auth_sessions WHERE token_hash=$1 AND network=$2 AND challenge_id IN (SELECT id FROM auth_challenges WHERE recipient=$3 AND callback_url='') AND revoked_at IS NULL AND expires_at>clock_timestamp() ${mutation ? "FOR SHARE" : ""}`,
+      [hash(token), config.network, config.origin],
     );
     const value = result.rows[0] as Session | undefined;
     if (!value) return deny(401, "SESSION_REQUIRED");
@@ -255,6 +255,8 @@ export async function identityRoutes(
     const challenge = result.rows[0];
     if (
       !challenge ||
+      challenge.recipient !== config.origin ||
+      challenge.callback_url !== "" ||
       !verifyMessage(challenge, input.publicKey, input.signature)
     )
       deny(401, "INVALID_PROOF");
