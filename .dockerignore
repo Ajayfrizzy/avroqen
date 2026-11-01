@@ -21,3 +21,5 @@ test-results
 **/*.key
 .near-credentials
 **/.near-credentials
+.local
+**/.local

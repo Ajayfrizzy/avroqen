@@ -1,0 +1,90 @@
+# M1 identity design review
+
+M0 baseline: `84ffd209d767660d0cae5c369aa2aa52a54148e8`.
+Branch: `feat/m1-identity-access`. No custody code changes are in scope.
+
+## Approved identity decision
+
+Owner-approved: NEP-413 offchain message signing with an active full-access Ed25519
+key, verified against finalized access-key state on the server-selected network.
+Restricted function-call keys must not authenticate as wallet owners: a compromised
+agent key could otherwise impersonate its account. The official NEP-413 standard
+requires full-access keys and separates its signed payload from transactions.
+
+Alternative: restricted keys could represent separately scoped application
+identities, but would require a new explicit permission mapping and must never
+inherit wallet-owner identity. This alternative is not the proposed M1 login.
+
+Owner explicitly approved full-access-key verification before implementation of
+the dependent verification/session issuance path. Neither a signature nor an application role
+will authorize an onchain transfer or policy change. Signing stays in the user's
+wallet; no private key is accepted by the API.
+
+## Implemented protocol and boundaries
+
+- Server-selected network; account ID included in the exact challenge message.
+- Changing the configured origin invalidates prior-origin challenges and sessions.
+- NEP-413 tag/Borsh/SHA-256/Ed25519 verification; bind recipient, origin, callback,
+  account, network, challenge ID and expiration. 32 random nonce bytes, 5-minute TTL.
+- HttpOnly preauthentication cookie binds the challenge to the initiating browser.
+  A successful signature from another browser must fail, preventing login CSRF.
+- Consume nonce and insert session in one PostgreSQL transaction with a conditional
+  update; simultaneous successful submissions can create at most one session.
+- Opaque random sessions, hashes stored in DB, 15-minute absolute expiry, server-side
+  logout/revocation. Production cookies Secure/HttpOnly/SameSite, no Domain.
+- Exact configured request origin and CSRF token required for session mutations;
+  reject absent/mismatched Origin. Local HTTP exception restricted to loopback.
+- Membership lookup on every organization operation, scoped by account and network.
+  App owner/admin may manage agents; active members/viewers can read. Client roles,
+  ownership fields and arbitrary extra properties are rejected. Org creator becomes
+  app owner, which does not imply onchain ownership. No role-edit API is implied.
+- Registered agents are organization-scoped records, not credentials or executors.
+  Disabling is idempotent and does not claim to revoke existing onchain permissions.
+- Audit fixed event/reason codes and public identifiers only; never signatures,
+  cookies, CSRF tokens, raw request bodies or database connection details.
+- Fail closed on RPC/DB errors. RPC trust remains an explicit assumption, and session
+  lifetime bounds stale wallet-key authorization between login and expiration.
+
+## Acceptance test coverage
+
+Cryptographic vectors; forged/expired/replayed/account/network/origin-mismatched
+signatures; missing/revoked/restricted access keys; concurrent nonce consumption;
+login CSRF; session expiry/logout; missing or wrong CSRF and origin; unauthorized,
+disabled and cross-organization identities; role injection/escalation; agent
+registration/list/disable; actual PostgreSQL migrations/transactions; responsive UI
+loading/error/empty/unauthorized states; all existing M0 checks.
+
+## Wallet compatibility investigation
+
+Read official NEP-413 source and MyNearWallet message-signing implementation.
+MyNearWallet's current source invokes a sunset capability guard for dapp signing;
+its availability must be verified before selecting it as the production connector.
+Do not invent a wallet API, fall back to transaction signing, create function-call
+keys, or silently treat a simulated signature/RPC lookup as live wallet evidence.
+
+Sources:
+- https://github.com/near/NEPs/blob/master/neps/nep-0413.md
+- https://github.com/mynearwallet/my-near-wallet/blob/master/packages/frontend/src/routes/SignMessageWrapper.js
+- https://github.com/mynearwallet/my-near-wallet/blob/master/packages/frontend/src/redux/slices/signMessage/index.js
+
+
+## Implemented connector and verification limits
+
+Meteor SDK 3.24.1 provides the message-only action. The app passes the server's
+message/nonce/recipient without callbackUrl (Borsh Option=None; stored callback
+field is empty). No transaction, access-key creation, transfer account or private
+key import action is requested. Connector logging is disabled, and a pinned pnpm
+patch removes two unconditional V1 console calls that bypassed that setting and exposed connection/proof data.
+The patch changes logging only in both SDK entrypoints; metadata is in
+memory, and any attempt to obtain/store a private key through its key-store
+provider throws. The mobile bridge is disabled rather than enabling key-transfer
+features. Responsive UI is tested; the owner has confirmed desktop Meteor
+login/cancel/retry. The owner also confirmed Android login, cancellation/retry,
+logout, persistence, second-wallet read isolation and remote DevTools TLS/session
+cookie attributes. iOS is explicitly deferred. Remaining negative compatibility
+cases and independent review are documented separately. See D012 and M1_REPORT.md for test evidence and limitations.
+
+Sources: https://github.com/near/wallet-selector/blob/main/packages/meteor-wallet/src/lib/meteor-wallet.ts
+and the published @meteorwallet/sdk 3.24.1 README/types/source. Dependency code is
+not trusted to grant app authority: the backend verifies every proof and active
+full-access key independently of the connector response.

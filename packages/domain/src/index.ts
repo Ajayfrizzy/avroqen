@@ -46,3 +46,28 @@ export function readApiConfig(env: Record<string, string | undefined>) {
   if (!result.success) throw new Error("Invalid API configuration");
   return result.data;
 }
+
+export const nearAccount = z
+  .string()
+  .min(2)
+  .max(64)
+  .regex(/^(([a-z0-9]+[-_])*[a-z0-9]+\.)*([a-z0-9]+[-_])*[a-z0-9]+$/);
+export const identityNetwork = z.enum(["testnet", "mainnet"]);
+export const challengeInput = z.strictObject({
+  accountId: nearAccount,
+  network: identityNetwork,
+});
+export const verifyInput = challengeInput.extend({
+  challengeId: z.uuid(),
+  publicKey: z.string().max(64),
+  signature: z.string().max(100),
+});
+export const organizationInput = z.strictObject({
+  name: z.string().trim().min(1).max(80),
+});
+export const agentInput = organizationInput.extend({ accountId: nearAccount });
+export const organizationParams = z.strictObject({ orgId: z.uuid() });
+export const agentParams = organizationParams.extend({ agentId: z.uuid() });
+export const listInput = z.strictObject({
+  offset: z.coerce.number().int().min(0).max(100000).default(0),
+});

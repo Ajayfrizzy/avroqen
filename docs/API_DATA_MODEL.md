@@ -29,3 +29,22 @@ Zod schemas shared between API and client; `amount_atomic` always decimal string
 
 ## Async projections
 Workers record cursor/block height and event uniqueness; rebuild from canonical chain state on reorg or missing events; chain finality status displayed. Exactly-once business effects through idempotent handlers, not assumed exactly-once message delivery.
+
+## M1 implemented application identity API
+
+The M1 application API uses same-origin `/api` routes; financial `/v1` sketches
+above remain unimplemented. See D012 for the owner-approved identity policy.
+
+- `GET /api/auth/config`, `POST /api/auth/challenge`, `POST /api/auth/verify`:
+  server-selected network and NEP-413 full-access-key wallet login.
+- `GET /api/auth/session`, `POST /api/auth/logout`: opaque session lifecycle.
+- `GET/POST /api/organizations`: active memberships / create app organization.
+- `GET/POST /api/organizations/:orgId/agents`: list/register app identity records.
+- `POST /api/organizations/:orgId/agents/:agentId/disable`: app record disable.
+
+All writes require exact Origin; session writes additionally require CSRF token.
+Organization IDs are selectors, never authorization. Active network/account
+membership is checked at each org boundary. Owner/admin can register/disable;
+member/viewer can read. No API can edit roles or grant onchain ownership. Lists
+return up to 50 records and a nullable `nextOffset` (offset bounded to 100000).
+Agent disabling does not revoke onchain permissions or claim to do so.

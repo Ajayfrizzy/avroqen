@@ -37,6 +37,7 @@ jobs:
       - run: docker compose up --build -d --wait
       - run: pnpm test:containers
       - run: pnpm test:database
+      - run: pnpm test:identity-db
       - run: pnpm test:smoke
       - name: Database outage must fail readiness, not liveness
         run: |

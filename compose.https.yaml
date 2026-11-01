@@ -1,0 +1,7 @@
+# Private USB/loopback acceptance only. Run alongside compose.yaml.
+services:
+  api:
+    environment:
+      PUBLIC_ORIGIN: https://127.0.0.1:8443
+      AUTH_ALLOW_INSECURE_LOCALHOST: "false"
+      NEAR_NETWORK: testnet

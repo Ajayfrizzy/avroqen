@@ -17,6 +17,22 @@ services:
       timeout: 3s
       retries: 20
     security_opt: [no-new-privileges:true]
+  migrate:
+    build:
+      context: .
+      target: api
+    command: [node, --import, tsx, scripts/migrate.ts]
+    environment:
+      PGHOST: database
+      PGPORT: 5432
+      PGUSER: ${PGUSER:?Run pnpm setup:env}
+      PGPASSWORD: ${PGPASSWORD:?Run pnpm setup:env}
+      PGDATABASE: ${PGDATABASE:?Run pnpm setup:env}
+    depends_on:
+      database:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
   api:
     build:
       context: .
@@ -24,6 +40,9 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: 3001
+      PUBLIC_ORIGIN: http://127.0.0.1:3000
+      AUTH_ALLOW_INSECURE_LOCALHOST: "true"
+      NEAR_NETWORK: testnet
       PGHOST: database
       PGPORT: 5432
       PGUSER: ${PGUSER:?Run pnpm setup:env}
@@ -31,6 +50,8 @@ services:
       PGDATABASE: ${PGDATABASE:?Run pnpm setup:env}
     ports: ["127.0.0.1:3001:3001"]
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       database:
         condition: service_healthy
     healthcheck:

@@ -23,6 +23,7 @@ const boundaries = [
 export default function Home() {
   return (
     <main>
+      <a href="/workspace">Open identity workspace</a>
       <header>
         <span className="brand">
           Avroqen<span className="dot">.</span>

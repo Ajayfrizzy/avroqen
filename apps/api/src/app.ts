@@ -1,5 +1,9 @@
 import Fastify from "fastify";
-export function buildApi(checkDatabase: () => Promise<void>) {
+import { type IdentityOptions, identityRoutes } from "./identity/routes.js";
+export function buildApi(
+  checkDatabase: () => Promise<void>,
+  identity?: IdentityOptions,
+) {
   const app = Fastify({
     logger: false,
     bodyLimit: 16384,
@@ -18,5 +22,6 @@ export function buildApi(checkDatabase: () => Promise<void>) {
       return reply.code(503).send({ status: "unavailable" });
     }
   });
+  if (identity) app.register(async (scope) => identityRoutes(scope, identity));
   return app;
 }

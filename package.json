@@ -26,17 +26,32 @@
     "test:secrets": "node scripts/scan-secrets.mjs",
     "test:wasm": "node scripts/check-wasm.mjs",
     "test:workflow": "node scripts/check-workflow.mjs",
-    "test:containers": "node scripts/check-containers.mjs"
+    "test:containers": "node scripts/check-containers.mjs",
+    "db:migrate": "node --env-file=.env --import tsx scripts/migrate.ts",
+    "test:identity-db": "node --env-file=.env node_modules/vitest/vitest.mjs run tests/database",
+    "setup:https": "node --import tsx scripts/setup-local-https.ts",
+    "dev:https": "node --import tsx scripts/local-https-proxy.ts",
+    "test:https": "node --import tsx scripts/check-local-https.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
     "@playwright/test": "1.64.1",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
+    "borsh": "2.0.0",
+    "bs58": "6.0.0",
+    "pg": "8.23.1",
     "tsx": "4.23.15",
     "typescript": "7.0.2",
-    "vitest": "5.0.5",
-    "pg": "8.23.1"
+    "vitest": "5.0.5"
   },
-  "type": "module"
+  "type": "module",
+  "pnpm": {
+    "overrides": {
+      "@tanstack/react-query": "5.101.2"
+    },
+    "patchedDependencies": {
+      "@meteorwallet/sdk@3.24.1": "patches/@meteorwallet__sdk@3.24.1.patch"
+    }
+  }
 }
