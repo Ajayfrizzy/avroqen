@@ -67,8 +67,9 @@ separately if the owner does not already have a suitable account.
    no invented account, faucet or privileged key. Read-only inspection verifies it.
    The dedicated contract account must differ from mandate owner, agent and recipient.
 2. Decide key governance. No Rust upgrade method exists, but a retained full-access
-   deployment key can redeploy/delete the contract externally. Removing keys can be
-   irreversible and requires a separate reviewed ceremony; do not claim immutability.
+   deployment key can transfer native funds directly, add keys, redeploy code or
+   delete the contract externally, bypassing every Rust role and accounting guard.
+   Removing keys can be irreversible and requires a separate reviewed ceremony; do not claim immutability.
 3. Approve the exact code hash, initialization `{ "network": "testnet" }`, actual
    network, owner/agent/verifier/recipient accounts, optional stop-only guardian,
    canonical policy/digest, deposits, method gas and total ceiling. Owner must be
