@@ -193,3 +193,133 @@ footer {
 .workspace .agents p {
   margin: 8px 0;
 }
+.mandates-workspace .eyebrow {
+  margin-top: 40px;
+}
+.mandates-workspace h1 {
+  max-width: 850px;
+}
+.mandates-workspace aside {
+  max-width: none;
+}
+.section-heading,
+.mandate-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.section-heading .eyebrow {
+  margin: 0;
+}
+.mandate-list {
+  list-style: none;
+  padding: 0;
+}
+.workspace .mandate-list li {
+  border-top: 1px solid #dce3db;
+  padding: 20px 0;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+.mandate-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.workspace .secondary {
+  background: #fff;
+  color: #245b49;
+}
+.policy-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  border-top: 1px solid #dce3db;
+  padding-top: 24px;
+}
+.policy-grid dt {
+  font-size: 13px;
+  color: #4f6265;
+}
+.policy-grid dd {
+  margin: 8px 0 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.policy-grid small {
+  display: block;
+  margin-top: 5px;
+  font-weight: 400;
+}
+.policy-review pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.workspace .check-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  line-height: 1.5;
+  font-weight: 400;
+  margin: 16px 0;
+}
+.workspace .check-label input {
+  width: 20px;
+  min-height: 24px;
+  flex-shrink: 0;
+}
+.workspace fieldset {
+  min-width: 0;
+  border: 1px solid #cdd4cb;
+  padding: 16px;
+  border-radius: 8px;
+}
+.consent-notice {
+  background: #e9eee6;
+  padding: 16px;
+  line-height: 1.6;
+}
+.consent-review > button {
+  margin: 8px 12px 8px 0;
+}
+@media (max-width: 650px) {
+  .policy-grid {
+    grid-template-columns: 1fr;
+  }
+  .mandate-actions {
+    width: 100%;
+  }
+  .mandate-status {
+    align-items: flex-start;
+  }
+}
+/* Feedback without motion; scroll/focus also works with reduced motion. */
+.workspace button:not(:disabled):hover {
+  background: #183f33;
+  border-color: #183f33;
+}
+.workspace button:not(:disabled):active {
+  background: #102d24;
+  box-shadow: inset 0 2px 4px #0004;
+}
+.workspace button:focus-visible {
+  outline: 3px solid #bd7426;
+  outline-offset: 4px;
+}
+.workspace button:disabled {
+  opacity: 0.7;
+  box-shadow: none;
+}
+.workspace h2[tabindex="-1"] {
+  scroll-margin-top: 24px;
+}
+.workspace h2[tabindex="-1"]:focus {
+  outline: 2px solid #397b66;
+  outline-offset: 6px;
+}

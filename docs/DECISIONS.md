@@ -148,3 +148,35 @@ manual negative-wallet gaps and deferred iOS remain explicit. This scopes M1
 integration only, not production security approval or a waiver of TEST_PLAN release
 review, M2+ financial gates, or canonical authority boundaries. Final merge requires
 the owner's authorization. No runtime security policy changes.
+
+## D013 — M2 offchain consent and verifier policy (owner-approved, 2026-11-01)
+
+The owner explicitly approved all three proposals: offchain-only M2 signatures,
+explicit quorum/claim bindings, and per-claim quorum plus distinct owner approval.
+NEP-413 plus finalized active FullAccess Ed25519 verification is required for both
+consent approval and revocation. Sign complete immutable policy, exact owner/org/
+network/intended vault/mandate/version/action/origin, random single-use nonce and
+five-minute expiry, bound to the initiating authenticated session. An intended
+vault account is explicit and unverified; M3 needs fresh owner-signed onchain
+authorization. No session, DB record or M2 message grants custody authority.
+
+O02 is resolved for M2: explicit unique verifier accounts and threshold apply to
+each selected third-party claim. `requireOwnerApproval` separately binds the actual
+mandate owner's per-payment attestation requirement; neither M2 consent nor an
+arbitrary verifier's claim counts as that approval. No empty verifier policy or AI
+evidence default. M5 evidence enforcement remains unimplemented and mandatory.
+
+Snapshots use schemaVersion=1/policyVersion=1, exact u128 decimal atomic strings,
+u64 nanosecond expiry and u32 execution limits. Each independent mandate gets a
+new UUID; corrections require a new mandate and fresh consent, never editing a
+signed record. No cross-mandate revision lineage is inferred. Owner-only creation
+and same-wallet approval/revocation reuse live membership, session and CSRF guards.
+SQL policy/event guards prohibit ordinary UPDATE/DELETE; a privileged DB operator
+can bypass guards and remains untrusted for custody. Consent verification records
+contain no raw signatures and are not portable, independently verifiable proofs.
+
+Revocation is terminal offchain and remains possible after expiry or agent disable.
+Onchain status stays NOT_SUBMITTED, with no invented receipt or transfer. Reserved+
+successful execution accounting, per-claim attestations, dispute blocking, actual
+revocation inclusion and owner authorization remain obligations for M3/M5, not M2
+claims. No financial/security invariant is waived. See M2_DESIGN and M2_REPORT.

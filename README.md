@@ -145,3 +145,17 @@ tenant tests. `pnpm test:e2e` includes labeled API simulations for mobile/UI sta
 it does not claim live wallet signatures. A manual wallet compatibility check and
 hosted CI review remain required. No funds, faucets or paid infrastructure are
 needed. No credentials or private keys should be pasted into the application.
+
+## M2 typed mandate preparation
+
+After signing in and selecting an organization, use **Create and review typed
+mandates**, or open `/workspace/mandates`. An organization owner selects an active
+agent, explicit intended vault and recipient, exact NEAR limits, UTC expiration,
+execution cap and verifier policy. Save the immutable draft, review readable and
+atomic terms, then sign an offchain consent message. Corrections require a new
+mandate. Revocation requires another owner wallet message and affects app consent
+only; no onchain mandate or payment is created. The vault identifier is unverified.
+
+Run `pnpm test:identity-db` for real SQL/crypto consent tests and `pnpm test:e2e` for
+browser fixtures. See docs/M2_REPORT.md for actual results and pending real-wallet
+acceptance. M2 consent must never substitute for M3 wallet-signed onchain actions.
