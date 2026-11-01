@@ -148,3 +148,11 @@ manual negative-wallet gaps and deferred iOS remain explicit. This scopes M1
 integration only, not production security approval or a waiver of TEST_PLAN release
 review, M2+ financial gates, or canonical authority boundaries. Final merge requires
 the owner's authorization. No runtime security policy changes.
+
+## D013 — M2 consent and verifier policy (PROPOSED; awaiting owner)
+
+See M2_DESIGN.md for the reviewable proposal and alternatives. Fresh NEP-413
+signatures would authorize only offchain consent approval/revocation, never
+MandateVault calls. O02 quorum/owner co-approval semantics must be resolved before
+runtime encoding. The request for owner decisions is pending; no approval is
+inferred from the prior M1 login policy. All canonical financial invariants remain.
