@@ -55,3 +55,16 @@ RPC, then consumes challenge, changes consent and appends event in one transacti
 SQL locks order session -> membership -> consent -> agent; no RPC under SQL locks.
 No record is an onchain mandate or portable signature certificate. M3 must obtain
 new wallet-signed onchain authorization. See D013 and M2_DESIGN.md.
+
+## M3 native NEAR vault
+
+Rust owns the immutable policy, per-owner/mandate allocation and storage subledgers,
+proposal/proof records and pending obligations. Agent proposes; selected verifier
+attests; owner alone executes. Private callbacks consume actual runtime results.
+No worker/API/private wallet key is involved. Local sandbox tests exercise compiled
+Wasm, real native transfer receipts and actual recipient balances. This is not a
+public deployment. `packages/domain/src/vault.ts` provides typed registration,
+evidence and read boundaries; the web UI explicitly shows onchain services and
+balances unavailable. No transaction adapter or backend custody signer is enabled.
+The M2 consent flow remains offchain. M4 agent runtime, M5 independent evidence
+acquisition and M6 indexer/reconciliation remain separate milestones.

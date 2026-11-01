@@ -195,3 +195,5 @@ export type MandateView = {
   expired: boolean;
   agentDisabled: boolean;
 };
+
+export * from "./vault";

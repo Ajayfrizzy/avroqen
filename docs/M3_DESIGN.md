@@ -1,6 +1,6 @@
-# M3 MandateVault — security design for owner decision
+# M3 MandateVault — approved security design
 
-Status: proposed, not owner-approved and not implemented. M2 baseline is
+Status: packages A, B and C explicitly approved by the owner; implementation in progress. M2 baseline is
 `193ed2da6f14cd613fd1799752c37ac76c87e848`; branch `feat/m3-mandate-vault`.
 This document does not authorize deployment, public-network transactions or spending.
 
@@ -13,7 +13,7 @@ org role, M2 approval and NEP-413 message never authorize custody. All S01–S20
 contract-relevant cases require actual Rust/Wasm/sandbox evidence. M5 supplies
 independent evidence acquisition; M3 checks its narrow onchain attestations.
 
-## Decision A — custody attribution and storage (recommended proposal)
+## Approved A — custody attribution and storage
 
 Use direct owner funding into a specific registered mandate. Do not introduce an
 unallocated deposit pool in v1: an attached deposit to fund_mandate is attributed
@@ -48,7 +48,7 @@ not necessary for the mandated owner+mandate funding flow. Alternative: contract
 sponsors all storage. Rejected as a storage-drain risk unless tightly funded and
 bounded under a separate explicit policy.
 
-## Decision B — authority, domain and execution caller (recommended proposal)
+## Approved B — authority, domain and execution caller
 
 Use direct-call authority for initial owner and verifier controls: require
 predecessor == signer and expected owner/verifier. This deliberately excludes
@@ -90,7 +90,7 @@ an admin setter. Contract account full-access deployment keys can redeploy code
 outside Rust methods: immutability cannot be claimed until an explicitly approved
 key-removal/governance ceremony is completed. No such ceremony is authorized now.
 
-## Decision C — failed execution and unresolved obligations (recommended proposal)
+## Approved C — failed execution and unresolved obligations
 
 Each proposal has one immutable ID and at most one execution attempt. Execution
 reserves amount and one execution slot before dispatch. Success moves reserved to
@@ -150,7 +150,7 @@ Resolving a dispute needs a new proposal and fresh proofs, not a backend overrid
 Owner can stop a compromised verifier's mandate by pause/revoke; changing verifier
 identities requires a new immutable policy. Verifiers cannot self-register.
 
-## Implementation and testing plan after decisions
+## Implementation and testing
 
 Retain near-sdk 5.30.0 scaffold/workspace conventions. Split policy, state/accounting,
 authority, execution and tests into reviewable modules. Add exact pinned sandbox
@@ -171,3 +171,27 @@ Integration initially exposes typed interfaces and NOT_DEPLOYED/unavailable stat
 No backend transaction signer or wallet auto-send. Actual testnet connection and
 transaction consent are a later explicitly authorized action. Public-chain indexer
 reconciliation remains M6; onchain outcome views and truthful pending statuses are M3.
+
+
+## Implemented bounds and accounting details
+
+See CONTRACT_SPEC.md for the exact exported methods, record/gas limits and amount
+representations, and M3_REPORT.md for actual evidence. The 0.1 NEAR protocol reserve
+is a fixed nonwithdrawable minimum, not a dynamically estimated gas guarantee.
+Callers prepay execution gas. Callback records use fixed-width outcome/accounting
+updates; no new storage is allocated during settlement. Available owner withdrawal
+records use separate owner credit, never the agent/verifier allowance. Record
+storage remains locked indefinitely. Initial code/root state is deployment-funded.
+
+Attestations are one per signer+claim+proposal; expired proofs cannot be refreshed
+in-place. A new proposal and fresh nonces are required. The approved bounds can
+exhaust lifetime proposal capacity; recovery is owner withdrawal and new mandate,
+not history deletion. Known UUIDs can be preemptively registered by another owner:
+this cannot redirect the authentic owner's funds, but can deny that ID. Clients
+must check exact owner/policy and create a fresh UUID on collision. No app tenant
+metadata is asserted to be independently authenticated by the chain.
+
+Structured registration/status/dispatch/settlement events and persistent views
+support later indexing. M6 must check receipt success and finalized state, not
+interpret a log line or an RPC timeout as settlement. Direct native host calls
+limit the Wasm capability surface to transfer plus a private self-callback.

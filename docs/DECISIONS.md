@@ -181,10 +181,28 @@ successful execution accounting, per-claim attestations, dispute blocking, actua
 revocation inclusion and owner authorization remain obligations for M3/M5, not M2
 claims. No financial/security invariant is waived. See M2_DESIGN and M2_REPORT.
 
-## D014 — M3 financial protocol (PROPOSED, awaiting owner decision)
+## D014 — M3 financial protocol (owner-approved, 2026-11-01)
 
 M3_DESIGN.md records recommended custody/storage, caller/domain/guardian and
 failure/recovery packages with alternatives. These settle substantive ambiguities
 left by CONTRACT_SPEC; none are inferred from M2 offchain-consent approval.
-No financial operations are implemented before the decisions. No deployment,
+Financial implementation began only after those decisions. No deployment,
 public-network transaction, privileged key creation or token spend is authorized.
+
+Owner explicitly approved all three M3 packages: direct funding/separate storage
+credit; direct authority/owner-only execution; terminal attempts/quarantined unknown
+outcomes. These authorize implementation and local sandbox verification only.
+They do not authorize public-chain deployment, keys, transactions or token spending.
+
+
+M3 implementation notes: exact NEAR atomic units and immutable policy remain
+canonical. CONTRACT_SPEC's former budget-minus-spend shorthand was replaced by
+actual deposit conservation, as required by approved direct funding. Owner
+withdrawal record storage is charged outside agent/verifier mandate allowances.
+The NEAR-target build explicitly sets `--cfg near` for near-sdk-env 0.1.8. Narrow
+host transfer/callback calls avoid linking SDK general-purpose administrative
+promise actions; an exact Wasm method/host-capability gate and mandatory real
+sandbox job now replace the M0 scaffold-only assertion. No authority boundary
+changed during this implementation. Protocol reserve 0.1 NEAR, callback 20 Tgas,
+remaining-gas minimum 60 Tgas and bounded records are documented engineering
+limits, not permissions to spend or claims of maximum-load certification.

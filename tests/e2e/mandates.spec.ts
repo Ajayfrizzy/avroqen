@@ -377,3 +377,19 @@ test("review loading disables duplicate actions and handles failure without open
     0,
   );
 });
+
+test("M3 boundary stays unavailable on a narrow screen", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await setup(page);
+  await page.goto("/workspace/mandates");
+  const region = page.getByRole("region", { name: "Onchain vault status" });
+  await expect(region.getByRole("heading")).toHaveText(
+    "Onchain vault — not deployed",
+  );
+  await expect(region).toContainText("Settlement: unavailable");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
