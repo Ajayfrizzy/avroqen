@@ -1,6 +1,6 @@
 # Avroqen — M0 foundation
 
-**Status:** Avroqen is the owner-confirmed product name. **Prior working name:** MandateFlow. **Prepared:** 2026-10-29. **Implementation:** M0 foundation implemented locally after the official start, 2026-11-01 00:00 UTC. Review and hosted CI are pending. See [the actual verification report](docs/M0_REPORT.md).
+**Status:** Avroqen is the owner-confirmed product name. **Prior working name:** MandateFlow. **Prepared:** 2026-10-29. **Implementation:** M0 foundation implemented locally after the official start, 2026-11-01 00:00 UTC. Local and hosted CI checks pass; human review and required branch-check enforcement remain pending. See [the actual verification report](docs/M0_REPORT.md).
 
 **Proposed product line (draft, not approved marketing copy):** Task-bound financial authority for autonomous agents.
 

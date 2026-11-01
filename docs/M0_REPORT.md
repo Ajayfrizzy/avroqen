@@ -1,7 +1,8 @@
 # M0 Foundation — implementation and review report
 
-**Status:** foundation implemented and locally verified; review and hosted CI
-remain pending. Do not claim final M0 acceptance or green GitHub Actions yet.
+**Status:** foundation implemented and verified locally and on GitHub Actions.
+Human review and enforced required branch checks remain outstanding; this report
+does not declare final M0 acceptance.
 **Date:** November 1, 2026 (Africa/Lagos).
 **Branch:** `feat/m0-foundation-implementation`, based on synchronized staging
 `10a5a1c20f96f965a96b3724709b04307fdf5b59`.
@@ -84,10 +85,11 @@ The Wasm host simulation is **not** a NEAR sandbox or proof of settlement.
 
 ## Security scope and remaining blockers
 
-1. **Hosted CI pending:** the milestone's green-CI acceptance evidence remains
-   outstanding until the review PR runs successfully. GitHub's branch protection
-   endpoint returned `404 Branch not protected` for staging during review. Required
-   checks are therefore not enforced by branch protection; no settings were changed.
+1. **Required-check enforcement and human review pending:** both hosted CI jobs
+   passed for the implementation commit (evidence below). GitHub's branch protection
+   endpoint returned `404 Branch not protected` for staging; effective branch rules
+   and repository rulesets were both empty. Required checks are not enforced.
+   No settings were changed; the PR remains draft and unmerged.
 2. **No custody implementation:** M1–M9 are not complete. S01–S20 financial tests,
    NEAR Workspaces sandbox settlement, testnet receipts and independent review
    remain mandatory at their milestones. This scaffold must not receive funds.
@@ -102,7 +104,7 @@ The Wasm host simulation is **not** a NEAR sandbox or proof of settlement.
 5. **Open security decisions remain open:** O02–O07 are not silently resolved.
    Any material authority/identity/ownership decision requires human review and ADR.
 6. **Platform coverage:** local tests ran on macOS ARM64 and Linux ARM64 containers.
-   The workflow targets Ubuntu amd64; execution on that hosted platform is pending.
+   Both GitHub Actions jobs also passed on Ubuntu 24.04 amd64.
 
 ## Next steps
 
@@ -124,9 +126,87 @@ Packaging fixes from review: ignore generated `next-env.d.ts`, and exclude neste
 environment/credential files and local cloud/agent configuration from Docker build
 contexts. Lockfiles are intentional reproducibility inputs; `node_modules`,
 `.next`, Rust `target`, browser results, Wasm binaries and `.env` are not committed.
-The prior test results above remain local evidence, not hosted-CI evidence.
+The table above records local evidence; hosted-CI evidence is recorded separately below.
 
 M0 acceptance checklist: workspace, environment templates, containerized bootstrap,
 pins/lockfiles and persistent instructions are implemented and locally verified;
-CI is authored but must be observed green on GitHub. Branch protection and human
-review remain unresolved. M0 is not declared complete by this report.
+both CI jobs passed on GitHub. Branch protection and human review remain unresolved.
+M0 is not declared complete by this report.
+
+## GitHub review and CI evidence
+
+- Review PR: https://github.com/Ajayfrizzy/avroqen/pull/4 (draft, targets staging).
+- Implementation commit: `59642c89796ccbf9b75c10f4c986325289b02029`.
+- Completed workflow: https://github.com/Ajayfrizzy/avroqen/actions/runs/41265593148.
+- `foundation`: **success**, completed 2026-11-01 02:34:25 UTC. Frozen installation,
+  workflow lint, secret scan, JS checks/build, Chromium, fresh Compose bootstrap,
+  isolation, real database connectivity, smoke and outage/recovery all passed.
+- `rust`: **success**, completed 2026-11-01 02:35:06 UTC. Format, Clippy, tests,
+  locked Wasm build and compiled interface/JSON boundary checks all passed.
+- Non-failing annotation: the pinned v4 actions declare Node 20 and GitHub runs
+  them under Node 24 due to deprecation. This is not a failed or waived check;
+  updating action major versions is a maintenance follow-up.
+- This evidence records the implementation revision. A subsequent documentation-only
+  commit records these results; verify its latest checks on the PR before merging.
+- Repository remains private. No merge, deployment, financial transaction or
+  branch-protection change was performed.
+
+## Changed files
+
+The reviewed change set contains 53 files (including intentional lockfiles):
+
+```text
+.dockerignore
+.env.example
+.github/workflows/ci.yml
+.gitignore
+.node-version
+.npmrc
+Cargo.lock
+Cargo.toml
+Dockerfile
+README.md
+apps/api/package.json
+apps/api/src/app.ts
+apps/api/src/index.ts
+apps/web/app/layout.tsx
+apps/web/app/page.tsx
+apps/web/app/styles.css
+apps/web/next.config.ts
+apps/web/package.json
+apps/web/tsconfig.json
+apps/worker/package.json
+apps/worker/src/index.ts
+biome.json
+compose.yaml
+contracts/mandate-vault/Cargo.toml
+contracts/mandate-vault/src/lib.rs
+docs/DECISIONS.md
+docs/M0_FOUNDATION.md
+docs/M0_REPORT.md
+package.json
+packages/agent/package.json
+packages/agent/src/index.ts
+packages/domain/package.json
+packages/domain/src/index.ts
+playwright.config.ts
+pnpm-lock.yaml
+pnpm-workspace.yaml
+rust-toolchain.toml
+scripts/check-containers.mjs
+scripts/check-database.ts
+scripts/check-outage.mjs
+scripts/check-wasm.mjs
+scripts/check-workflow.mjs
+scripts/scan-secrets.mjs
+scripts/setup-env.mjs
+scripts/smoke.mjs
+services/verifier/package.json
+services/verifier/src/index.ts
+tests/adversarial/boundaries.test.ts
+tests/e2e/foundation.spec.ts
+tests/integration/api.test.ts
+tests/unit/domain.test.ts
+tsconfig.json
+vitest.config.ts
+```
