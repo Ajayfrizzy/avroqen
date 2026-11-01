@@ -10,6 +10,7 @@ import {
 import cookie from "@fastify/cookie";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type pg from "pg";
+import { mandateRoutes } from "../mandates/routes.js";
 import type { IdentityConfig } from "./config.js";
 import { csrfFor, hash, verifyMessage } from "./crypto.js";
 import { parseVerification } from "./validation.js";
@@ -33,7 +34,7 @@ const deny = (status: number, code: string): never => {
 const secret = () => randomBytes(32).toString("hex");
 const equal = (a: string, b: string) =>
   a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
-interface Session {
+export interface Session {
   account_id: string;
   network: string;
   expires_at: Date;
@@ -446,4 +447,14 @@ export async function identityRoutes(
       });
     },
   );
+  mandateRoutes(app, {
+    pool,
+    config,
+    verifyKey,
+    deny,
+    tokenOf,
+    session,
+    membership,
+    transaction,
+  });
 }

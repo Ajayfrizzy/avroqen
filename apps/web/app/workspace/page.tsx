@@ -369,6 +369,11 @@ export default function Workspace() {
             <section className="panel">
               <h2>Agents in {org.name}</h2>
               <p>
+                <Link href={`/workspace/mandates?organization=${org.id}`}>
+                  Create and review typed mandates
+                </Link>
+              </p>
+              <p>
                 Your application role: {org.role}. Disabling a record does not
                 revoke onchain permissions; those require a separate
                 owner-signed action.

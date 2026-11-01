@@ -42,3 +42,16 @@ Indexer/worker <--- chain transactions/events/callback outcomes
 
 ## Operational plan
 Local Docker Compose Postgres/API/web, contract sandbox integration, testnet demonstration, publicly reproducible repo. No paid infra assumptions. Pin exact dependency versions during M0, verify official NEAR docs/SDK versions before implementation.
+
+## M2 offchain mandate preparation
+
+The shared domain defines canonical v1 policies. The identity plugin registers
+organization-scoped mandate routes using the existing M1 security helpers.
+`mandate_policies` holds immutable canonical JSON and its SHA-256 digest;
+`mandate_consents` records terminal offchain lifecycle; session-bound five-minute
+`mandate_challenges` protect fresh NEP-413 signing; `mandate_events` is append-only
+for ordinary UPDATE/DELETE. Verification rechecks permissions/state after finalized
+RPC, then consumes challenge, changes consent and appends event in one transaction.
+SQL locks order session -> membership -> consent -> agent; no RPC under SQL locks.
+No record is an onchain mandate or portable signature certificate. M3 must obtain
+new wallet-signed onchain authorization. See D013 and M2_DESIGN.md.

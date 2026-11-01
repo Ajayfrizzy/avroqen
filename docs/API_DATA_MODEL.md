@@ -48,3 +48,25 @@ membership is checked at each org boundary. Owner/admin can register/disable;
 member/viewer can read. No API can edit roles or grant onchain ownership. Lists
 return up to 50 records and a nullable `nextOffset` (offset bounded to 100000).
 Agent disabling does not revoke onchain permissions or claim to do so.
+
+## M2 implemented offchain consent API
+
+All routes inherit M1 exact Origin, session/CSRF, rate limit and sanitized-error
+controls. Active members may read; active org owners may create, and only the
+original owner wallet may sign approval/revocation. Admin role is not owner consent.
+
+- GET/POST `/api/organizations/:orgId/mandates`: paginated policies / immutable draft.
+- GET `/api/organizations/:orgId/mandates/:mandateId`: exact policy, digest,
+  offchain status, expiration, disabled-agent flag and up to 100 oldest event records.
+- POST `.../:mandateId/challenge`: strict `{ action }` for APPROVE_CONSENT or
+  REVOKE_CONSENT; returns the exact NEP-413 message, nonce and five-minute expiry.
+- POST `.../:mandateId/verify`: challenge/action/account/network/key/signature;
+  binds initiating session and original owner, verifies finalized FullAccess key,
+  and atomically records consent plus audit. No proof material is logged/retained
+  in audit, reports or public list/detail responses.
+
+`onchainStatus` is always NOT_SUBMITTED. No PATCH, custody, execution or payment
+endpoint is added. Changed policies need a new ID and fresh signature. SQL migration
+002 adds mandate policies, consents, challenges and append-only events without
+changing existing M1 migration history. Privileged database control is outside
+these guards and conveys no financial authority.

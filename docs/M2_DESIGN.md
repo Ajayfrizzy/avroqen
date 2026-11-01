@@ -1,7 +1,9 @@
 # M2 — typed mandates and offchain wallet consent
 
-Status: proposed security design, awaiting owner decisions. No M2 authorization
-implementation or onchain authorization is claimed. Baseline is the merged M1
+Status: owner-approved M2 design, implemented as offchain consent only.
+The owner approved all three choices: offchain NEP-413 approval/revocation, explicit
+quorum/claim bindings, and per-claim quorum plus distinct owner approval.
+No deployed or enforceable onchain authorization is claimed. Baseline is the merged M1
 commit `6c2c7431949945ddcb547fcd69a4cbe208b656b5` on staging.
 
 ## Scope and trust boundary
@@ -14,7 +16,7 @@ fabricated. M3 must obtain separate owner-signed onchain authorization and verif
 network, deployed vault, exact terms and state. No replay of an M2 signature can
 invoke an onchain operation. Agent records convey no credentials or spend rights.
 
-## Proposed canonical snapshot v1
+## Implemented canonical snapshot v1
 
 Strict objects reject unknown fields; canonical strings reject coercion. Snapshot
 creation derives owner/network/org from the authenticated and authorized server
@@ -57,7 +59,7 @@ property order an inbound object happens to have. SHA-256 identifies integrity o
 these bytes, not authority or truth. Store canonical bytes alongside the digest;
 recompute and validate before signing and verification.
 
-## Proposed verifier policy; owner decision pending (O02)
+## Approved verifier policy (O02 scoped to M2)
 
 Represent explicit unique verifier accounts, a positive threshold no larger than
 the verifier set, and explicit positive claim requirements from INVOICE_ISSUED,
@@ -65,27 +67,25 @@ SERVICE_CONFIRMED and OWNER_APPROVED. Never silently default to an empty set or
 allow AI-generated evidence. INVOICE_ISSUED is not delivery confirmation.
 DELIVERY_DISPUTED always blocks later execution rather than being a positive claim.
 
-Before implementation, resolve whether the threshold applies to each required
-claim, and whether OWNER_APPROVED requires the mandate owner's separate
-per-payment attestation in addition to third-party quorum. Recommended: threshold
-per required third-party claim; OWNER_APPROVED, when required, means the actual
-mandate owner's separate per-payment approval, not an arbitrary verifier using that
-label. The M2 consent signature is never itself a delivery/per-payment attestation.
+Owner-approved: the threshold applies to EACH required third-party claim.
+`requiredClaims` contains one or both INVOICE_ISSUED and SERVICE_CONFIRMED; the
+separate explicit boolean `requireOwnerApproval` binds OWNER_APPROVED semantics.
+When true, the actual mandate owner must separately attest to each payment in
+addition to third-party quorum. An arbitrary verifier cannot supply that approval. The M2 consent signature is never itself a delivery/per-payment attestation.
 No M5 enforcement or independent evidence verification is claimed in M2.
 
-The existing O02 asks about quorum and owner co-approval; it must not be silently
-closed by a data shape. The owner-facing design decision must settle these semantics
-before encoding them in runtime schemas. A signature binds the exact selected
+The owner explicitly resolved O02 for this M2 representation; M5 must enforce
+these semantics and still demonstrate independent evidence provenance. A signature binds the exact selected
 policy but does not prove independence or honesty of verifier accounts.
 
-## Proposed signing protocol; owner decision pending
+## Approved signing protocol
 
-Recommended: separate NEP-413 message-only signatures for `APPROVE_CONSENT` and
+Use separate NEP-413 message-only signatures for `APPROVE_CONSENT` and
 `REVOKE_CONSENT`, with fresh finalized FullAccess key verification each time.
 Reuse M1 crypto and connector; never use session authentication as the signature.
 Signed message includes an M2-specific domain/version, action, the complete
 canonical snapshot (not just a digest), snapshot digest, challenge UUID, origin,
-issued time and five-minute expiration. NEP-413 recipient is exact application
+five-minute challenge expiration. Issuance time is stored server-side. NEP-413 recipient is exact application
 origin, callback is absent, nonce is 32 cryptographically random bytes. Owner,
 network, vault, mandate/version, org, agent, recipient and all limits are inside
 the exact signed bytes. The challenge binds to the initiating session's token
@@ -93,8 +93,9 @@ hash and cannot be reused after session rotation/logout, in another browser,
 organization, action or account. Nonces/signatures/session tokens must never be
 logged, copied into reports, or retained as diagnostic payloads.
 
-Store challenge nonce/message privately for its verification window, not raw wallet
-signatures. Persist only minimized consent event metadata (identity/key, challenge
+Store challenge nonce/message privately for verification, not raw wallet
+signatures. Automatic expired-record cleanup is not implemented; retention remains
+an explicit operational limitation. Persist only minimized consent event metadata (identity/key, challenge
 ID, snapshot digest, action, timestamp) after successful verification. This is a
 server verification record, not an independently re-verifiable archived signature
 or portable authorization certificate. M3 cannot rely on this record for custody.
@@ -107,15 +108,15 @@ order; conditional single consumption, lifecycle transition and audit insert are
 one transaction. Concurrent competing challenges cannot apply a second transition.
 Audit failure rolls everything back. Never expose raw RPC/DB/SDK error objects.
 
-Alternatives requiring explicit choice:
+Alternatives considered and not selected:
 - Actual contract transaction now: not feasible as M3 vault is not deployed; reject
   mocked success and defer actual authorization to M3.
 - Session-only approval: does not establish fresh wallet consent; reject.
 - Session-only stop request plus wallet-confirmed revocation: could support faster
-  emergency UX but adds distinct policy/state semantics; owner decision required.
+  emergency UX but adds distinct policy/state semantics; not selected for M2; any later addition requires an owner decision.
 - Restricted signing key: conflicts with approved wallet-owner boundary; reject.
 
-## Proposed roles and transitions
+## Implemented roles and transitions
 
 An active org owner creates a draft owned by that same authenticated wallet. Only
 that owner can approve/revoke; app admins cannot impersonate or replace the owner.
@@ -139,7 +140,7 @@ is terminal; retries cannot recreate authority. Exact duplicate proof submission
 is rejected as replay, not treated as a second success. Onchain state stays
 NOT_SUBMITTED in every row and response.
 
-## Persistence and user experience plan
+## Persistence and user experience
 
 Add a new checksummed migration; do not edit 001_identity.sql. Separate immutable
 policy rows, private session-bound challenges and append-only mandate events.
@@ -163,7 +164,7 @@ Use mobile-responsive panels, labeled inputs, accessible errors, loading/empty/
 unauthorized/canceled states and stale-response guards inherited from M1 patterns.
 Cancellation creates no consent transition; retry issues a fresh challenge.
 
-## Verification plan (not results)
+## Verification matrix (actual results in M2_REPORT.md)
 
 - Unit: deterministic bytes, field ordering/set sorting, every schema boundary,
   exact NEAR conversion, u128/u64/u32 limits and digest changes for every term.
