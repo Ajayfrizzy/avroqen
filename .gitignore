@@ -1,1 +1,16 @@
 .DS_Store
+node_modules/
+.next/
+dist/
+target/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+next-env.d.ts
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.near-credentials/

@@ -1,11 +1,91 @@
-# Avroqen — pre-build planning pack
+# Avroqen — M0 foundation
 
-**Status:** Avroqen is the owner-confirmed product name. **Prior working name:** MandateFlow. **Prepared:** 2026-10-29. **Implementation:** NOT STARTED. Official hackathon development starts 2026-11-01 00:00 UTC.
+**Status:** Avroqen is the owner-confirmed product name. **Prior working name:** MandateFlow. **Prepared:** 2026-10-29. **Implementation:** M0 foundation implemented locally after the official start, 2026-11-01 00:00 UTC. Review and hosted CI are pending. See [the actual verification report](docs/M0_REPORT.md).
 
 **Proposed product line (draft, not approved marketing copy):** Task-bound financial authority for autonomous agents.
 
 ## Purpose
 Avroqen lets organizations delegate narrowly scoped transaction proposals to AI agents without granting the agents unrestricted control of funds. Owner-approved mandates, independently authenticated attestations, and an onchain vault constrain payment execution. The system assumes agent, API, provider, and verifier failures or compromise are possible and emphasizes exposure limits and recovery. It **does not** claim to be unhackable or independently audited.
+
+## Run the local foundation
+
+Prerequisites: Node **24.22.1**, pnpm **9.15.9**, Docker Engine with Compose v2+
+(the verified local version is v5.3.1), and rustup. The Rust toolchain file pins
+Rust **1.96.1**, Clippy, rustfmt and the Wasm target. First installs need network
+access to public registries; no paid accounts, wallet keys or faucets are needed.
+
+```sh
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm setup:env
+docker compose up --build -d --wait
+pnpm test:smoke
+```
+
+Open **http://127.0.0.1:3000** to see the responsive foundation page and its
+“Payments are not enabled” status. **http://127.0.0.1:3001/health** reports process
+liveness; **/ready** checks actual PostgreSQL connectivity, not financial readiness.
+The database binds to **127.0.0.1:55432**. These are development services only.
+`pnpm setup:env` creates an ignored, mode-0600 `.env` with a random local database
+password and never overwrites an existing file. It creates no blockchain identity
+or signing credentials. Do not reuse this development database or its bootstrap
+role for production; application roles and tenant authorization belong to M1.
+
+For hot reload, stop the Compose application services and run their local versions:
+
+```sh
+docker compose stop web api
+docker compose up -d --wait database
+pnpm dev
+```
+
+Stop the local processes with Ctrl-C and use `docker compose down` to stop
+containers. The database volume is retained; ordinary shutdown never deletes data.
+Do not change the database password without updating the existing database role.
+
+## Verify the foundation
+
+```sh
+pnpm check
+pnpm build
+pnpm exec playwright install chromium
+pnpm test:e2e
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+pnpm test:contract
+pnpm build:contract
+pnpm test:wasm
+pnpm test:workflow
+pnpm test:secrets
+```
+
+The browser test starts its own production frontend; stop other processes on
+port 3000 first. With Compose running, execute `pnpm test:database`,
+`pnpm test:containers` and `pnpm test:smoke`. To verify an actual outage:
+
+```sh
+docker compose stop database
+node scripts/check-outage.mjs
+docker compose start database
+docker compose up -d --wait
+pnpm test:smoke
+```
+
+Expected: `/ready` returns 503 during the outage, `/health` remains 200, and
+readiness returns after recovery. No transfer or retry is triggered.
+
+The workspace contains Next.js web, Fastify API, shared Zod domain and agent
+request schemas, disabled worker/verifier entrypoints and a Rust NEAR scaffold.
+The API has only health/readiness routes. The contract exposes a disabled-payment
+view and SDK metadata; it has no custody, transfer, attestation or upgrade methods.
+Worker indexing and verifier signing are not implemented. Database connectivity
+and foundation checks are not evidence of S01–S20 financial safety or settlement.
+
+GitHub Actions defines required `foundation` and `rust` jobs with pinned actions,
+read-only repository permissions, frozen installs, secret scanning, browser tests,
+container outage tests, Rust checks and Wasm interface inspection. Configure those
+as required branch checks after review; no repository settings were changed.
+See M0_REPORT.md and the review PR for hosted CI evidence. Staging branch protection
+was absent at review; required checks still need configuring. No failures may be waived.
 
 ## Reading order
 1. `docs/PRD.md` — user journeys, functional scope, acceptance criteria

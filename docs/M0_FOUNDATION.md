@@ -1,6 +1,8 @@
 # M0 foundation preparation
 
-Status: planning only, prepared October 31, 2026. M0 is not implemented or complete.
+Historical preparation plan, prepared October 31, 2026. Implementation began after
+the start gate; see [M0_REPORT.md](M0_REPORT.md) for current evidence and blockers.
+The pre-start observations below are retained as historical context.
 Implementation may begin November 1, 2026 at 00:00 UTC (01:00 Africa/Lagos),
 as required by AGENTS.md, CODEX_BOOTSTRAP.md and MILESTONES.md.
 
