@@ -119,3 +119,77 @@ footer {
     letter-spacing: -2px;
   }
 }
+.workspace h1 {
+  font-size: clamp(36px, 6vw, 60px);
+  margin-top: 56px;
+}
+.workspace .panel {
+  background: #fff;
+  border: 1px solid #cdd4cb;
+  border-radius: 12px;
+  padding: 24px;
+  margin-top: 24px;
+  overflow-wrap: anywhere;
+}
+.workspace form {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+  max-width: 560px;
+}
+.workspace label {
+  display: block;
+  font-weight: bold;
+  margin-top: 8px;
+}
+.workspace input,
+.workspace select,
+.workspace button {
+  font: inherit;
+  min-height: 44px;
+  border: 1px solid #768b83;
+  border-radius: 6px;
+  padding: 10px 14px;
+  max-width: 100%;
+}
+.workspace input,
+.workspace select {
+  width: 100%;
+  background: #fff;
+  color: #192b30;
+}
+.workspace button {
+  background: #245b49;
+  color: #fff;
+  cursor: pointer;
+}
+.workspace button:disabled {
+  background: #657670;
+  cursor: not-allowed;
+}
+.workspace :focus-visible {
+  outline: 3px solid #bd7426;
+  outline-offset: 3px;
+}
+.workspace .error {
+  background: #fff0e7;
+  color: #853710;
+  padding: 16px;
+  border-left: 3px solid #853710;
+}
+.workspace .agents {
+  list-style: none;
+  padding: 0;
+}
+.workspace .agents li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  border-top: 1px solid #cdd4cb;
+  padding: 20px 0;
+}
+.workspace .agents p {
+  margin: 8px 0;
+}

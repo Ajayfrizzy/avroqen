@@ -1,6 +1,8 @@
 import { readApiConfig } from "@avroqen/domain";
 import pg from "pg";
 import { buildApi } from "./app.js";
+import { identityConfig } from "./identity/config.js";
+import { fullAccessVerifier } from "./identity/crypto.js";
 
 async function main() {
   const config = readApiConfig(process.env);
@@ -14,9 +16,13 @@ async function main() {
   pool.on("error", () => {
     console.error("Database connection unavailable");
   });
-  const app = buildApi(async () => {
-    await pool.query("SELECT 1");
-  });
+  const auth = identityConfig(process.env);
+  const app = buildApi(
+    async () => {
+      await pool.query("SELECT 1 FROM auth_sessions LIMIT 0");
+    },
+    { pool, config: auth, verifyKey: fullAccessVerifier(auth.network) },
+  );
   app.addHook("onClose", async () => {
     await pool.end();
   });

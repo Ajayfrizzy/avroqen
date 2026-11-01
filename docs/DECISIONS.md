@@ -58,19 +58,46 @@ has authorized a feature-branch commit/push and PR against staging for review.
 Merge, deployment and repository visibility changes remain unauthorized. Required
 branch-check configuration is outstanding; staging was unprotected at review.
 
-## D012 — M1 identity policy proposal (pending owner approval)
+## D012 — M1 wallet authentication (owner-approved, 2026-11-01)
 
-M1 starts from the confirmed M0 merge `84ffd209d767660d0cae5c369aa2aa52a54148e8`
-on `feat/m1-identity-access`. See M1_DESIGN.md for the proposed NEP-413 login
-policy and alternatives. Owner approval of the active full-access Ed25519 key
-policy was requested before implementing wallet verification or session issuance.
-The official NEP requires full-access message signing; restricted agent keys must
-not silently become wallet-owner login credentials. No approval is inferred from
-elapsed time. This entry is a proposal, not a settled authorization decision.
+Owner explicitly approved: “Approve full-access-key verification (recommended).”
+Use NEP-413 offchain message signing and a finalized RPC check that the exact
+Ed25519 public key remains an active FullAccess key for the account on the
+server-selected network. Restricted function-call keys cannot authenticate as
+wallet owners. The alternative of restricted-key application identities would
+require a separate approved permission mapping. This approval does not authorize
+transactions, custody, deployments, publication or treasury permissions.
 
-Independent preparation adds transactional, checksummed PostgreSQL migrations and
-schema constraints for identity records. Tests use temporary schemas, never wallet
-credentials. No login endpoint, wallet connector, organization authorization API,
-agent credential or financial method is introduced by this preparatory change.
-M1 remains incomplete until the approved authentication, sessions, RBAC/UI and full
-adversarial acceptance suite are implemented and verified.
+The API binds challenge account/network/origin/recipient/expiry and a random nonce,
+requires a browser-bound HttpOnly cookie, and atomically consumes the challenge
+while issuing one opaque session. Sessions last 15 minutes absolutely, with
+server-side logout and rotation. Tokens are stored only as hashes. Exact Origin
+and session-derived CSRF tokens protect mutations. HTTPS cookies use Secure,
+HttpOnly, SameSite=Strict and the __Host- prefix. HTTP is accepted only for an
+explicitly enabled loopback development origin. No forwarded headers are trusted.
+
+Finalized NEAR RPC is a trust dependency, not an independently verified light
+client. Key removal after login is reflected at the next login, with existing app
+session exposure bounded by its 15-minute expiry; it cannot authorize an onchain
+operation. RPC/DB errors fail closed. PostgreSQL membership checks and mutation
+locks enforce app tenant/role permissions; app owner is not onchain owner.
+
+Meteor SDK 3.24.1 uses only near::sign_in_and_sign_message, no contract or
+addFunctionCallKey argument. In-memory connector metadata, disabled mobile bridge,
+and a rejecting key-store provider prevent application-managed wallet key custody.
+The library contains other capabilities, but the application does not invoke them.
+NEP-413 payload encoding is checked against independent Borsh fixtures. External
+wallet interaction and finalized RPC are simulated explicitly in automated tests;
+manual real-wallet desktop/mobile compatibility remains a review gate.
+
+React Query is pinned/overridden to 5.101.2 to satisfy the connector's peer range
+and React 19; its older nested 5.51.5 declares only React 18 support. No install
+scripts are enabled. This dependency choice is not an audit claim.
+
+Rate counters are atomic in PostgreSQL: 30 writes and 120 reads/minute per direct
+peer IP, with one rate-limit audit per bucket/window. Behind the same-origin Next
+proxy the budget is shared; this conservative development default can cause denial
+of service between users. Production needs a reviewed ingress/IP policy and
+retention/cleanup for expired identity/rate/audit data, not blind trust in headers.
+No session, role, agent record, backend approval or DB write grants financial
+permissions. Contract, worker and verifier authority remain unchanged.

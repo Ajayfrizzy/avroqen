@@ -1,4 +1,4 @@
-# Avroqen — M0 foundation
+# Avroqen — foundation and identity
 
 **Status:** Avroqen is the owner-confirmed product name. **Prior working name:** MandateFlow. **Prepared:** 2026-10-29. **Implementation:** M0 foundation implemented locally after the official start, 2026-11-01 00:00 UTC. Local and hosted CI checks pass; human review and required branch-check enforcement remain pending. See [the actual verification report](docs/M0_REPORT.md).
 
@@ -35,7 +35,8 @@ For hot reload, stop the Compose application services and run their local versio
 ```sh
 docker compose stop web api
 docker compose up -d --wait database
-pnpm dev
+pnpm db:migrate
+AUTH_ALLOW_INSECURE_LOCALHOST=true pnpm dev
 ```
 
 Stop the local processes with Ctrl-C and use `docker compose down` to stop
@@ -75,7 +76,8 @@ readiness returns after recovery. No transfer or retry is triggered.
 
 The workspace contains Next.js web, Fastify API, shared Zod domain and agent
 request schemas, disabled worker/verifier entrypoints and a Rust NEAR scaffold.
-The API has only health/readiness routes. The contract exposes a disabled-payment
+M1 adds wallet-message authentication and organization/agent record APIs; see
+[the M1 report](docs/M1_REPORT.md) for local evidence and review blockers. The contract exposes a disabled-payment
 view and SDK metadata; it has no custody, transfer, attestation or upgrade methods.
 Worker indexing and verifier signing are not implemented. Database connectivity
 and foundation checks are not evidence of S01–S20 financial safety or settlement.
@@ -117,3 +119,29 @@ was absent at review; required checks still need configuring. No failures may be
 - https://docs.near.org/smart-contracts/anatomy/crosscontract
 - https://docs.near.org/smart-contracts/testing/unit-test
 - https://docs.near.org/smart-contracts/testing/integration-test
+
+
+## M1 local identity workspace
+
+Open **http://127.0.0.1:3000/workspace** after the Compose bootstrap. Compose runs
+an explicit, checksummed migration service before starting the API. The migration
+adds only application identity records; PostgreSQL is never a custody ledger.
+Existing `.env` files remain untouched; for host development add the public
+configuration values from `.env.example` or explicitly set
+`AUTH_ALLOW_INSECURE_LOCALHOST=true`. Production authentication requires HTTPS.
+`API_INTERNAL_URL` is server-only and read at Next build time; the Docker image
+builds it as `http://api:3001`, local builds default to `http://127.0.0.1:3001`.
+
+Enter your NEAR testnet account, connect via the wallet popup and review the exact
+login message. This requests no transaction or new access key. Full-access
+Ed25519 key control is checked at finalized RPC state. Login creates a 15-minute
+application session. Create/select an organization, register an agent record, and
+disable it. Owner/admin app roles manage records; members/viewers can read.
+Registration grants no execution or treasury rights. Disabling a record is not an
+onchain revocation. Logout invalidates the server session.
+
+Run `pnpm test:identity-db` with local PostgreSQL for real API/signature/session/
+tenant tests. `pnpm test:e2e` includes labeled API simulations for mobile/UI states;
+it does not claim live wallet signatures. A manual wallet compatibility check and
+hosted CI review remain required. No funds, faucets or paid infrastructure are
+needed. No credentials or private keys should be pasted into the application.

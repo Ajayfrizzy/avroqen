@@ -1,90 +1,131 @@
 # M1 — identity, organizations and agent access
 
-**Status: incomplete; identity-policy approval pending.** This is a preparation
-report, not evidence that wallet login, sessions, RBAC or agent management work.
-**Branch:** `feat/m1-identity-access` (local only).
-**Baseline:** `84ffd209d767660d0cae5c369aa2aa52a54148e8`.
+**Assessment:** implementation is ready for local review; final M1 acceptance is
+not claimed. Automated checks below pass. Human real-wallet desktop/mobile
+compatibility, independent security review and hosted CI remain outstanding.
+**Branch:** `feat/m1-identity-access`, local only.
+**Baseline:** M0 merge `84ffd209d767660d0cae5c369aa2aa52a54148e8`.
+**Verification date:** November 1, 2026, after the official UTC start.
 
-## Repository preparation
+## Preparation and approved design
 
-Fetched origin, switched to staging and ran `git merge --ff-only origin/staging`:
-already up to date. `git merge-base --is-ancestor` confirmed the exact requested
-M0 merge is present. Created the dedicated M1 feature branch from that baseline.
-Read AGENTS.md, HACKATHON.md, all seven skills and canonical product, architecture,
-API, contract, attestation, threat, test, milestone and decision specifications.
+Fetched origin and fast-forwarded staging (already up to date); verified the exact
+M0 merge is an ancestor before creating the feature branch. Preparation commit:
+`08dc8154f5207e5e998190a5b746b81238b25349`. Read repository instructions, organizer
+rules, all seven persistent project skills and canonical specifications.
 
-## Implemented so far
+Owner explicitly approved “full-access-key verification (recommended).” D012 and
+M1_DESIGN.md record the approved NEP-413 policy, rejected restricted-key alternative,
+trust assumptions and connector choice. No unresolved authority decision was
+silently implemented. App roles/sessions never substitute for wallet-signed
+onchain actions. Contract/worker/verifier authority remains unchanged.
 
-- `db/migrations/001_identity.sql`: organizations, memberships, registered agents,
-  authentication challenges/sessions, security audit records and request counters.
-  Composite foreign keys bind organization records and challenge sessions to their
-  account/network identities. Role/status enums and account constraints reject
-  invalid stored records. One session per challenge is enforced by a unique key.
-- `apps/api/src/db/migrate.ts`: transactional migrations, advisory serialization
-  across runners, stored SHA-256 checksums and refusal of edited/unknown history.
-- `scripts/migrate.ts` / `pnpm db:migrate`: explicit local migration entrypoint
-  with sanitized errors. Application startup does not silently modify the schema.
-- `tests/database/migrations.test.ts` / `pnpm test:identity-db`: real PostgreSQL
-  tests in uniquely named temporary schemas, removed afterward. The normal
-  application database schema was not migrated during these tests.
-- CI includes the new database test after the existing PostgreSQL readiness check.
-  No remote workflow has been run for M1; this branch remains local.
-- `docs/M1_DESIGN.md` and proposed D012 record the identity alternatives, protocol
-  boundaries and remaining tests without inventing an approved security policy.
+## Implementation inventory
+
+| Component | Implementation |
+| --- | --- |
+| Wallet authentication | Server-issued 32-byte nonce, exact account/network/origin/recipient/expiry message, 5-minute expiry, browser-binding HttpOnly cookie; NEP-413 Borsh/SHA-256/Ed25519 verification; finalized active FullAccess key lookup on fixed network RPC |
+| Replay and concurrency | Conditional PostgreSQL nonce consumption and session insertion in one transaction; unique challenge/session binding; concurrent submissions have one winner |
+| Sessions | Opaque random 256-bit session token; hashes only in DB; 15-minute absolute expiry; prior-session rotation, server-side logout; Secure/HttpOnly/SameSite=Strict/__Host- cookies on HTTPS; explicit loopback-only HTTP exception |
+| Request protection | Exact Origin on mutations, session-bound CSRF, strict shared Zod schemas, body limits, bounded list pagination, sanitized errors, no wildcard CORS or trusted forwarded IP headers |
+| Database | Checksummed transactional migrations with advisory lock; organizations, memberships, agents, challenges, sessions, security audit and atomic rate-limit records; network/account/role/FK constraints |
+| Organization access | Verified identity creates an app-owner membership; every org operation checks active account/network membership; owner/admin write, member/viewer read; no role-escalation endpoint |
+| Agent records | Register/list/disable scoped by org and network; idempotent disabling; registration creates no credential, execution tool, treasury access, owner rights or verifier/settlement authority |
+| Mutation races | Session and membership row locks serialize mutations against logout/membership changes; mutations and success audit records commit together |
+| Logging/rate limits | Fixed event/reason codes and public identifiers only; DB atomic per-peer limits, 30 writes/120 reads per minute; first exceeded request records a rate-limit audit, further excess requests do not amplify audit storage |
+| Frontend | Responsive `/workspace`: wallet message prompt, auth/session/logout, org creation/selection, paginated agents, registration/disabling, loading/error/empty/read-only/session-expired states; original M0 landing preserved |
+| Wallet adapter | Pinned Meteor SDK message-only action, exact server payload, no access-key/transaction options, in-memory metadata, disabled logging/mobile bridge, rejecting private-key-store provider |
+| Development/CI | Explicit Compose migration service before API, schema-aware readiness, same-origin Next API proxy, frozen lockfile installs, real PostgreSQL suite added to existing CI |
+
+Neither the backend nor UI implements custody, deposits, settlement, transfers,
+privileged agent execution, owner key import or a verifier credential flow.
+Disabling an app record does not claim to revoke any onchain permission.
 
 ## Actual verification evidence
 
-Completed locally on November 1, 2026 with exit code 0:
+Final local runs completed with exit code 0 unless a limitation is explicitly noted.
 
-| Check | Result |
+| Command/check | Result |
 | --- | --- |
-| `pnpm lint` / `pnpm typecheck` | Passed |
-| `pnpm test:unit` | Existing M0 suite: 13 passed |
-| `pnpm test:integration` | Existing M0 suite: 2 passed |
-| `pnpm test:adversarial` | Existing M0 suite: 13 passed |
-| `pnpm test:identity-db` | 4 passed against real PostgreSQL: migration idempotency/concurrent runners, invalid role/network/account constraints, session/challenge binding and concurrent duplicate rejection, migration checksum tampering |
-| `NEXT_TELEMETRY_DISABLED=1 pnpm build` | Next.js production build and TypeScript passed |
-| `pnpm test:e2e` | Existing mobile foundation test: 1 passed |
-| `cargo fmt --all -- --check` | Passed |
-| `cargo clippy --workspace --all-targets --locked -- -D warnings` | Passed |
-| `cargo test --workspace --locked` | Existing scaffold test: 1 passed |
-| `pnpm build:contract` / `pnpm test:wasm` | Existing Wasm build and boundary checks passed; simulated host, not chain settlement |
-| `pnpm test:workflow` | Local workflow validation passed |
-| `pnpm test:secrets` | Redacted Gitleaks scan: no leaks |
-| `docker compose up --build -d --wait` | Web/API/database rebuild and health checks passed |
-| `pnpm test:containers` / `pnpm test:database` / `pnpm test:smoke` | Non-root isolation, real PostgreSQL connectivity and existing M0 HTTP smoke passed |
+| `pnpm check` | Lint, TypeScript, 19 unit + 4 integration + 13 adversarial tests pass; all original M0 tests retained |
+| `pnpm test:identity-db` | 13 tests pass against real local PostgreSQL in isolated temporary schemas |
+| `pnpm build` | Next production build (`/`, `/workspace`) and TypeScript pass |
+| `pnpm test:e2e` | 6 Chromium tests pass, including M0 and mobile M1, service errors, org/agent lifecycle, viewer denial, loading/session expiry |
+| `cargo fmt --all -- --check` | Pass |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | Pass |
+| `cargo test --workspace --locked` | 1 scaffold test passes |
+| `pnpm build:contract` / `pnpm test:wasm` | Pass; existing disabled-payment view and absence of transfer/upgrade imports verified; simulated host, not chain execution |
+| `pnpm test:workflow` | Local workflow validation passes |
+| `pnpm test:secrets` | Redacted Gitleaks source scan: no leaks; includes untracked source, excludes ignored `.env` |
+| `docker compose up --build -d --wait` | Frozen install, web/API builds, explicit migration and health checks pass |
+| `pnpm test:containers` / `pnpm test:database` / `pnpm test:smoke` | Non-root isolation, actual PostgreSQL connection, web/API/readiness smoke pass |
+| Same-origin container proxy | `/api/auth/config` through web returns configured testnet network |
+| Database outage/recovery | Readiness returns unavailable while liveness stays healthy; recovery restores smoke; migrations rerun idempotently |
+| `git diff --check` | Pass; generated output, local credentials and dependency install directories excluded |
 
-Docker was initially stopped. Started Docker Desktop, then brought up the existing
-local PostgreSQL service. No paid infrastructure or external database was used.
-The migration tests do not verify NEAR signatures, authenticated nonce consumption,
-session issuance, HTTP authorization or tenant isolation at API boundaries.
+PostgreSQL coverage: migration concurrency/checksum tampering; invalid stored
+roles/accounts/network bindings; real Ed25519 signatures over independently
+Borsh-encoded challenges; forged/different key, replay, expiry, account/network/
+browser substitution; altered message/recipient/nonce/callback; six concurrent
+nonce submissions with one winner; restricted/revoked key and RPC-outage boundary;
+session rotation/expiry/logout; missing/mismatched CSRF and Origin; unauthorized,
+cross-org, disabled memberships, all four roles, role/owner field injection;
+agent registration and scoped/idempotent disabling; rate-limit audit redaction.
 
-## Blocking decision and incomplete scope
+Unit tests additionally verify exact finalized RPC request construction, fixed
+network endpoint, missing access keys, restricted permissions, malformed/mismatched
+RPC envelopes, transport timeout/outage, HTTPS configuration and independent Borsh
+encoding with both optional-callback encodings. Connector integration tests assert
+only the message-signing action, exact binding, refusal of key custody and wallet
+cancellation propagation.
 
-Owner approval was requested for NEP-413 login using an active full-access Ed25519
-key checked via finalized RPC on the server-selected network, with account, origin,
-network and single-use challenge binding. This verifies wallet control for app
-login only and never authorizes an onchain action. The alternative of accepting
-restricted keys needs an explicit separate permission mapping; otherwise an agent
-key could impersonate a wallet owner. No approval response has been received.
+### Evidence limits and resolved verification issues
 
-The user's delivery requirement explicitly calls for owner approval of unresolved
-substantive wallet-signing/identity decisions. Dependent implementation is therefore
-pending. There is no API login, secure session lifecycle, CSRF middleware, organization
-RBAC endpoints, agent-management API, rate-limit enforcement or M1 UI yet. The schema
-alone does not satisfy those requirements. Signature, replay/expiry/substitution,
-nonce-consumption races, session/CSRF, cross-organization/role-escalation and agent
-disabling acceptance cases are not implemented or claimed passed.
+- Tests generate ephemeral unfunded Ed25519 fixtures. Real signature cryptography
+  and PostgreSQL transactions run; finalized RPC permissions are simulated.
+- Browser tests explicitly simulate API/session responses. Connector tests replace
+  the SDK loading boundary. Neither claims a live human wallet signature or real
+  chain receipt. No blockchain transactions were performed.
+- Initial connector-test module mocking did not intercept the SDK and failed in
+  Node (`window is not defined`). A dedicated lazy-loader boundary made the mock
+  explicit; both connector tests now pass.
+- Three initial browser assertions matched both the app alert and Next's route
+  announcer. Scoping assertions to the application main region fixed the tests;
+  all six now pass. No acceptance assertion was removed.
+- Initial type/lint errors (key-store return type and effect dependencies) were
+  fixed. Dependency peer warnings were resolved by pinning React Query 5.101.2.
+- Workflow checking initially hit sandbox Docker permissions; rerunning with
+  authorized Docker access passed. No failed gate is waived.
 
-The wallet connector also needs compatibility verification. Official MyNearWallet
-source contains a dapp-signing sunset guard; do not assume its current live signing
-service is available or replace message signing with transactions/access-key creation.
+## Outstanding review gates and operational risks
+
+1. Human wallet compatibility: validate message-only login/cancel with an actual
+   full-access Ed25519 wallet on desktop and mobile, including popup behavior.
+   No transaction is required. Native mobile bridge is intentionally disabled;
+   the responsive UI/browser tests do not establish native-wallet compatibility.
+2. Hosted GitHub Actions has not run for M1 because work remains local. Independent
+   security review and required branch checks are still needed before acceptance.
+   No PR, push, merge, deployment or visibility change was performed.
+3. Finalized RPC remains a trusted identity-state source. Revoked keys may retain
+   an existing application session until its maximum 15-minute expiry. App sessions
+   cannot exercise financial authority. Multi-provider/light-client verification
+   would be a separate reviewed design improvement.
+4. Development rate limits share the Next proxy peer IP. This fails conservatively
+   but permits denial of service between users; review ingress/IP attribution and
+   multi-tenant abuse controls before deployment. Do not simply trust X-Forwarded-For.
+5. Expired challenge/session/rate data and audit retention need an explicit
+   operational cleanup/retention policy before public service. Development DB
+   bootstrap privileges are not a production least-privilege deployment design.
+6. Connector dependencies include capabilities the application never invokes;
+   private-key-store rejection and message-only calls reduce exposure but do not
+   constitute a dependency audit. Production CSP/ingress review remains necessary.
+7. Financial S01–S20 and real sandbox/testnet settlement are later milestones; the
+   unchanged M0 contract tests are not evidence of custody/settlement correctness.
 
 ## Next steps
 
-Approve the proposed login policy (or specify a separately scoped restricted-key
-policy), then implement and test the full wallet/session/organization/agent/UI scope.
-Resolve connector support from current official wallet APIs. Complete all M1 cases,
-rerun applicable checks, and replace this partial report with actual M1 evidence.
-No scope reduction is approved or implied. Changes remain on the local feature
-branch; no push, merge, deployment, credential exposure or financial transaction.
+Review D012, identity routes, migration constraints and negative-test evidence.
+Perform the human wallet compatibility check; address any failures without
+substituting transactions or restricted keys. After owner review authorizes push,
+run hosted CI and open a PR against staging. Do not merge/deploy until review gates
+pass. M2 wallet-signed mandate consent remains separate from application login.

@@ -3,9 +3,9 @@
 M0 baseline: `84ffd209d767660d0cae5c369aa2aa52a54148e8`.
 Branch: `feat/m1-identity-access`. No custody code changes are in scope.
 
-## Pending identity decision
+## Approved identity decision
 
-Proposed: NEP-413 offchain message signing with an active full-access Ed25519
+Owner-approved: NEP-413 offchain message signing with an active full-access Ed25519
 key, verified against finalized access-key state on the server-selected network.
 Restricted function-call keys must not authenticate as wallet owners: a compromised
 agent key could otherwise impersonate its account. The official NEP-413 standard
@@ -15,12 +15,12 @@ Alternative: restricted keys could represent separately scoped application
 identities, but would require a new explicit permission mapping and must never
 inherit wallet-owner identity. This alternative is not the proposed M1 login.
 
-Owner approval of the login policy was requested before implementing its dependent
-verification/session issuance path. Neither a signature nor an application role
+Owner explicitly approved full-access-key verification before implementation of
+the dependent verification/session issuance path. Neither a signature nor an application role
 will authorize an onchain transfer or policy change. Signing stays in the user's
 wallet; no private key is accepted by the API.
 
-## Proposed protocol and boundaries
+## Implemented protocol and boundaries
 
 - Server-selected network; account ID included in the exact challenge message.
 - NEP-413 tag/Borsh/SHA-256/Ed25519 verification; bind recipient, origin, callback,
@@ -44,7 +44,7 @@ wallet; no private key is accepted by the API.
 - Fail closed on RPC/DB errors. RPC trust remains an explicit assumption, and session
   lifetime bounds stale wallet-key authorization between login and expiration.
 
-## Tests required before acceptance
+## Acceptance test coverage
 
 Cryptographic vectors; forged/expired/replayed/account/network/origin-mismatched
 signatures; missing/revoked/restricted access keys; concurrent nonce consumption;
@@ -65,3 +65,20 @@ Sources:
 - https://github.com/near/NEPs/blob/master/neps/nep-0413.md
 - https://github.com/mynearwallet/my-near-wallet/blob/master/packages/frontend/src/routes/SignMessageWrapper.js
 - https://github.com/mynearwallet/my-near-wallet/blob/master/packages/frontend/src/redux/slices/signMessage/index.js
+
+
+## Implemented connector and verification limits
+
+Meteor SDK 3.24.1 provides the message-only action. The app passes the server's
+message/nonce/recipient without callbackUrl (Borsh Option=None; stored callback
+field is empty). No transaction, access-key creation, transfer account or private
+key import action is requested. Connector logging is disabled, metadata is in
+memory, and any attempt to obtain/store a private key through its key-store
+provider throws. The mobile bridge is disabled rather than enabling key-transfer
+features. Responsive UI is tested; human wallet popup/mobile compatibility still
+needs verification. See D012 and M1_REPORT.md for test evidence and limitations.
+
+Sources: https://github.com/near/wallet-selector/blob/main/packages/meteor-wallet/src/lib/meteor-wallet.ts
+and the published @meteorwallet/sdk 3.24.1 README/types/source. Dependency code is
+not trusted to grant app authority: the backend verifies every proof and active
+full-access key independently of the connector response.
