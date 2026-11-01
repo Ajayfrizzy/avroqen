@@ -180,3 +180,11 @@ Onchain status stays NOT_SUBMITTED, with no invented receipt or transfer. Reserv
 successful execution accounting, per-claim attestations, dispute blocking, actual
 revocation inclusion and owner authorization remain obligations for M3/M5, not M2
 claims. No financial/security invariant is waived. See M2_DESIGN and M2_REPORT.
+
+## D014 — M3 financial protocol (PROPOSED, awaiting owner decision)
+
+M3_DESIGN.md records recommended custody/storage, caller/domain/guardian and
+failure/recovery packages with alternatives. These settle substantive ambiguities
+left by CONTRACT_SPEC; none are inferred from M2 offchain-consent approval.
+No financial operations are implemented before the decisions. No deployment,
+public-network transaction, privileged key creation or token spend is authorized.
