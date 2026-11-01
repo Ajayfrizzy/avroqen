@@ -2,7 +2,8 @@
 
 **Assessment:** implementation is prepared for draft GitHub review; final M1 acceptance is
 not claimed. Automated checks below pass. Human real-wallet desktop/mobile
-compatibility, independent security review and hosted CI remain outstanding.
+compatibility and independent security review remain outstanding. Hosted CI must
+pass on the final PR head; evidence is tracked below and in the PR checks.
 **Branch:** `feat/m1-identity-access`; owner authorized push and a draft PR to `staging`.
 **Baseline:** M0 merge `84ffd209d767660d0cae5c369aa2aa52a54148e8`.
 **Verification date:** November 1, 2026, after the official UTC start.
@@ -200,3 +201,17 @@ creation, AddKey/DeleteKey, transaction signing or funding is required/authorize
 Independent security review must separately assess protocol binding, cryptography,
 RPC trust, session/CSRF and tenant access code, SDK dependency exposure, and the
 operational limitations above. This agent's review is not independent assurance.
+
+
+## Hosted review evidence
+
+Draft PR: https://github.com/Ajayfrizzy/avroqen/pull/5 (base `staging`).
+Implementation/security-fix head `15b7bdda54ccd610d82d6c4889a2d4890ef5f5b9`
+passed both hosted jobs: `foundation` (2m53s), `rust` (3m18s).
+Run: https://github.com/Ajayfrizzy/avroqen/actions/runs/41270940708 .
+This evidence entry is a documentation-only follow-up; consult PR checks for its
+final head rather than assuming a previous SHA's result applies automatically.
+The branch-history Gitleaks scan also covered all three implementation commits
+and found no leaks. No merge, deployment, financial transaction or visibility
+change occurred. Hosted automation does not satisfy the manual checklist or
+independent-security-review gate.
