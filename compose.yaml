@@ -1,0 +1,70 @@
+name: avroqen-m0
+services:
+  database:
+    image: postgres:17.10-bookworm@sha256:9b18b78397054fce88a9552e9d5a3ad5bb7fd258c5b3cc1c5028e46373d6ea8f
+    environment:
+      POSTGRES_USER: ${PGUSER:?Run pnpm setup:env}
+      POSTGRES_PASSWORD: ${PGPASSWORD:?Run pnpm setup:env}
+      POSTGRES_DB: ${PGDATABASE:?Run pnpm setup:env}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    ports:
+      - "127.0.0.1:${PGPORT:-55432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    security_opt: [no-new-privileges:true]
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3001
+      PGHOST: database
+      PGPORT: 5432
+      PGUSER: ${PGUSER:?Run pnpm setup:env}
+      PGPASSWORD: ${PGPASSWORD:?Run pnpm setup:env}
+      PGDATABASE: ${PGDATABASE:?Run pnpm setup:env}
+    ports: ["127.0.0.1:3001:3001"]
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3001/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  web:
+    build:
+      context: .
+      target: web
+    environment:
+      NEXT_TELEMETRY_DISABLED: 1
+    ports: ["127.0.0.1:3000:3000"]
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+volumes:
+  postgres-data:

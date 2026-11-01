@@ -31,3 +31,29 @@ M0 completion or passing CI.
 
 ## Blocking design reviews before value-bearing deployment
 Prove deposits/withdrawals incl gas/storage, private callbacks, non-replay, budget conservation under concurrency, and attestation identity semantics in actual compiled contract. These are implementation tests, not assumed established properties.
+
+## D011 — M0 foundation tooling and authority boundaries (2026-11-01)
+
+Implementation began after the UTC start gate. Use pnpm 9.15.9 workspaces,
+Node 24.22.1, Next.js 16.4.3/React 19.3.1, Fastify 5.12.7, Zod 4.6.7,
+TypeScript 7.0.2, PostgreSQL 17.10 and Rust 1.96.1/near-sdk 5.30.0.
+Exact direct dependency pins and pnpm/Cargo lockfiles preserve resolution;
+container images and CI actions use immutable digests/commits. Install scripts
+are disabled for JavaScript dependencies; the tested builds work without them.
+
+Sources checked during implementation: npm package metadata for engine/version
+requirements; official Next.js installation and Fastify Getting Started docs;
+near-sdk-rs README (MSRV 1.95.0) and crates.io metadata; official Node/Postgres
+image manifests; GitHub action tag refs. Installed Node and Rust satisfy those
+requirements. Tool versions are decisions, not evidence of security auditing.
+
+M0 adds no financial authority. Contract and API payment interfaces are absent,
+agent request schemas have no executor, and worker/verifier entrypoints explicitly
+report disabled capability. No O02–O07 security decision is silently resolved.
+The PostgreSQL bootstrap account is local-development-only; its credential is
+passed only to database/API services and is not an owner or verifier key.
+
+CI gates are implemented, with hosted results recorded in M0_REPORT.md. The owner
+has authorized a feature-branch commit/push and PR against staging for review.
+Merge, deployment and repository visibility changes remain unauthorized. Required
+branch-check configuration is outstanding; staging was unprotected at review.
