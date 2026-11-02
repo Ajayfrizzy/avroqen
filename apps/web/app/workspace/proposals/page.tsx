@@ -1,8 +1,10 @@
 "use client";
-import type { MandateView } from "@avroqen/domain";
+import { atomicToNear, type MandateView, nearToAtomic } from "@avroqen/domain";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProposalInput } from "../../../../../packages/domain/src/proposals";
+
+import { hashEvidenceFile } from "../evidence-file";
 
 type Session = { accountId: string; csrfToken: string; expiresAt: string };
 type Org = { id: string; name: string; role: string };
@@ -20,7 +22,7 @@ const messages: Record<string, string> = {
   MANDATE_EXPIRED: "This mandate has expired.",
   PER_PAYMENT_LIMIT: "The amount exceeds the mandate's per-payment ceiling.",
   INVALID_PROPOSAL:
-    "Enter a positive exact atomic amount and a 64-character SHA-256 evidence digest.",
+    "Enter a positive exact NEAR amount and a 64-character SHA-256 evidence digest.",
   INVALID_REQUEST: "Check the amount, digest and task fields.",
   ACCESS_DENIED: "You do not have access to this organization.",
   OWNER_REQUIRED: "Only the original mandate owner can issue demo access.",
@@ -48,6 +50,7 @@ export default function Proposals() {
   const [orgNext, setOrgNext] = useState<number | null>(null),
     [mandateNext, setMandateNext] = useState<number | null>(null),
     [historyNext, setHistoryNext] = useState<number | null>(null);
+  const [digest, setDigest] = useState("");
   const taskField = useRef<HTMLTextAreaElement>(null);
   const capability = useRef<{
       id: string;
@@ -214,8 +217,8 @@ export default function Proposals() {
       <h1>Restricted agent proposals</h1>
       <p>
         Offchain preparation only. No payment, wallet transaction or
-        independently verified evidence is produced. The onchain vault is not
-        deployed.
+        independently verified evidence is produced. Check verified chain state
+        in Testnet settlement before any wallet transaction.
       </p>
       {!loaded ? (
         <p role="status">Loading workspace…</p>
@@ -307,7 +310,12 @@ export default function Proposals() {
                 <option value="">Choose a mandate</option>
                 {mandates.map((m) => (
                   <option key={m.policy.mandateId} value={m.policy.mandateId}>
-                    {m.policy.taskReference} — {m.consentStatus}
+                    {m.policy.taskReference} —{" "}
+                    {m.consentStatus === "CONSENT_APPROVED_OFFCHAIN"
+                      ? "offchain consent approved"
+                      : m.consentStatus === "CONSENT_REVOKED_OFFCHAIN"
+                        ? "offchain consent revoked"
+                        : "consent not approved"}
                   </option>
                 ))}
               </select>
@@ -374,8 +382,8 @@ export default function Proposals() {
                   </dd>
                 </div>
                 <div>
-                  <dt>Maximum per payment (yoctoNEAR)</dt>
-                  <dd>{current.policy.maxPerPaymentAtomic}</dd>
+                  <dt>Maximum per payment (NEAR)</dt>
+                  <dd>{atomicToNear(current.policy.maxPerPaymentAtomic)}</dd>
                 </div>
                 <div>
                   <dt>Required independent claims</dt>
@@ -391,8 +399,8 @@ export default function Proposals() {
                 </div>
               </dl>
               <p>
-                Total budget: {current.policy.totalBudgetAtomic} yoctoNEAR;
-                execution cap: {current.policy.maxExecutions}. Expires:{" "}
+                Total budget: {atomicToNear(current.policy.totalBudgetAtomic)}{" "}
+                NEAR; execution cap: {current.policy.maxExecutions}. Expires:{" "}
                 {new Date(
                   Number(BigInt(current.policy.expiresAtNs) / 1000000n),
                 ).toISOString()}
@@ -461,7 +469,9 @@ export default function Proposals() {
                           tool: "prepare",
                           task: {
                             description: String(form.get("description")),
-                            amountAtomic: String(form.get("amount")),
+                            amountAtomic: nearToAtomic(
+                              String(form.get("amount")),
+                            ),
                             evidenceDigest: String(form.get("digest")),
                             proposalId: crypto.randomUUID(),
                             idempotencyKey: crypto.randomUUID(),
@@ -484,23 +494,45 @@ export default function Proposals() {
                     required
                     maxLength={1000}
                   />
-                  <label htmlFor="task-amount">
-                    Exact amount (yoctoNEAR integer)
-                  </label>
+                  <label htmlFor="task-amount">Exact amount (NEAR)</label>
                   <input
                     id="task-amount"
                     name="amount"
                     required
-                    inputMode="numeric"
-                    pattern="[1-9][0-9]*"
-                    maxLength={39}
+                    inputMode="decimal"
+                    maxLength={64}
                   />
+                  <label htmlFor="task-file">
+                    Hash evidence document locally (maximum 5 MiB; never
+                    uploaded)
+                  </label>
+                  <input
+                    id="task-file"
+                    type="file"
+                    disabled={busy}
+                    accept="application/pdf,text/plain,application/json,image/png,image/jpeg"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      setDigest("");
+                      if (file)
+                        void run(async () =>
+                          setDigest(await hashEvidenceFile(file)),
+                        );
+                      e.target.value = "";
+                    }}
+                  />
+                  <p>
+                    The digest identifies exact bytes, not truth. A designated
+                    verifier must obtain the source independently.
+                  </p>
                   <label htmlFor="task-digest">
                     Evidence SHA-256 digest (not proof of truth)
                   </label>
                   <input
                     id="task-digest"
                     name="digest"
+                    value={digest}
+                    onChange={(e) => setDigest(e.target.value)}
                     required
                     pattern="[0-9a-f]{64}"
                     maxLength={64}
@@ -524,8 +556,8 @@ export default function Proposals() {
               <h2>Review proposal</h2>
               <p role="status">
                 {prepared.preflight.accepted
-                  ? "PREFLIGHT_ACCEPTED — advisory only"
-                  : `PREFLIGHT_REJECTED — ${messages[prepared.preflight.code] ?? prepared.preflight.code}`}
+                  ? "Within app limits — advisory only"
+                  : `Cannot submit — ${messages[prepared.preflight.code] ?? prepared.preflight.code}`}
               </p>
               <dl className="policy-grid">
                 <div>
@@ -533,14 +565,20 @@ export default function Proposals() {
                   <dd>{prepared.proposal.recipient}</dd>
                 </div>
                 <div>
-                  <dt>Amount (yoctoNEAR)</dt>
-                  <dd>{prepared.proposal.amountAtomic}</dd>
+                  <dt>Amount (NEAR)</dt>
+                  <dd>{atomicToNear(prepared.proposal.amountAtomic)}</dd>
                 </div>
                 <div>
                   <dt>Evidence digest — unverified</dt>
                   <dd>{prepared.proposal.evidenceDigest}</dd>
                 </div>
               </dl>
+              <details>
+                <summary>Exact proposal and atomic units</summary>
+                <pre className="evidence-payload">
+                  {JSON.stringify(prepared.proposal, null, 2)}
+                </pre>
+              </details>
               <button
                 type="button"
                 disabled={busy || !ready || !prepared.preflight.accepted}
@@ -591,10 +629,18 @@ export default function Proposals() {
                       Evidence and verification
                     </Link>
                     <p>
-                      {h.proposal.recipient}: {h.proposal.amountAtomic}{" "}
-                      yoctoNEAR
+                      {h.proposal.recipient}:{" "}
+                      {atomicToNear(h.proposal.amountAtomic)} NEAR
                     </p>
-                    <p>{h.status} — NOT_SUBMITTED onchain</p>
+                    <p>
+                      Recorded offchain; chain submission and payment are not
+                      verified here.
+                    </p>
+                    <Link
+                      href={`/workspace/settlement?mandate=${h.proposal.mandateId}`}
+                    >
+                      Check verified settlement
+                    </Link>
                   </article>
                 ))
               ) : (

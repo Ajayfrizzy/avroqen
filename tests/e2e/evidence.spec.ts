@@ -141,7 +141,9 @@ async function review(page: Page) {
   await page.getByLabel("Independently observed issuer").fill("Issuer");
   await page.getByLabel("Independently observed reference").fill("INV-1");
   await page.getByLabel("Observed recipient").fill("vendor.testnet");
-  await page.getByLabel("Observed exact amount").fill("1");
+  await page
+    .getByLabel("Observed exact amount")
+    .fill("0.000000000000000000000001");
   await page
     .getByLabel("Independently obtained document SHA-256")
     .fill(proposal.evidenceDigest);

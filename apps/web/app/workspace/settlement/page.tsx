@@ -84,6 +84,7 @@ export default function Settlement() {
   const [assignments, setAssignments] = useState<MandatePolicy[]>([]);
   const [selected, setSelected] = useState("");
   const [detail, setDetail] = useState<Detail>();
+  const [currentState, setCurrentState] = useState(false);
   const [enabled, setEnabled] = useState(false),
     [deployment, setDeployment] = useState("Checking deployment"),
     [busy, setBusy] = useState(false),
@@ -93,35 +94,49 @@ export default function Settlement() {
     [amount, setAmount] = useState(""),
     [proposalId, setProposalId] = useState(""),
     [reviewId, setReviewId] = useState("");
+  const [guardian, setGuardian] = useState("");
   const [prepared, setPrepared] = useState<Intent>();
   const policy = assignments.find((p) => p.mandateId === selected);
   const refreshVersion = useRef(0);
   const refresh = useCallback(async () => {
     if (!session) return;
     const version = ++refreshVersion.current;
-    const status = await api<{ submissionEnabled: boolean; status: string }>(
-      "/chain/status",
-      session,
-    );
-    if (version !== refreshVersion.current) return;
-    setEnabled(status.submissionEnabled);
-    setDeployment(status.status);
-    if (policy) {
-      const result = await api<Detail>(
-        `/organizations/${policy.organizationId}/mandates/${policy.mandateId}/chain`,
+    setCurrentState(false);
+    setEnabled(false);
+    setDeployment("Checking deployment");
+    try {
+      const status = await api<{ submissionEnabled: boolean; status: string }>(
+        "/chain/status",
         session,
       );
-      if (
-        version === refreshVersion.current &&
-        result.policy.mandateId === policy.mandateId &&
-        result.policy.organizationId === policy.organizationId
-      ) {
-        setDetail(result);
+      if (version !== refreshVersion.current) return;
+      setDeployment(status.status);
+      if (policy) {
+        const result = await api<Detail>(
+          `/organizations/${policy.organizationId}/mandates/${policy.mandateId}/chain`,
+          session,
+        );
         if (
-          result.onchain?.guardian === session.accountId &&
-          result.policy.ownerAccount !== session.accountId
-        )
-          setKind("PAUSE");
+          version === refreshVersion.current &&
+          result.policy.mandateId === policy.mandateId &&
+          result.policy.organizationId === policy.organizationId
+        ) {
+          setDetail(result);
+          setCurrentState(true);
+          setEnabled(status.submissionEnabled);
+          if (
+            result.onchain?.guardian === session.accountId &&
+            result.policy.ownerAccount !== session.accountId
+          )
+            setKind("PAUSE");
+        }
+      }
+    } catch (error) {
+      if (version === refreshVersion.current) {
+        setEnabled(false);
+        setCurrentState(false);
+        setDeployment("Unavailable — previous observations are not current");
+        throw error;
       }
     }
   }, [session, policy]);
@@ -188,13 +203,17 @@ export default function Settlement() {
     return () => clearInterval(timer);
   }, [detail, refresh]);
   async function prepare() {
-    if (!session || !policy) return;
+    if (!session || !policy || !enabled || !currentState) return;
     setBusy(true);
     setMessage("");
     try {
       let input: OperationInput;
       if (kind === "REGISTER")
-        input = { kind, storageLimit: nearToAtomic(amount), guardian: null };
+        input = {
+          kind,
+          storageLimit: nearToAtomic(amount),
+          guardian: guardian || null,
+        };
       else if (
         ["FUND", "STORAGE_DEPOSIT", "WITHDRAW", "WITHDRAW_STORAGE"].includes(
           kind,
@@ -253,7 +272,7 @@ export default function Settlement() {
     }
   }
   async function sign() {
-    if (!session || !prepared) return;
+    if (!session || !prepared || !enabled || !currentState) return;
     setBusy(true);
     setMessage("");
     let began = false;
@@ -371,7 +390,10 @@ export default function Settlement() {
                       : "ATTEST",
                 );
                 setDetail(undefined);
+                setCurrentState(false);
+                setEnabled(false);
                 setPrepared(undefined);
+                setGuardian("");
                 setProposalId("");
                 setReviewId("");
               }}
@@ -424,7 +446,7 @@ export default function Settlement() {
                     Review evidence and sign independent claims
                   </Link>
                 </p>
-                {detail.onchain ? (
+                {currentState && detail.onchain ? (
                   <>
                     <h3>Finalized vault state: {detail.onchain.status}</h3>
                     <p>
@@ -527,6 +549,21 @@ export default function Settlement() {
                     />
                   </label>
                 )}
+                {kind === "REGISTER" && (
+                  <label>
+                    Optional guardian account (pause only)
+                    <input
+                      value={guardian}
+                      disabled={busy || !!prepared}
+                      onChange={(e) => setGuardian(e.target.value)}
+                      autoCapitalize="none"
+                      spellCheck={false}
+                    />
+                    Leave empty for no guardian. The guardian cannot resume,
+                    revoke, execute or withdraw. Review the exact account in the
+                    wallet transaction.
+                  </label>
+                )}
                 {(kind === "PROPOSE" || kind === "EXECUTE") && (
                   <label>
                     Proposal
@@ -548,11 +585,15 @@ export default function Settlement() {
                 {proposalId && (
                   <p role="status">
                     Onchain proposal:{" "}
-                    {detail.onchainProposals?.[proposalId]?.outcome ??
-                      "not verified onchain"}
+                    {(currentState
+                      ? detail.onchainProposals?.[proposalId]?.outcome
+                      : undefined) ?? "not verified onchain"}
                     . Current attestations:{" "}
-                    {detail.onchainProposals?.[proposalId]?.attestations
-                      .map(
+                    {(currentState
+                      ? detail.onchainProposals?.[proposalId]?.attestations
+                      : undefined
+                    )
+                      ?.map(
                         (a) =>
                           `${a.claim} by ${a.signer} (${BigInt(a.expires_at_ns) > BigInt(Date.now()) * 1000000n ? "unexpired" : "expired"})`,
                       )
@@ -636,6 +677,12 @@ export default function Settlement() {
               )}
               <section>
                 <h2>Operation history</h2>
+                {!currentState && (
+                  <p role="status">
+                    Last observed history only. Refresh required before wallet
+                    actions. Unresolved operations remain quarantined.
+                  </p>
+                )}
                 <button
                   type="button"
                   disabled={busy}
@@ -651,9 +698,7 @@ export default function Settlement() {
                 {detail.intents.map((i) => (
                   <article key={i.id}>
                     <h3>{i.operation.methodName}</h3>
-                    <p>
-                      {i.state} · {i.reason}
-                    </p>
+                    <p>{i.state.replaceAll("_", " ").toLowerCase()}</p>
                     {[
                       "UNKNOWN",
                       "AWAITING_WALLET",
@@ -666,6 +711,12 @@ export default function Settlement() {
                         unresolved.
                       </p>
                     )}
+                    <details>
+                      <summary>Technical outcome</summary>
+                      <p>
+                        {i.state} · {i.reason}
+                      </p>
+                    </details>
                     {i.explorerUrl && (
                       <a href={i.explorerUrl} target="_blank" rel="noreferrer">
                         View verified transaction on NEAR explorer
