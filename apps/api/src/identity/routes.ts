@@ -11,6 +11,7 @@ import cookie from "@fastify/cookie";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type pg from "pg";
 import { agentRoutes } from "../agents/routes.js";
+import { evidenceRoutes } from "../evidence/routes.js";
 import { mandateRoutes } from "../mandates/routes.js";
 import type { IdentityConfig } from "./config.js";
 import { csrfFor, hash, verifyMessage } from "./crypto.js";
@@ -481,6 +482,16 @@ export async function identityRoutes(
       });
     },
   );
+  evidenceRoutes(app, {
+    pool,
+    config,
+    verifyKey,
+    deny,
+    tokenOf,
+    session,
+    membership,
+    transaction,
+  });
   agentRoutes(app, {
     pool,
     config,

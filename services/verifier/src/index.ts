@@ -1,7 +1,8 @@
-// M0 process entrypoint only; no chain processing, signing or approval occurs.
-export const status = Object.freeze({
-  service: "verifier",
-  stage: "foundation",
-  enabled: false,
-});
-console.info(JSON.stringify(status));
+// Human-source adapter only. No provider credentials, network fetch, blockchain signer or daemon.
+export {
+  allowedReviewer,
+  assessment as assessHumanObservation,
+  readiness,
+} from "../../../packages/domain/src/evidence.js";
+export const sourceClassification =
+  "HUMAN_ASSERTION_NOT_AUTOMATED_PROVIDER_VERIFICATION";

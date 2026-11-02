@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { evidenceInput } from "../../domain/src/evidence.js";
 import { atomicAmount, type MandatePolicy } from "../../domain/src/index.js";
 import {
   type ProposalInput,
@@ -14,6 +15,11 @@ export const taskInput = z.strictObject({
   idempotencyKey: z.uuid(),
 });
 export const runtimeTool = z.discriminatedUnion("tool", [
+  z.strictObject({
+    tool: z.literal("submit_evidence"),
+    proposalId: z.uuid(),
+    evidence: evidenceInput,
+  }),
   z.strictObject({ tool: z.literal("mandate_summary") }),
   z.strictObject({ tool: z.literal("proposal_status"), proposalId: z.uuid() }),
   z.strictObject({ tool: z.literal("prepare"), task: taskInput }),

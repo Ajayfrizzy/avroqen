@@ -1150,3 +1150,91 @@ async fn distinct_roles_cannot_escalate_or_forge_owner_approval() -> anyhow::Res
     assert_eq!(m["spent"], "0");
     Ok(())
 }
+
+#[tokio::test]
+async fn map1_binding_replay_and_terminal_dispute_without_dispatch() -> anyhow::Result<()> {
+    let v = ReviewVault::new(&artifact()).await?;
+    v.funded(95, 1000, 3).await?;
+    for n in [951, 952] {
+        call(&v.agent,&v.c,"submit_proposal",json!({"mandate_id":id(95),"proposal_id":id(n),"recipient":v.recipient.id(),"amount":"400","evidence_digest":"a".repeat(64)}),0).await?.into_result()?;
+    }
+    let e = json!({"protocol_version":1,"network_id":"testnet","vault_account":v.c.id(),"mandate_id":id(95),"policy_version":1,"proposal_id":id(951),"asset_id":"NativeNear","recipient":v.recipient.id(),"amount_atomic":"400","claim_type":"SERVICE_CONFIRMED","evidence_digest":"a".repeat(64),"verifier_account":v.verifier.id(),"nonce":id(953),"issued_at_ns":"1","expires_at_ns":"2000000000000000000"});
+    for (field, value, code) in [
+        ("network_id", json!("mainnet"), "WRONG_NETWORK"),
+        ("vault_account", json!(v.owner.id()), "WRONG_VAULT"),
+        ("recipient", json!(v.owner.id()), "WRONG_RECIPIENT"),
+        ("amount_atomic", json!("401"), "WRONG_AMOUNT"),
+        ("evidence_digest", json!("b".repeat(64)), "WRONG_EVIDENCE"),
+        ("expires_at_ns", json!("2"), "EXPIRED_PROOF"),
+        ("verifier_account", json!(v.agent.id()), "WRONG_SIGNER"),
+    ] {
+        let mut altered = e.clone();
+        altered[field] = value;
+        reject(
+            &v.verifier,
+            &v.c,
+            "attest_proposal",
+            json!({"evidence":altered}),
+            0,
+            code,
+        )
+        .await?;
+    }
+    call(
+        &v.verifier,
+        &v.c,
+        "attest_proposal",
+        json!({"evidence":e}),
+        0,
+    )
+    .await?
+    .into_result()?;
+    let mut replay = e.clone();
+    replay["proposal_id"] = json!(id(952));
+    reject(
+        &v.verifier,
+        &v.c,
+        "attest_proposal",
+        json!({"evidence":replay}),
+        0,
+        "NONCE_REPLAY",
+    )
+    .await?;
+    let mut dispute = e.clone();
+    dispute["claim_type"] = json!("DELIVERY_DISPUTED");
+    dispute["nonce"] = json!(id(954));
+    call(
+        &v.verifier,
+        &v.c,
+        "attest_proposal",
+        json!({"evidence":dispute}),
+        0,
+    )
+    .await?
+    .into_result()?;
+    let mut after = e.clone();
+    after["claim_type"] = json!("INVOICE_ISSUED");
+    after["nonce"] = json!(id(955));
+    reject(
+        &v.verifier,
+        &v.c,
+        "attest_proposal",
+        json!({"evidence":after}),
+        0,
+        "PROPOSAL_TERMINAL",
+    )
+    .await?;
+    reject(
+        &v.owner,
+        &v.c,
+        "authorize_and_execute",
+        json!({"mandate_id":id(95),"proposal_id":id(951)}),
+        1,
+        "PROPOSAL_TERMINAL",
+    )
+    .await?;
+    let m = v.mandate(95).await?;
+    assert_eq!(m["reserved"], "0");
+    assert_eq!(m["spent"], "0");
+    Ok(())
+}

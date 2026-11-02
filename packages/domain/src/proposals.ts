@@ -4,7 +4,7 @@ import {
   identityNetwork,
   type MandatePolicy,
   nearAccount,
-} from "./index.js";
+} from "./index";
 
 export const proposalInput = z.strictObject({
   schemaVersion: z.literal(1),

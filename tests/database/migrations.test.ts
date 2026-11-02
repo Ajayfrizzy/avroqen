@@ -22,7 +22,7 @@ it("applies migrations once, including concurrent runners", async () => {
   expect(
     (await pool.query("SELECT count(*)::int AS count FROM schema_migrations"))
       .rows[0].count,
-  ).toBe(3);
+  ).toBe(4);
 });
 it("rejects invalid roles and account/network mismatches at storage boundaries", async () => {
   const org = randomUUID();

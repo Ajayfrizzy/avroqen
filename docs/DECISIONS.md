@@ -218,3 +218,16 @@ Live permission checks, atomic rotation and explicit revocation are mandatory.
 This grants offchain proposal access only, never custody, verifier or chain signing.
 The in-memory demo transport holds the token outside task inputs and runtime tools.
 See M4_DESIGN.md for alternatives, risk boundaries and implementation verification.
+
+
+## D016 — M5 human provenance and signed reviews (owner-approved 2026-11-02)
+
+Owner approved A (fresh wallet-signed review decisions) and chose B2 (independent
+human source verification), explicitly not the proposed synthetic provider service.
+M1 identifies the designated account; each review needs a new session-bound NEP-413
+proof with finalized active FullAccess Ed25519 validation and one-use five-minute
+challenge. Signed provenance/MAP-1 preparation never substitutes for an onchain
+verifier transaction. Human source observations are attributed assertions, not
+automated provider authentication. Synthetic exercises never count for live readiness.
+No provider/wallet secrets are created or stored. See M5_DESIGN.md for scope,
+independence limitations, per-claim quorum, owner separation and dispute boundaries.
