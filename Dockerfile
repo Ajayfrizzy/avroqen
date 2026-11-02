@@ -9,6 +9,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 FROM base AS api
 CMD ["pnpm", "--filter", "@avroqen/api", "start"]
 FROM base AS web
-ENV API_INTERNAL_URL=http://api:3001
+ARG API_INTERNAL_URL=http://api:3001
+ENV API_INTERNAL_URL=${API_INTERNAL_URL}
 RUN pnpm --filter @avroqen/web build
 CMD ["pnpm", "--filter", "@avroqen/web", "start"]

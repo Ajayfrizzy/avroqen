@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 
-for (const service of ["api", "web"]) {
+for (const service of ["api", "web", "worker"]) {
   const output = execFileSync(
     "docker",
     [
@@ -18,5 +18,5 @@ for (const service of ["api", "web"]) {
   assert.match(output, /Isolated non-root process/);
 }
 console.info(
-  "Web/API run non-root; local environment and Git metadata are absent from images.",
+  "Web/API/worker run non-root; local environment and Git metadata are absent from images.",
 );

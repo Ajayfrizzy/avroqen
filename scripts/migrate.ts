@@ -1,9 +1,9 @@
 import pg from "pg";
+import { databaseConfig } from "../apps/api/src/db/config.js";
 import { migrate } from "../apps/api/src/db/migrate.js";
-import { readApiConfig } from "../packages/domain/src/index.js";
 
 const pool = new pg.Pool({
-  ...readApiConfig(process.env).database,
+  ...databaseConfig(process.env),
   connectionTimeoutMillis: 2000,
 });
 try {

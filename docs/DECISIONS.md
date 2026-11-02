@@ -260,3 +260,7 @@ fixtures remain useful automated tests, never genuine source or payment evidence
 No authority boundary, expiry, nonce, quorum, accounting, custody or key policy is
 changed. No deployment, token transfer, merge or repository-publication permission
 is granted by this sequencing decision.
+
+## D018 — M6 intended deployment account and retained-key governance
+
+Owner decision (November 2, 2026): target `avroqen-vault.testnet`; retain an owner-controlled deployment full-access key for the small hackathon demo, accepting contract replacement and direct-transfer risk. No deployment/account creation/key mutation/transaction is authorized by this selection. Finalized public testnet RPC currently reports `UNKNOWN_ACCOUNT`; account ownership, public keys, balance, deployed artifact and initialized domain must be verified before live authorization. See M6_DESIGN.md. Backend, worker and AI never receive wallet keys; all M3 financial invariants remain mandatory.

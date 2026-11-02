@@ -1,13 +1,15 @@
 import { readApiConfig } from "@avroqen/domain";
 import pg from "pg";
+import { deploymentConfig, NearReader } from "../../../services/chain/rpc.js";
 import { buildApi } from "./app.js";
+import { databaseConfig } from "./db/config.js";
 import { identityConfig } from "./identity/config.js";
 import { fullAccessVerifier } from "./identity/crypto.js";
 
 async function main() {
   const config = readApiConfig(process.env);
   const pool = new pg.Pool({
-    ...config.database,
+    ...databaseConfig(process.env),
     max: 4,
     connectionTimeoutMillis: 2000,
     query_timeout: 2000,
@@ -21,7 +23,15 @@ async function main() {
     async () => {
       await pool.query("SELECT 1 FROM auth_sessions LIMIT 0");
     },
-    { pool, config: auth, verifyKey: fullAccessVerifier(auth.network) },
+    {
+      pool,
+      config: auth,
+      verifyKey: fullAccessVerifier(auth.network),
+      chain: {
+        manifest: deploymentConfig(process.env),
+        reader: new NearReader(),
+      },
+    },
   );
   app.addHook("onClose", async () => {
     await pool.end();

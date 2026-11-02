@@ -98,3 +98,7 @@ metadata/reviews and append-only events with atomic challenge consumption.
 No provider credential, file upload, URL fetch, signer or transaction sender exists.
 See M5_DESIGN, M5_VERIFIER_RUNBOOK and M5_MAP1_INTEGRATION for trust boundaries,
 exact-byte hashing and the separately authorized deployment/receipt path.
+
+## M6 chain boundary
+
+`services/chain` is a read-only NEAR RPC, receipt verification and reconciliation service. The API prepares typed wallet intents from immutable M2/M4/M5 records; the independent worker processes durable PostgreSQL intents without custody or broadcast capabilities. The settlement workspace requests explicit wallet transactions with function-call-key execution disabled. `docs/M6_DESIGN.md`, `docs/M6_RECONCILIATION.md` and the separately gated `docs/M6_TESTNET_RUNBOOK.md` define lifecycle, trusted-RPC assumptions, deployment governance and unknown-outcome quarantine. Application state never overrides contract funds or callback obligations.

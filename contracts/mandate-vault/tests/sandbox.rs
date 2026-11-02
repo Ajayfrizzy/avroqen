@@ -1238,3 +1238,124 @@ async fn map1_binding_replay_and_terminal_dispute_without_dispatch() -> anyhow::
     assert_eq!(m["spent"], "0");
     Ok(())
 }
+
+#[tokio::test]
+async fn application_receipt_verifier_checks_actual_sandbox_settlement() -> anyhow::Result<()> {
+    let v = ReviewVault::new(&artifact()).await?;
+    v.funded(96, 1000, 2).await?;
+    prepare(
+        &v.c,
+        (&v.owner, &v.agent, &v.verifier),
+        v.recipient.id().as_str(),
+        96,
+        961,
+        400,
+    )
+    .await?;
+    let args = json!({"mandate_id":id(96),"proposal_id":id(961)});
+    let before = v.recipient.view_account().await?.balance;
+    let result = v
+        .owner
+        .call(v.c.id(), "authorize_and_execute")
+        .args_json(args.clone())
+        .deposit(NearToken::from_yoctonear(1))
+        .gas(near_workspaces::types::Gas::from_tgas(100))
+        .transact()
+        .await?;
+    assert!(result.is_success());
+    assert_eq!(
+        v.recipient.view_account().await?.balance.as_yoctonear(),
+        before.as_yoctonear() + 400
+    );
+    let mandate = v.mandate(96).await?;
+    let operation = json!({"network":"testnet","signerId":v.owner.id(),"receiverId":v.c.id(),"methodName":"authorize_and_execute","args":args,"gas":"100000000000000","deposit":"1","mandateId":id(96),"policyDigest":mandate["policy_digest"],"kind":"EXECUTE","expectedTransfer":{"recipient":v.recipient.id(),"amount":"400","evidenceDigest":"a".repeat(64)}});
+    check_application_receipts(
+        &v.worker.rpc_addr(),
+        &result.outcome().transaction_hash.to_string(),
+        operation,
+        "CONFIRMED_SUCCESS",
+    )?;
+    let missing = format!("missing.{}", v.c.id());
+    register(
+        &v.c,
+        (&v.owner, &v.agent, &v.verifier),
+        &missing,
+        97,
+        1000,
+        1,
+    )
+    .await?;
+    call(
+        &v.owner,
+        &v.c,
+        "fund_mandate",
+        json!({"mandate_id":id(97)}),
+        1000,
+    )
+    .await?
+    .into_result()?;
+    prepare(
+        &v.c,
+        (&v.owner, &v.agent, &v.verifier),
+        &missing,
+        97,
+        971,
+        400,
+    )
+    .await?;
+    let args = json!({"mandate_id":id(97),"proposal_id":id(971)});
+    let failed = v
+        .owner
+        .call(v.c.id(), "authorize_and_execute")
+        .args_json(args.clone())
+        .deposit(NearToken::from_yoctonear(1))
+        .gas(near_workspaces::types::Gas::from_tgas(100))
+        .transact()
+        .await?;
+    let mandate = v.mandate(97).await?;
+    assert_eq!(mandate["available"], "1000");
+    assert_eq!(mandate["spent"], "0");
+    let operation = json!({"network":"testnet","signerId":v.owner.id(),"receiverId":v.c.id(),"methodName":"authorize_and_execute","args":args,"gas":"100000000000000","deposit":"1","mandateId":id(97),"policyDigest":mandate["policy_digest"],"kind":"EXECUTE","expectedTransfer":{"recipient":missing,"amount":"400","evidenceDigest":"a".repeat(64)}});
+    check_application_receipts(
+        &v.worker.rpc_addr(),
+        &failed.outcome().transaction_hash.to_string(),
+        operation,
+        "CONFIRMED_FAILED",
+    )?;
+    Ok(())
+}
+
+fn check_application_receipts(
+    rpc: &str,
+    hash: &str,
+    operation: Value,
+    expected: &str,
+) -> anyhow::Result<()> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("node")
+        .args(["--import", "tsx", "scripts/check-sandbox-receipts.ts"])
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("sandbox verifier stdin unavailable"))?
+        .write_all(
+            near_sdk::serde_json::to_string(
+                &json!({"rpc":rpc,"hash":hash,"operation":operation,"expected":expected}),
+            )?
+            .as_bytes(),
+        )?;
+    let output = child.wait_with_output()?;
+    assert!(
+        output.status.success(),
+        "application receipt verification failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    println!("{}", String::from_utf8_lossy(&output.stdout));
+    Ok(())
+}

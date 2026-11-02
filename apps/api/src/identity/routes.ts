@@ -11,6 +11,7 @@ import cookie from "@fastify/cookie";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type pg from "pg";
 import { agentRoutes } from "../agents/routes.js";
+import { type ChainConfig, chainRoutes } from "../chain/routes.js";
 import { evidenceRoutes } from "../evidence/routes.js";
 import { mandateRoutes } from "../mandates/routes.js";
 import type { IdentityConfig } from "./config.js";
@@ -18,6 +19,7 @@ import { csrfFor, hash, verifyMessage } from "./crypto.js";
 import { parseVerification } from "./validation.js";
 
 export interface IdentityOptions {
+  chain?: ChainConfig;
   pool: pg.Pool;
   config: IdentityConfig;
   verifyKey: (account: string, key: string) => Promise<boolean>;
@@ -45,7 +47,7 @@ export interface Session {
 }
 export async function identityRoutes(
   app: FastifyInstance,
-  { pool, config, verifyKey }: IdentityOptions,
+  { pool, config, verifyKey, chain }: IdentityOptions,
 ) {
   await app.register(cookie);
   const sessionName = `${config.secure ? "__Host-" : ""}avroqen_session`;
@@ -481,6 +483,20 @@ export async function identityRoutes(
         return result.rows[0];
       });
     },
+  );
+  chainRoutes(
+    app,
+    {
+      pool,
+      config,
+      verifyKey,
+      transaction,
+      session,
+      membership,
+      deny,
+      tokenOf,
+    },
+    chain,
   );
   evidenceRoutes(app, {
     pool,

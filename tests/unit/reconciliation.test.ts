@@ -1,0 +1,222 @@
+import bs58 from "bs58";
+import { expect, it } from "vitest";
+import { type Intent, observe } from "../../services/chain/reconcile.js";
+import { NearReader, UnknownBlock } from "../../services/chain/rpc.js";
+
+const h = (n: number) => bs58.encode(Buffer.alloc(32, n));
+const op = {
+  network: "testnet",
+  signerId: "owner.testnet",
+  receiverId: "vault.testnet",
+  methodName: "fund_mandate",
+  args: { mandate_id: "m" },
+  gas: "100000000000000",
+  deposit: "1",
+  mandateId: "m",
+  policyDigest: "a".repeat(64),
+  kind: "FUND",
+};
+const intent: Intent = {
+  id: "fixture",
+  canonical_operation: JSON.stringify(op),
+  manifest: {
+    account: "vault.testnet",
+    network: "testnet",
+    wasmSha256: "a".repeat(64),
+    keyFingerprints: ["b".repeat(64)],
+    authorization: "fixture-authorization",
+  },
+  reported_hash: null,
+  verified_hash: null,
+  scan_height: "1",
+  scan_hash: h(1),
+  anchor_height: "1",
+  last_height: null,
+  last_block_hash: null,
+  state: "UNKNOWN",
+};
+class ScanReader extends NearReader {
+  multiple = false;
+  outage = false;
+  conflict = false;
+  found = false;
+  override async deployment() {
+    return {
+      block: { height: 3, hash: h(3), prev_hash: h(2), timestamp_nanosec: "3" },
+      account: {
+        block_hash: h(3),
+        code_hash: h(9),
+        amount: "1",
+        storage_usage: 1,
+      },
+      accounting: { network: "testnet" as const, vault: "vault.testnet" },
+    };
+  }
+  override async block(id?: string | number) {
+    const height =
+      typeof id === "string" ? (bs58.decode(id)[0] ?? 0) : Number(id ?? 3);
+    if (this.outage) throw new Error("outage");
+    return {
+      header: {
+        height,
+        hash: h(height),
+        prev_hash: h(this.conflict ? 9 : height - 1),
+        timestamp_nanosec: String(height),
+      },
+      chunks: [{ chunk_hash: h(height) }],
+    };
+  }
+  override async rpc(method: string, params: unknown) {
+    if (method === "chunk") {
+      const height = bs58.decode((params as { chunk_id: string }).chunk_id)[0];
+      return {
+        header: { height_included: height },
+        transactions:
+          this.found && height === 2
+            ? [
+                {
+                  hash: h(7),
+                  signer_id: op.signerId,
+                  receiver_id: op.receiverId,
+                  actions: [
+                    {
+                      FunctionCall: {
+                        method_name: op.methodName,
+                        args: Buffer.from(JSON.stringify(op.args)).toString(
+                          "base64",
+                        ),
+                        gas: op.gas,
+                        deposit: op.deposit,
+                      },
+                    },
+                  ],
+                },
+                ...(this.multiple
+                  ? [
+                      {
+                        hash: h(8),
+                        signer_id: op.signerId,
+                        receiver_id: op.receiverId,
+                        actions: [
+                          {
+                            FunctionCall: {
+                              method_name: op.methodName,
+                              args: Buffer.from(
+                                JSON.stringify(op.args),
+                              ).toString("base64"),
+                              gas: op.gas,
+                              deposit: op.deposit,
+                            },
+                          },
+                        ],
+                      },
+                    ]
+                  : []),
+              ]
+            : [],
+      };
+    }
+    return {
+      final_execution_status: "INCLUDED",
+      transaction: {
+        hash: h(7),
+        signer_id: op.signerId,
+        receiver_id: op.receiverId,
+        actions: [
+          {
+            FunctionCall: {
+              method_name: op.methodName,
+              args: Buffer.from(JSON.stringify(op.args)).toString("base64"),
+              gas: op.gas,
+              deposit: op.deposit,
+            },
+          },
+        ],
+      },
+      transaction_outcome: {
+        id: h(7),
+        block_hash: h(2),
+        outcome: {
+          executor_id: op.signerId,
+          receipt_ids: [],
+          status: { Unknown: null },
+        },
+      },
+      receipts_outcome: [],
+    };
+  }
+}
+it("advances a contiguous finalized scan without declaring failure when no hash exists", async () => {
+  expect(await observe(new ScanReader(), intent)).toMatchObject({
+    state: "UNKNOWN",
+    reason: "HASH_NOT_RECOVERED",
+    scanHeight: 3,
+    scanHash: h(3),
+  });
+});
+it("recovers an exact operation hash but waits for final receipts", async () => {
+  const r = new ScanReader();
+  r.found = true;
+  expect(await observe(r, intent)).toMatchObject({
+    state: "FINALIZING",
+    reason: "WAITING_FINALITY",
+    verifiedHash: h(7),
+  });
+});
+it("quarantines ambiguous multiple matching transactions", async () => {
+  const r = new ScanReader();
+  r.found = true;
+  r.multiple = true;
+  expect(await observe(r, intent)).toMatchObject({
+    state: "UNKNOWN",
+    reason: "AMBIGUOUS_TRANSACTIONS",
+  });
+});
+it("does not advance the scan through missing or conflicting history", async () => {
+  const r = new ScanReader();
+  r.conflict = true;
+  await expect(observe(r, intent)).rejects.toThrow("MISSING_BLOCK_HISTORY");
+  r.outage = true;
+  await expect(observe(r, intent)).rejects.toThrow("outage");
+});
+it("rejects stale or same-height conflicting finalized projections", async () => {
+  await expect(
+    observe(new ScanReader(), {
+      ...intent,
+      last_height: "4",
+      last_block_hash: h(4),
+    }),
+  ).rejects.toThrow("STALE_RPC");
+  await expect(
+    observe(new ScanReader(), {
+      ...intent,
+      last_height: "3",
+      last_block_hash: h(9),
+    }),
+  ).rejects.toThrow("CONFLICTING_RPC");
+});
+
+it("skips an explicitly absent block height only when the next real block links to the prior block", async () => {
+  class Skipped extends ScanReader {
+    override async block(id?: string | number) {
+      if (id === 2) throw new UnknownBlock("UNKNOWN_BLOCK");
+      const b = await super.block(id);
+      if (b.header.height === 3) b.header.prev_hash = h(1);
+      return b;
+    }
+  }
+  expect(await observe(new Skipped(), intent)).toMatchObject({
+    state: "UNKNOWN",
+    scanHeight: 3,
+    scanHash: h(3),
+  });
+  class MissingExisting extends ScanReader {
+    override async block(id?: string | number) {
+      if (id === 2) throw new UnknownBlock("UNKNOWN_BLOCK");
+      return super.block(id);
+    }
+  }
+  await expect(observe(new MissingExisting(), intent)).rejects.toThrow(
+    "MISSING_BLOCK_HISTORY",
+  );
+});
