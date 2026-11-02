@@ -31,6 +31,7 @@ const intent: Intent = {
   scan_height: "1",
   scan_hash: h(1),
   anchor_height: "1",
+  anchor_hash: h(1),
   last_height: null,
   last_block_hash: null,
   state: "UNKNOWN",
@@ -219,4 +220,29 @@ it("skips an explicitly absent block height only when the next real block links 
   await expect(observe(new MissingExisting(), intent)).rejects.toThrow(
     "MISSING_BLOCK_HISTORY",
   );
+});
+
+it.each(["2", "3"])(
+  "rejects identical historical transactions at or before intent anchor %s",
+  async (height) => {
+    const result = await observe(new ScanReader(), {
+      ...intent,
+      reported_hash: h(7),
+      anchor_height: height,
+    });
+    expect(result).toEqual({
+      state: "UNKNOWN",
+      reason: "TRANSACTION_PREDATES_INTENT",
+    });
+  },
+);
+
+it("rejects a changed finalized intent anchor before promoting a hash", async () => {
+  await expect(
+    observe(new ScanReader(), {
+      ...intent,
+      reported_hash: h(7),
+      anchor_hash: h(9),
+    }),
+  ).rejects.toThrow("CONFLICTING_INTENT_ANCHOR");
 });

@@ -34,12 +34,22 @@ const manifest = {
 let rpcDown = false;
 let rpcResult: unknown;
 class FixtureReader extends NearReader {
-  override async deployment() {
+  override async deployment(_manifest?: unknown, at?: string) {
     if (rpcDown) throw new Error("outage");
     return {
       block: {
-        height: 100,
-        hash: bs58.encode(Buffer.alloc(32, 1)),
+        height:
+          at === bs58.encode(Buffer.alloc(32, 1)) || rpcResult === undefined
+            ? 100
+            : 101,
+        hash: bs58.encode(
+          Buffer.alloc(
+            32,
+            at === bs58.encode(Buffer.alloc(32, 1)) || rpcResult === undefined
+              ? 1
+              : 4,
+          ),
+        ),
         prev_hash: bs58.encode(Buffer.alloc(32, 2)),
         timestamp_nanosec: "1",
       },
@@ -52,8 +62,15 @@ class FixtureReader extends NearReader {
       accounting: { network: "testnet" as const, vault: "vault.testnet" },
     };
   }
-  override async block() {
-    const d = await this.deployment();
+  override async block(id?: string | number) {
+    const d = await this.deployment(
+      undefined,
+      id === 100
+        ? bs58.encode(Buffer.alloc(32, 1))
+        : typeof id === "string"
+          ? id
+          : undefined,
+    );
     return { header: d.block, chunks: [] };
   }
   override async rpc() {
@@ -378,7 +395,7 @@ function required<T>(value: T | undefined): T {
 function finalizedFixture(operation: Record<string, unknown>, failure = false) {
   const txHash = bs58.encode(Buffer.alloc(32, 5)),
     receipt = bs58.encode(Buffer.alloc(32, 6)),
-    block = bs58.encode(Buffer.alloc(32, 1));
+    block = bs58.encode(Buffer.alloc(32, 4));
   const actions = [
     {
       FunctionCall: {
@@ -507,4 +524,34 @@ it("revoked membership cannot prepare or open owner operations", async () => {
     (await post(`/api/chain/intents/${r.json().id}/begin`, {})).statusCode,
   ).toBe(403);
   expect((await prepare()).statusCode).toBe(403);
+});
+
+it("historical finalized success cannot settle a new intent or release its lock", async () => {
+  const r = await prepare({ kind: "STORAGE_DEPOSIT", amount: "1" });
+  const id = r.json().id;
+  await post(`/api/chain/intents/${id}/begin`, {});
+  await post(`/api/chain/intents/${id}/report`, {
+    hash: bs58.encode(Buffer.alloc(32, 5)),
+  });
+  const raw = finalizedFixture(r.json().operation);
+  raw.transaction_outcome.block_hash = bs58.encode(Buffer.alloc(32, 1));
+  for (const receipt of raw.receipts_outcome)
+    receipt.block_hash = bs58.encode(Buffer.alloc(32, 1));
+  rpcResult = raw;
+  await runOnce(pool, reader);
+  expect(
+    (
+      await pool.query(
+        "SELECT state,reason,verified_hash FROM chain_intents WHERE id=$1",
+        [id],
+      )
+    ).rows[0],
+  ).toMatchObject({
+    state: "UNKNOWN",
+    reason: "TRANSACTION_PREDATES_INTENT",
+    verified_hash: null,
+  });
+  expect(
+    (await prepare({ kind: "STORAGE_DEPOSIT", amount: "1" })).statusCode,
+  ).toBe(409);
 });

@@ -29,6 +29,7 @@ export interface Intent {
   scan_height: string;
   scan_hash: string;
   anchor_height: string;
+  anchor_hash: string;
   last_height: string | null;
   last_block_hash: string | null;
   state: IntentState;
@@ -127,6 +128,16 @@ export async function observe(
   );
   if (raw.transaction.hash !== hash || !matchesOperation(raw.transaction, op))
     return { state: "UNKNOWN", reason: "TRANSACTION_MISMATCH" };
+  const inclusion = await reader.block(raw.transaction_outcome.block_hash);
+  if (inclusion.header.hash !== raw.transaction_outcome.block_hash)
+    throw new Error("CONFLICTING_TRANSACTION_BLOCK");
+  if (inclusion.header.height <= Number(intent.anchor_height))
+    return { state: "UNKNOWN", reason: "TRANSACTION_PREDATES_INTENT" };
+  if (
+    (await reader.block(Number(intent.anchor_height))).header.hash !==
+    intent.anchor_hash
+  )
+    throw new Error("CONFLICTING_INTENT_ANCHOR");
   if (raw.final_execution_status !== "FINAL")
     return {
       state: raw.final_execution_status === "NONE" ? "SUBMITTED" : "FINALIZING",

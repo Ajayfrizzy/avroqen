@@ -4,7 +4,7 @@ Status: implementation in progress; no live transaction or deployment authorized
 
 ## Authority and deployment decision
 
-The owner selected `avroqen-vault.testnet` and explicitly accepted retaining an owner-controlled deployment full-access key for the small hackathon demonstration. Such a key can replace the contract or transfer its funds directly, outside Rust policy enforcement. Application isolation cannot remove this risk. This is a design decision, not authorization to create the account, deploy, add/remove keys or transact. Read-only finalized public testnet RPC inspection on November 2 returned `UNKNOWN_ACCOUNT`; the target is not yet verified as an existing account.
+The owner selected `avroqen-vault.testnet` and explicitly accepted retaining an owner-controlled deployment full-access key for the small hackathon demonstration. Such a key can replace the contract or transfer its funds directly, outside Rust policy enforcement. Application isolation cannot remove this risk. This is a design decision, not authorization to create the account, deploy, add/remove keys or transact. The initial November 2 lookup returned `UNKNOWN_ACCOUNT`; this is superseded by the finalized account observation in the final-review section below.
 
 Only wallet-controlled, direct owner/agent/designated-verifier transactions are supported. No backend or worker signer exists. Agent bearer capabilities do not authorize blockchain signing. M2 consent and M5 review signatures remain offchain; each onchain operation requires a separate wallet prompt. LOCAL_EXERCISE evidence is ineligible.
 
@@ -31,3 +31,9 @@ Tests must cover altered transaction identity and arguments, receipt graph gaps,
 The actual sandbox-to-application receipt test initially failed with `DISPATCH_NOT_CONFIRMED`: M3 calls `promise_return`, so the root outcome is `SuccessReceiptId`. The verifier now requires that reference to equal the exact settlement callback ID, then verifies callback dependencies, result and contract state. Actual successful and definitively failed sandbox transfers both pass without weakening settlement requirements.
 
 Review also found that the initial M6 membership lookup omitted the existing `status='active'` predicate. This was corrected before delivery, authorization rows are read with shared locks, and a PostgreSQL regression denies disabled membership at preparation and prompt opening. New-submission disablement no longer stops the read-only worker. These are self-review findings and fixes, not an external audit.
+
+## Final review clarification
+
+See [VAULT_GOVERNANCE.md](VAULT_GOVERNANCE.md) and D019 for the dedicated demonstration account, retained FullAccess risks and unimplemented production factory direction. Existing M3 custody/initialization is unchanged. The earlier UNKNOWN_ACCOUNT observation is superseded by finalized block 275954911: 4.5 NEAR, no deployed code, one FullAccess key. Deployment and funding remain unauthorized.
+
+Transaction attribution additionally requires inclusion strictly after the immutable intent creation anchor. The anchor hash must still match its canonical height. Identical historical transactions cannot satisfy a newer intent, including deposits with otherwise identical arguments.
