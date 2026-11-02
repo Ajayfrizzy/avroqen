@@ -180,3 +180,19 @@ rollback and concurrent-spend rejection. Sandbox 2.14.0 downloads on first use;
 Linux x86_64/aarch64 and Apple Silicon are supported by the pinned runner. Tests
 create only temporary local identities with valueless balances. Public testnet
 requires separate approval of the deployment/transaction plan; see the runbook.
+
+
+## M4 restricted proposal demo
+
+After local Compose startup and existing M1 sign-in/M2 consent, open
+`/workspace/proposals`. Select an organization and approved, unexpired mandate;
+enable scoped demo access, enter an exact atomic amount and evidence digest,
+prepare/review and submit. See **SUBMITTED_OFFCHAIN**, never payment success.
+A disabled agent, revoked consent or above-limit amount is denied. Credentials
+are independent of owner sessions and grant no wallet/treasury/verifier authority.
+No paid model or blockchain transaction is needed.
+
+The operational rules-based runtime treats prose as inert context. Evidence is
+not verified until M5; deployment and settlement remain unavailable. Follow the
+[M4 runbook](docs/M4_AGENT_RUNBOOK.md), [API contract](docs/M4_PROPOSAL_API.md) and
+[verification report](docs/M4_REPORT.md), including pending human-device testing.

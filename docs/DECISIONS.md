@@ -206,3 +206,15 @@ sandbox job now replace the M0 scaffold-only assertion. No authority boundary
 changed during this implementation. Protocol reserve 0.1 NEAR, callback 20 Tgas,
 remaining-gas minimum 60 Tgas and bounded records are documented engineering
 limits, not permissions to spend or claims of maximum-load certification.
+
+
+## D015 — M4 scoped application capabilities (owner-approved, 2026-11-02)
+
+Owner explicitly selected option A in M4_DESIGN.md: independently authenticated
+256-bit bearer capabilities, hash-only persistence, exact agent/org/network/mandate/
+policy/vault scope, 24-hour maximum (15-minute demo), bounded by mandate expiry.
+Original owner issuance requires active owner membership, session, Origin and CSRF.
+Live permission checks, atomic rotation and explicit revocation are mandatory.
+This grants offchain proposal access only, never custody, verifier or chain signing.
+The in-memory demo transport holds the token outside task inputs and runtime tools.
+See M4_DESIGN.md for alternatives, risk boundaries and implementation verification.

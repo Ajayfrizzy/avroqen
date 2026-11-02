@@ -68,3 +68,19 @@ evidence and read boundaries; the web UI explicitly shows onchain services and
 balances unavailable. No transaction adapter or backend custody signer is enabled.
 The M2 consent flow remains offchain. M4 agent runtime, M5 independent evidence
 acquisition and M6 indexer/reconciliation remain separate milestones.
+
+
+## M4 application proposal boundary
+
+D015 approves independently authenticated, hash-stored bearer capabilities scoped
+by immutable mandate identity. Issuance uses original-owner membership/session/CSRF;
+agent calls require their own capability and exact Origin, never an owner cookie.
+Lock order is owner session where applicable -> owner membership -> consent ->
+agent -> credential -> proposal. Live rechecks and one SQL transaction serialize
+revocation/disable and proposal/audit creation. No network call occurs under locks.
+
+The local deterministic runtime is a fixed tool union; task prose and evidence
+digests remain untrusted. Offchain proposal persistence is not registration or
+financial authorization. The M3 adapter builds arguments only; M5 verification and
+M6 chain submission/indexing/reconciliation remain separate, unimplemented work.
+See M4_DESIGN.md, M4_PROPOSAL_API.md and M4_AGENT_RUNBOOK.md.
