@@ -218,3 +218,45 @@ Live permission checks, atomic rotation and explicit revocation are mandatory.
 This grants offchain proposal access only, never custody, verifier or chain signing.
 The in-memory demo transport holds the token outside task inputs and runtime tools.
 See M4_DESIGN.md for alternatives, risk boundaries and implementation verification.
+
+
+## D016 — M5 human provenance and signed reviews (owner-approved 2026-11-02)
+
+Owner approved A (fresh wallet-signed review decisions) and chose B2 (independent
+human source verification), explicitly not the proposed synthetic provider service.
+M1 identifies the designated account; each review needs a new session-bound NEP-413
+proof with finalized active FullAccess Ed25519 validation and one-use five-minute
+challenge. Signed provenance/MAP-1 preparation never substitutes for an onchain
+verifier transaction. Human source observations are attributed assertions, not
+automated provider authentication. Synthetic exercises never count for live readiness.
+No provider/wallet secrets are created or stored. See M5_DESIGN.md for scope,
+independence limitations, per-claim quorum, owner separation and dispute boundaries.
+
+## D017 — Integrated product acceptance sequencing (owner-directed, 2026-11-02)
+
+Complete the integrated product before further repetitive desktop/Android milestone
+walkthroughs. Preserve M5's approved A/B2 implementation and all automated gates;
+do not restart or expand M5. Its real-wallet and authentic independent-source
+acceptance moves to pending integrated M8 testing, not passed or waived. PR #9 is
+eligible for hackathon integration with green required CI and no confirmed blocking
+defects; merge still requires separate owner authorization. This is not production
+security approval, and self-review is not an independent audit.
+
+M6 owns real NEAR Testnet wallet transaction orchestration, verified receipts,
+indexing/reconciliation and quarantined unknown outcomes. M7 completes monitoring,
+incident UX and the already-approved emergency authority controls. M8 validates the
+complete M1–M7 journey, including physical Android and genuine independent verifier
+message/transaction signatures. M9 delivers a polished reproducible judges' demo,
+temporarily hosted on RumptyCloud, with actual NEAR Testnet results. Hosting terms,
+zero-cost availability, HTTPS/origin configuration and teardown must be verified
+before a separately authorized deployment; no infrastructure is provisioned now.
+
+Simplify owner/verifier journeys: calculate exact-byte digests locally where safe,
+convert human-readable NEAR decimal strings to checked atomic integers without
+floating-point arithmetic, and put protocol details behind an inspectable view.
+Do not auto-confirm independent provenance, change signed terms, hide consequential
+wallet approvals, or turn app roles/consent into onchain authority. Synthetic
+fixtures remain useful automated tests, never genuine source or payment evidence.
+No authority boundary, expiry, nonce, quorum, accounting, custody or key policy is
+changed. No deployment, token transfer, merge or repository-publication permission
+is granted by this sequencing decision.

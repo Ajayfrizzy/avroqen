@@ -82,3 +82,25 @@ agent and dispatches a strict fixed union for summary/status/prepare/submit/deni
 `/v1` sketches remain unimplemented, not alternate financial routes. See
 [M4_PROPOSAL_API.md](M4_PROPOSAL_API.md) for exact schemas, pagination, denial codes,
 limits, idempotency and authority boundaries.
+
+## M5 implemented evidence and review API
+
+All routes reuse M1 Origin/rate/session protections; writes require session CSRF.
+`GET /api/verifier/proposals?offset=` returns only explicit non-agent assignments
+(50/page). `GET /api/evidence/:proposalId` permits active org members or a designated
+verifier; reads expose bounded metadata/observations, never signatures/challenges.
+`POST .../intake` requires original owner with active org-owner role. The existing
+scoped agent tool accepts `submit_evidence` with proposalId/evidence instead; its
+capability never authorizes review. Metadata retry is idempotent and immutable.
+`POST .../challenge` accepts strict claim/decision/observation; `POST .../verify`
+accepts M1 proof fields and atomically consumes a five-minute session-bound challenge
+plus review and event after finalized key verification and repeated live checks.
+Status records distinguish VERIFIED, REJECTED, PENDING_REVIEW, UNVERIFIABLE,
+SYNTHETIC_ONLY and DISPUTED. Only current non-synthetic signed decisions contribute
+to per-claim readiness; active consent/agent/mandate and separate owner approval
+are required. NOT_SUBMITTED/NOT_DEPLOYED remain unconditional chain labels.
+Stable errors include SOURCE_REFERENCE_MISMATCH, EVIDENCE_MISMATCH,
+INDEPENDENCE_REQUIRED, SOURCE_UNAVAILABLE, CLAIM_MISMATCH, REVIEW_ALREADY_FINAL,
+DELIVERY_DISPUTED, INVALID_PROOF, AGENT_DISABLED and CONSENT_UNAVAILABLE.
+Migration004 adds evidence_submissions/challenges/reviews/events, exact proposal
+binding guards and immutable row triggers. It adds no secret/provider/file storage.

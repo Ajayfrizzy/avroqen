@@ -196,3 +196,14 @@ The operational rules-based runtime treats prose as inert context. Evidence is
 not verified until M5; deployment and settlement remain unavailable. Follow the
 [M4 runbook](docs/M4_AGENT_RUNBOOK.md), [API contract](docs/M4_PROPOSAL_API.md) and
 [verification report](docs/M4_REPORT.md), including pending human-device testing.
+
+### M5 human evidence review
+
+From proposal history, open **Evidence review**; designated verifiers can use
+`/workspace/evidence` to load assignments. Agent evidence starts untrusted. A human
+independently obtains authenticated source records, reviews exact claims and signs
+a fresh offchain message. This is not automated provider confirmation or a payment.
+Local exercises never count toward live quorum. See [M5 report](docs/M5_REPORT.md),
+[manual runbook](docs/M5_VERIFIER_RUNBOOK.md) and
+[MAP-1 integration](docs/M5_MAP1_INTEGRATION.md). Public transaction transport,
+deployment and actual testnet receipts remain separately gated; no send is enabled.

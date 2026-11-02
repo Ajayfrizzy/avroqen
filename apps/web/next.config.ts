@@ -13,7 +13,7 @@ const config: NextConfig = {
   async headers() {
     return [
       {
-        source: "/workspace",
+        source: "/workspace/:path*",
         headers: [
           { key: "Referrer-Policy", value: "no-referrer" },
           { key: "X-Frame-Options", value: "DENY" },

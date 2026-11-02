@@ -585,6 +585,11 @@ export default function Proposals() {
               {history.length ? (
                 history.map((h) => (
                   <article key={h.proposal.proposalId}>
+                    <Link
+                      href={`/workspace/evidence?proposal=${h.proposal.proposalId}`}
+                    >
+                      Evidence and verification
+                    </Link>
                     <p>
                       {h.proposal.recipient}: {h.proposal.amountAtomic}{" "}
                       yoctoNEAR

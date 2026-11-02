@@ -84,3 +84,17 @@ digests remain untrusted. Offchain proposal persistence is not registration or
 financial authorization. The M3 adapter builds arguments only; M5 verification and
 M6 chain submission/indexing/reconciliation remain separate, unimplemented work.
 See M4_DESIGN.md, M4_PROPOSAL_API.md and M4_AGENT_RUNBOOK.md.
+
+## M5 independent human verifier
+
+D016 selects B2: designated humans independently access authenticated sources;
+`services/verifier` is a deterministic observation validator, not a provider daemon.
+Agent metadata remains untrusted. Fresh session-bound NEP-413 decisions use M1
+finalized active FullAccess Ed25519 checks. Assigned evidence access never grants
+organization membership. Per-claim quorum and separate owner approval derive from
+immutable policy; agent self-verification is rejected. Application disputes are
+terminal locally and do not claim onchain effects. Migration004 stores immutable
+metadata/reviews and append-only events with atomic challenge consumption.
+No provider credential, file upload, URL fetch, signer or transaction sender exists.
+See M5_DESIGN, M5_VERIFIER_RUNBOOK and M5_MAP1_INTEGRATION for trust boundaries,
+exact-byte hashing and the separately authorized deployment/receipt path.

@@ -246,6 +246,7 @@ export default function Workspace() {
         <span className="badge">Identity & agent access</span>
       </header>
       <h1>Your workspace</h1>
+      <Link href="/workspace/evidence">Evidence and verifier review</Link>
       <p className="intro">
         Connect your wallet to manage organizations and agent records.
       </p>

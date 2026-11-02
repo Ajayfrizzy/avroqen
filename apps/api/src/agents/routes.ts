@@ -7,7 +7,6 @@ import {
 } from "@avroqen/domain";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type pg from "pg";
-
 import {
   denialReasons,
   prepareProposal,
@@ -20,6 +19,7 @@ import {
   preflight,
   proposalInput,
 } from "../../../../packages/domain/src/proposals.js";
+import { intakeEvidence } from "../evidence/routes.js";
 import { hash } from "../identity/crypto.js";
 import type { Context } from "../mandates/routes.js";
 
@@ -265,6 +265,25 @@ export function agentRoutes(app: FastifyInstance, ctx: Context) {
     const input = runtimeTool.parse(req.body);
     return transaction(async (db) => {
       const data = await authenticate(db, req);
+      if (input.tool === "submit_evidence") {
+        const result = await intakeEvidence(
+          db,
+          input.proposalId,
+          data.row.id,
+          data.policy.agentAccount,
+          input.evidence,
+          deny,
+        );
+        await time(db, data.policy.expiresAtNs);
+        const valid = (
+          await db.query(
+            "SELECT expires_at>clock_timestamp() AS valid FROM agent_credentials WHERE id=$1",
+            [data.credential.id],
+          )
+        ).rows[0]?.valid;
+        if (!valid) deny(401, "AGENT_CREDENTIAL_INVALID");
+        return result;
+      }
       if (input.tool === "denial_reasons") return { reasons: denialReasons };
       if (input.tool === "mandate_summary")
         return {

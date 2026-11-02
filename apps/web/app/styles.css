@@ -339,3 +339,17 @@ footer {
 .workspace section[aria-label="Mandate scope"] button {
   margin: 0.5rem 0.5rem 0.5rem 0;
 }
+
+.evidence-payload {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+}
+.evidence-digest {
+  overflow-wrap: anywhere;
+}
+.workspace section[aria-label="Review exact decision"] {
+  padding: 1rem;
+  border: 1px solid #768b83;
+  scroll-margin-top: 1rem;
+}
