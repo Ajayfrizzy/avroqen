@@ -9,6 +9,7 @@ import {
   type ConsentAction,
   readApiConfig,
 } from "../../packages/domain/src/index.js";
+import { monitorOnce } from "../../services/security/monitor.js";
 
 const schema = `m4_${randomUUID().replaceAll("-", "")}`;
 const settings = readApiConfig(process.env).database;
@@ -688,4 +689,46 @@ it("failed rotation audit rolls back revocation and new credential atomically", 
       "DROP TRIGGER fail_rotation ON agent_events; DROP FUNCTION fail_rotation_event()",
     );
   }
+});
+
+it("turns real oversized denials and revoked capability reuse into scoped redacted alerts", async () => {
+  for (let i = 0; i < 3; i++)
+    expect(
+      (await submit({ ...proposal, amountAtomic: "2" })).json().status,
+    ).toBe("PREFLIGHT_REJECTED");
+  await post(`${path(mandateId)}/credentials/revoke`, {
+    credentialId: credential.id,
+  });
+  expect((await tool({ tool: "mandate_summary" })).statusCode).toBe(401);
+  await monitorOnce(pool);
+  const alerts = (
+    await pool.query("SELECT * FROM security_alerts WHERE org_id=$1", [org])
+  ).rows;
+  expect(alerts.map((a) => a.rule)).toEqual(
+    expect.arrayContaining([
+      "SPENDING_LIMIT",
+      "PROPOSAL_DENIALS",
+      "REVOKED_ACCESS",
+    ]),
+  );
+  expect(alerts.every((a) => a.mandate_id === mandateId)).toBe(true);
+  expect(
+    JSON.stringify((await pool.query("SELECT * FROM security_events")).rows),
+  ).not.toContain(credential.token);
+  expect(
+    (await pool.query("SELECT count(*)::int AS n FROM chain_intents")).rows[0]
+      .n,
+  ).toBe(0);
+});
+it("disabled-agent activity is scoped from stored credentials, never caller organization", async () => {
+  await post(`/api/organizations/${org}/agents/${agentId}/disable`, {});
+  await submit({ ...proposal, organizationId: randomUUID() });
+  await monitorOnce(pool);
+  expect(
+    (
+      await pool.query(
+        "SELECT org_id,mandate_id FROM security_alerts WHERE rule='REVOKED_ACCESS'",
+      )
+    ).rows[0],
+  ).toEqual({ org_id: org, mandate_id: mandateId });
 });

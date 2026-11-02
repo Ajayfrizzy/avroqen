@@ -115,8 +115,14 @@ export default function Settlement() {
         version === refreshVersion.current &&
         result.policy.mandateId === policy.mandateId &&
         result.policy.organizationId === policy.organizationId
-      )
+      ) {
         setDetail(result);
+        if (
+          result.onchain?.guardian === session.accountId &&
+          result.policy.ownerAccount !== session.accountId
+        )
+          setKind("PAUSE");
+      }
     }
   }, [session, policy]);
   useEffect(() => {
@@ -131,6 +137,18 @@ export default function Settlement() {
         if (active) {
           setSession(s);
           setAssignments(a.mandates);
+          const query = new URLSearchParams(window.location.search);
+          const id = query.get("mandate"),
+            action = query.get("action");
+          if (id && a.mandates.some((p) => p.mandateId === id)) {
+            setSelected(id);
+            if (
+              action === "PAUSE" ||
+              action === "RESUME" ||
+              action === "REVOKE"
+            )
+              setKind(action);
+          }
         }
       } catch {
         if (active) setMessage("Sign in to view your assigned mandates.");
@@ -210,6 +228,7 @@ export default function Settlement() {
         policyDigest: digest,
         actor: session.accountId,
         now: BigInt(Date.now()) * 1000000n,
+        guardian: detail?.onchain?.guardian ?? null,
         ...(proposal ? { proposal } : {}),
         ...(evidence ? { evidence } : {}),
       });
@@ -282,6 +301,7 @@ export default function Settlement() {
         policyDigest: digest,
         actor: session.accountId,
         now: BigInt(Date.now()) * 1000000n,
+        guardian: detail?.onchain?.guardian ?? null,
         ...(proposal ? { proposal } : {}),
         ...(review ? { evidence: review.payload } : {}),
       });
@@ -459,9 +479,11 @@ export default function Settlement() {
                           "WITHDRAW",
                           "WITHDRAW_STORAGE",
                         ]
-                      : policy.agentAccount === session.accountId
-                        ? ["PROPOSE"]
-                        : ["ATTEST"]
+                      : detail?.onchain?.guardian === session.accountId
+                        ? ["PAUSE"]
+                        : policy.agentAccount === session.accountId
+                          ? ["PROPOSE"]
+                          : ["ATTEST"]
                     ).map((k) => (
                       <option key={k} value={k}>
                         {

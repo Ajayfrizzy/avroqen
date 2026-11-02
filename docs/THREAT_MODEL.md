@@ -29,3 +29,7 @@ A malicious owner creates a fraudulent marketplace transaction; a provider and v
 
 ## Security review gate
 Review external call ordering, callback authorization, arithmetic/conservation, access control, timestamp behavior, proposal uniqueness, compromised-key exposure and tenant isolation. Do not promote to material real-money production use without independent professional review.
+
+## M7 monitoring trust boundary
+
+Incident explanations are fixed, not LLM interpretations of evidence. Caller-supplied events cannot establish settlement. Source references, safe reason codes, immutable history and tenant authorization reduce projection abuse but cannot defeat a database superuser or malicious trusted RPC. Threshold crossings are indicators, not proof of attack. Acknowledgement/resolution cannot alter custody, contract state or unknown obligations. Monitoring failure must not gate reconciliation; external liveness observation remains necessary. Current application bearers are proposal-only (D015); no function-call or treasury keys are installed by M7. Guardian stays pause-only, and app responder roles never inherit financial authority.

@@ -122,6 +122,15 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
 
+  services/security:
+    dependencies:
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+
   services/verifier: {}
 
 packages:

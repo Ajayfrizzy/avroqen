@@ -49,6 +49,7 @@ export class NearReader {
     if (
       ![
         "status",
+        "gas_price",
         "query",
         "block",
         "chunk",

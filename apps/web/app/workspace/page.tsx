@@ -247,6 +247,7 @@ export default function Workspace() {
       </header>
       <h1>Your workspace</h1>
       <Link href="/workspace/evidence">Evidence and verifier review</Link>
+      <Link href="/workspace/security">Security and incidents</Link>
       <Link href="/workspace/settlement">Testnet settlement</Link>
       <p className="intro">
         Connect your wallet to manage organizations and agent records.

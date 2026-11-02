@@ -32,7 +32,8 @@
     "setup:https": "node --import tsx scripts/setup-local-https.ts",
     "dev:https": "node --import tsx scripts/local-https-proxy.ts",
     "test:https": "node --import tsx scripts/check-local-https.ts",
-    "test:sandbox": "cargo test -p mandate-vault --test sandbox --locked -- --nocapture"
+    "test:sandbox": "cargo test -p mandate-vault --test sandbox --locked -- --nocapture",
+    "security:status": "node --env-file=.env --import tsx scripts/security-status.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",

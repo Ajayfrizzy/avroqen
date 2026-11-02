@@ -83,7 +83,31 @@ export function chainRoutes(
       !policy.verifierPolicy.accounts.includes(who.account_id)
     )
       return deny(403, "ACCESS_DENIED");
-    return { who, row, policy, owner };
+    return { who, row, policy, owner, role };
+  }
+  // Read immutable policy under authorization locks, release them before RPC,
+  // then operation() rechecks live session/membership under its write transaction.
+  async function verifiedGuardian(
+    request: FastifyRequest,
+    org: string,
+    id: string,
+  ) {
+    const data = await transaction((db) => load(db, request, org, id, true));
+    if (data.owner || !data.role) return null;
+    const manifest = enabled();
+    if (data.policy.vaultAccount !== manifest.account)
+      return deny(409, "VAULT_MISMATCH");
+    const deployment = await chain.reader.deployment(manifest);
+    return boundMandate(
+      await chain.reader.view(
+        manifest.account,
+        "get_mandate",
+        { mandate_id: id },
+        deployment.block.hash,
+      ),
+      data.row.canonical_policy,
+      data.row.policy_digest,
+    ).guardian;
   }
   async function operation(
     db: pg.PoolClient,
@@ -91,13 +115,18 @@ export function chainRoutes(
     org: string,
     id: string,
     input: OperationInput,
+    guardian: string | null = null,
   ) {
     const d = await load(db, request, org, id, true),
       manifest = enabled();
     if (d.policy.vaultAccount !== manifest.account)
       return deny(409, "VAULT_MISMATCH");
     const ownerKind = !["PROPOSE", "ATTEST"].includes(input.kind);
-    if ((ownerKind || d.who.account_id === d.policy.ownerAccount) && !d.owner)
+    if (
+      (ownerKind || d.who.account_id === d.policy.ownerAccount) &&
+      !d.owner &&
+      !(input.kind === "PAUSE" && d.role && guardian === d.who.account_id)
+    )
       return deny(403, "OWNER_REQUIRED");
     const emergency = [
       "PAUSE",
@@ -160,6 +189,7 @@ export function chainRoutes(
         policyDigest: d.row.policy_digest,
         actor: d.who.account_id,
         now,
+        guardian,
         ...(proposal ? { proposal } : {}),
         ...(evidence ? { evidence } : {}),
       });
@@ -171,7 +201,7 @@ export function chainRoutes(
   app.get("/api/chain/assignments", async (request) => {
     const who = await session(request, ctx.pool);
     const rows = await ctx.pool.query(
-      `SELECT p.canonical_policy FROM mandate_policies p WHERE p.network=$1 AND (p.owner_account=$2 AND EXISTS(SELECT 1 FROM memberships m WHERE m.org_id=p.org_id AND m.account_id=$2 AND m.role='owner' AND m.status='active') OR p.agent_account=$2 OR p.canonical_policy::jsonb->'verifierPolicy'->'accounts' ? $2) ORDER BY p.id LIMIT 50`,
+      `SELECT p.canonical_policy FROM mandate_policies p WHERE p.network=$1 AND (p.owner_account=$2 AND EXISTS(SELECT 1 FROM memberships m WHERE m.org_id=p.org_id AND m.account_id=$2 AND m.role='owner' AND m.status='active') OR EXISTS(SELECT 1 FROM memberships m WHERE m.org_id=p.org_id AND m.account_id=$2 AND m.network=p.network AND m.status='active') OR p.agent_account=$2 OR p.canonical_policy::jsonb->'verifierPolicy'->'accounts' ? $2) ORDER BY p.id LIMIT 50`,
       [config.network, who.account_id],
     );
     return {
@@ -301,9 +331,13 @@ export function chainRoutes(
     const { orgId, mandateId } = chainParams.parse(request.params),
       input = intentInput.parse(request.body),
       manifest = enabled();
+    const guardian =
+      input.operation.kind === "PAUSE"
+        ? await verifiedGuardian(request, orgId, mandateId)
+        : null;
     // Authorize before allowing remote work; repeat authorization after network I/O.
     await transaction((db) =>
-      operation(db, request, orgId, mandateId, input.operation),
+      operation(db, request, orgId, mandateId, input.operation, guardian),
     );
     const verified = await chain.reader.deployment(manifest);
     const result = await transaction(async (db) => {
@@ -313,6 +347,7 @@ export function chainRoutes(
         orgId,
         mandateId,
         input.operation,
+        guardian,
       );
       // Serialize local preparation for one wallet/vault, including concurrent idempotent requests.
       await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
@@ -387,6 +422,14 @@ export function chainRoutes(
   app.post("/api/chain/intents/:intentId/begin", async (request) => {
     const manifest = enabled();
     await chain.reader.deployment(manifest);
+    const initial = await transaction((db) => owned(db, request));
+    if (initial.state !== "PREPARED")
+      return deny(409, "INTENT_ALREADY_ATTEMPTED");
+    const guardian =
+      (JSON.parse(initial.canonical_operation) as ChainOperation).kind ===
+      "PAUSE"
+        ? await verifiedGuardian(request, initial.org_id, initial.mandate_id)
+        : null;
     return transaction(async (db) => {
       const r = await owned(db, request);
       if (r.state !== "PREPARED") return deny(409, "INTENT_ALREADY_ATTEMPTED");
@@ -420,6 +463,7 @@ export function chainRoutes(
         r.org_id,
         r.mandate_id,
         intentInput.shape.operation.parse(input),
+        guardian,
       );
       if (
         JSON.stringify(rebuilt.built) !== r.canonical_operation ||

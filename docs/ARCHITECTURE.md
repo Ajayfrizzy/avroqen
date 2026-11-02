@@ -106,3 +106,9 @@ exact-byte hashing and the separately authorized deployment/receipt path.
 ## Vault governance boundary (M6 final review)
 
 The hackathon uses a dedicated, owner-controlled Testnet demonstration vault with a retained FullAccess deployment key. That key can bypass contract restrictions through code replacement/account transfers; this is not immutable or fully noncustodial deployment. [VAULT_GOVERNANCE.md](VAULT_GOVERNANCE.md) documents the observed account and proposed future versioned factory/per-user-or-organization vault design. Factory, governance transition, upgrade/migration and recovery are future separately reviewed work, not M6 functionality. No platform master withdrawals or unilateral customer-vault keys/upgrades are permitted in that production direction.
+
+## M7 security monitoring boundary
+
+services/security projects internal audit/reconciliation sources into durable redacted tenant-scoped incidents. Detection is deterministic/advisory: no LLM or caller event authorizes blockchain state. A separate monitoring loop and PostgreSQL pool share the existing non-root worker service without gating M6 reconciliation. Source identities provide durable replay checkpoints; SQL guards preserve history and scoped incident versions.
+
+/workspace/security exposes incidents and links to explicit M6 wallet review for owner/verified-guardian controls. App disabling and capability revocation stay offchain. The worker is read-only toward NEAR, including code/key/domain and gas/backing observations. No signer, broadcast client or financial scheduler was added. See M7_DESIGN.md and M7_INCIDENT_RUNBOOK.md.

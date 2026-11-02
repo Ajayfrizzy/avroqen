@@ -10,10 +10,12 @@ import {
 import cookie from "@fastify/cookie";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type pg from "pg";
+import { observeInternal } from "../../../../services/security/monitor.js";
 import { agentRoutes } from "../agents/routes.js";
 import { type ChainConfig, chainRoutes } from "../chain/routes.js";
 import { evidenceRoutes } from "../evidence/routes.js";
 import { mandateRoutes } from "../mandates/routes.js";
+import { securityRoutes } from "../security/routes.js";
 import type { IdentityConfig } from "./config.js";
 import { csrfFor, hash, verifyMessage } from "./crypto.js";
 import { parseVerification } from "./validation.js";
@@ -128,10 +130,95 @@ export async function identityRoutes(
       code = "ALREADY_EXISTS";
     }
     try {
+      // Scope only through authenticated membership or a server-stored capability.
+      let org: string | undefined,
+        mandate: string | undefined,
+        subject = "authentication";
+      try {
+        const who = await session(request, pool);
+        subject = who.account_id;
+        const params = request.params as {
+          orgId?: string;
+          mandateId?: string;
+          proposalId?: string;
+        };
+        if (
+          request.routeOptions.url?.startsWith("/api/evidence/") &&
+          params.proposalId &&
+          /^[0-9a-f-]{36}$/.test(params.proposalId)
+        ) {
+          const target = (
+            await pool.query(
+              "SELECT p.org_id,p.id FROM agent_proposals a JOIN mandate_policies p ON p.id=a.mandate_id WHERE a.id=$1 AND p.network=$2",
+              [params.proposalId, config.network],
+            )
+          ).rows[0];
+          if (target) {
+            org = target.org_id;
+            mandate = target.id;
+          }
+        }
+        if (params.orgId && /^[0-9a-f-]{36}$/.test(params.orgId)) {
+          const m = await pool.query(
+            "SELECT 1 FROM memberships WHERE org_id=$1 AND account_id=$2 AND network=$3 AND status='active'",
+            [params.orgId, who.account_id, config.network],
+          );
+          if (m.rowCount) {
+            org = params.orgId;
+            if (
+              params.mandateId &&
+              /^[0-9a-f-]{36}$/.test(params.mandateId) &&
+              (
+                await pool.query(
+                  "SELECT 1 FROM mandate_policies WHERE id=$1 AND org_id=$2",
+                  [params.mandateId, org],
+                )
+              ).rowCount
+            )
+              mandate = params.mandateId;
+          }
+        }
+      } catch {
+        /* Unauthenticated input never determines tenant scope. */
+      }
+      let observedReason = code;
+      const authorization = request.headers.authorization;
+      if (authorization && /^Bearer [0-9a-f]{64}$/.test(authorization)) {
+        const c = (
+          await pool.query(
+            "SELECT c.revoked_at,p.org_id,p.id,p.agent_id,a.disabled_at FROM agent_credentials c JOIN mandate_policies p ON p.id=c.mandate_id JOIN registered_agents a ON a.id=p.agent_id WHERE c.token_hash=$1 AND p.network=$2",
+            [hash(authorization.slice(7)), config.network],
+          )
+        ).rows[0];
+        if (c) {
+          org = c.org_id;
+          mandate = c.id;
+          subject = c.agent_id;
+          if (c.revoked_at) observedReason = "CREDENTIAL_REUSE";
+          else if (c.disabled_at) observedReason = "AGENT_DISABLED";
+        }
+      }
+      const route = request.routeOptions.url ?? "";
+      const type = route.includes("/chain")
+        ? "TRANSACTION_DENIED"
+        : route.includes("/evidence")
+          ? "VERIFIER_DENIED"
+          : route.includes("/auth/verify") || route.includes("/auth/challenge")
+            ? "AUTH_CONTEXT"
+            : "ACCESS_DENIED";
+      await observeInternal(pool, {
+        id: randomUUID(),
+        ...(org ? { org } : {}),
+        ...(mandate ? { mandate } : {}),
+        subject,
+        type,
+        reason: observedReason,
+      });
       if (code !== "RATE_LIMITED")
         await audit(
           pool,
-          request.url.startsWith("/api/auth/")
+          request.routeOptions.url === "/api/auth/verify" ||
+            request.routeOptions.url === "/api/auth/challenge"
             ? "login_denied"
             : "access_denied",
           code,
@@ -484,6 +571,16 @@ export async function identityRoutes(
       });
     },
   );
+  securityRoutes(app, {
+    pool,
+    config,
+    verifyKey,
+    transaction,
+    session,
+    membership,
+    deny,
+    tokenOf,
+  });
   chainRoutes(
     app,
     {
