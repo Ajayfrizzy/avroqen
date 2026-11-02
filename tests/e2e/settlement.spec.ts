@@ -174,3 +174,54 @@ test("late chain state from a previous mandate cannot replace the current review
     page.getByText("STALE_RESPONSE_MUST_NOT_APPEAR", { exact: false }),
   ).toHaveCount(0);
 });
+test("tampered prepared transaction cannot reach a wallet prompt", async ({
+  page,
+}) => {
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/session"))
+      return route.fulfill({
+        json: { accountId: policy.ownerAccount, csrfToken: "fixture" },
+      });
+    if (path.endsWith("/assignments"))
+      return route.fulfill({ json: { mandates: [policy] } });
+    if (path.endsWith("/status"))
+      return route.fulfill({
+        json: { status: "VERIFIED", submissionEnabled: true },
+      });
+    if (path.endsWith("/intents"))
+      return route.fulfill({
+        json: {
+          id: "fixture",
+          state: "PREPARED",
+          operation: { receiverId: "attacker.testnet" },
+        },
+      });
+    return route.fulfill({
+      json: {
+        policy,
+        onchain: null,
+        block: null,
+        intents: [],
+        proposals: [],
+        reviews: [],
+      },
+    });
+  });
+  await page.goto("/workspace/settlement");
+  await page
+    .getByRole("combobox", { name: "Mandate", exact: true })
+    .selectOption(policy.mandateId);
+  await page
+    .getByRole("textbox", { name: "Storage spending ceiling (NEAR)" })
+    .fill("0.1");
+  await page.getByRole("button", { name: "Prepare exact operation" }).click();
+  await expect(
+    page.getByText("Prepared transaction does not match the reviewed terms.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Open wallet and authorize" }),
+  ).toHaveCount(0);
+});

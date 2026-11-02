@@ -1,6 +1,6 @@
 # M6 implementation and verification report
 
-Status: local verification passed; hosted verification pending; **not live-Testnet accepted**. Branch `feat/m6-testnet-settlement`, based on confirmed M5 merge `d03733efcf038549d55d07fb097946323db32cde`. No main/staging merge, public deployment, public-chain privileged account/key creation, token transfer or personal expenditure has occurred.
+Status: local verification passed; hosted checks tracked on draft PR #10; **not live-Testnet accepted**. Branch `feat/m6-testnet-settlement`, based on confirmed M5 merge `d03733efcf038549d55d07fb097946323db32cde`. No main/staging merge, public deployment, public-chain privileged account/key creation, token transfer or personal expenditure has occurred.
 
 ## Implementation inventory
 
@@ -18,7 +18,8 @@ Status: local verification passed; hosted verification pending; **not live-Testn
 1. Real sandbox receipts exposed an incorrect immediate-success assumption. M3 returns its callback promise. The verifier now follows the exact `SuccessReceiptId`, verifies finalized transfer plus callback result and matching contract state. Successful payment and confirmed transfer failure are both exercised against actual local sandbox receipts.
 2. Initial M6 membership lookup did not filter disabled memberships. It now requires active status and locks authorization rows, with a regression proving disabled membership cannot prepare or begin owner operations.
 3. A late response after switching mandates could display the previous mandate’s chain state. A request-generation guard and policy identity checks now discard stale responses; the browser regression passes.
-4. Reconciliation initially depended on the new-submission enable flag. The worker now continues reading and reconciling retained intents when new submissions are disabled.
+4. The browser now independently reconstructs exact policy/proposal/review-bound transactions at preparation and again before prompting, rejecting a substituted receiver or altered arguments rather than trusting a prepared API response. The tampered-response browser regression passes.
+5. Reconciliation initially depended on the new-submission enable flag. The worker now continues reading and reconciling retained intents when new submissions are disabled.
 
 No Rust contract behavior or financial invariant was changed. This is agent self-review, not independent security assessment.
 
@@ -27,12 +28,12 @@ No Rust contract behavior or financial invariant was changed. This is agent self
 - `pnpm check`: lint, TypeScript, integration and adversarial checks passed. Final unit rerun: **136 unit tests passed**; **18 integration + 13 adversarial tests passed**. Together with PostgreSQL, this is **313 application/API/SQL tests**.
 - `pnpm test:identity-db`: **146 real PostgreSQL tests passed**, using isolated schemas; application records not used as fixtures.
 - `pnpm build`: optimized Next.js build and TypeScript checks passed.
-- `pnpm test:e2e`: **50 Chromium tests passed**, including narrow-screen settlement states. Browser fixture tests do not prove real wallet/testnet execution.
+- `pnpm test:e2e`: **51 Chromium tests passed**, including narrow-screen settlement states. Browser fixture tests do not prove real wallet/testnet execution.
 - `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, release Wasm build and Wasm method/capability check passed.
 - `cargo test --workspace --locked -- --nocapture`: **33 Rust unit tests + 7 real local sandbox tests passed**. Existing authority, replay, quorum, dispute, accounting, concurrent reservations, failed/missing callbacks, storage insolvency and withdrawals remain covered.
 - New actual sandbox-to-TypeScript integration verified **CONFIRMED_SUCCESS (6 finalized receipts)** with recipient balance delta, and **CONFIRMED_FAILED (7 finalized receipts)** with restored availability and zero spent. These are local synthetic-ledger transactions, not public testnet payments.
 - Measured release Wasm: 366,735 bytes, SHA-256 `b2ce7469301f8de912a4af955e254fa4ff2d9a5c097411bde1d00d0dd450ef48`.
-- Secret scan and pinned workflow validator passed; no credential material is included in intent/audit evidence. Local Compose build, additive migration, non-root/no-credential-image checks, database connectivity, smoke readiness and trusted HTTPS cookie/origin checks passed. Hosted CI is pending the draft PR push.
+- Secret scan and pinned workflow validator passed; no credential material is included in intent/audit evidence. Local Compose build, additive migration, non-root/no-credential-image checks, database connectivity, smoke readiness and trusted HTTPS cookie/origin checks passed. Hosted CI is tracked in draft PR #10’s Checks tab; local results are not a substitute for exact-head hosted results.
 
 ## Deployment decisions and remaining acceptance
 

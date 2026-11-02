@@ -1,6 +1,7 @@
 "use client";
 import {
   atomicToNear,
+  canonicalPolicy,
   type MandatePolicy,
   nearToAtomic,
 } from "@avroqen/domain";
@@ -8,9 +9,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Map1 } from "../../../../../packages/domain/src/evidence";
 import type { ProposalInput } from "../../../../../packages/domain/src/proposals";
-import type {
-  ChainOperation,
-  OperationInput,
+import {
+  buildOperation,
+  type ChainOperation,
+  type OperationInput,
+  operationInput,
 } from "../../../../../packages/domain/src/settlement";
 import type { VaultMandate } from "../../../../../packages/domain/src/vault";
 import { submitOperation } from "../transaction-wallet";
@@ -184,11 +187,41 @@ export default function Settlement() {
         input = { kind, proposalId };
       else if (kind === "ATTEST") input = { kind, reviewId };
       else input = { kind: kind as "PAUSE" | "RESUME" | "REVOKE" };
+      const digest = Array.from(
+        new Uint8Array(
+          await crypto.subtle.digest(
+            "SHA-256",
+            new TextEncoder().encode(canonicalPolicy(policy)),
+          ),
+        ),
+      )
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+      const proposal = detail?.proposals.find(
+        (p) =>
+          p.proposalId ===
+          (kind === "ATTEST"
+            ? detail.reviews.find((r) => r.id === reviewId)?.payload.proposal_id
+            : proposalId),
+      );
+      const evidence = detail?.reviews.find((r) => r.id === reviewId)?.payload;
+      const expected = buildOperation(input, {
+        policy,
+        policyDigest: digest,
+        actor: session.accountId,
+        now: BigInt(Date.now()) * 1000000n,
+        ...(proposal ? { proposal } : {}),
+        ...(evidence ? { evidence } : {}),
+      });
       const v = await api<Intent>(
         `/organizations/${policy.organizationId}/mandates/${policy.mandateId}/chain/intents`,
         session,
         { idempotencyKey: crypto.randomUUID(), operation: input },
       );
+      if (JSON.stringify(v.operation) !== JSON.stringify(expected))
+        throw new Error(
+          "Prepared transaction does not match the reviewed terms. No wallet prompt was opened.",
+        );
       setPrepared(v);
       setMessage(
         "Prepared only. Review the exact operation before opening your wallet.",
@@ -206,6 +239,54 @@ export default function Settlement() {
     setMessage("");
     let began = false;
     try {
+      if (!policy || !detail) throw new Error("Review required");
+      const op = prepared.operation;
+      const review = detail.reviews.find(
+        (r) => JSON.stringify(r.payload) === JSON.stringify(op.args.evidence),
+      );
+      const input = operationInput.parse({
+        kind: op.kind,
+        ...(["FUND", "STORAGE_DEPOSIT"].includes(op.kind)
+          ? { amount: op.deposit }
+          : {}),
+        ...(["WITHDRAW", "WITHDRAW_STORAGE"].includes(op.kind)
+          ? { amount: op.args.amount }
+          : {}),
+        ...(op.kind === "REGISTER"
+          ? { storageLimit: op.args.storage_limit, guardian: op.args.guardian }
+          : {}),
+        ...(["PROPOSE", "EXECUTE"].includes(op.kind)
+          ? { proposalId: op.args.proposal_id }
+          : {}),
+        ...(op.kind === "ATTEST" ? { reviewId: review?.id } : {}),
+      });
+      const proposal = detail.proposals.find(
+        (p) =>
+          p.proposalId ===
+          (op.kind === "ATTEST"
+            ? review?.payload.proposal_id
+            : op.args.proposal_id),
+      );
+      const digest = Array.from(
+        new Uint8Array(
+          await crypto.subtle.digest(
+            "SHA-256",
+            new TextEncoder().encode(canonicalPolicy(policy)),
+          ),
+        ),
+      )
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+      const expected = buildOperation(input, {
+        policy,
+        policyDigest: digest,
+        actor: session.accountId,
+        now: BigInt(Date.now()) * 1000000n,
+        ...(proposal ? { proposal } : {}),
+        ...(review ? { evidence: review.payload } : {}),
+      });
+      if (JSON.stringify(expected) !== JSON.stringify(op))
+        throw new Error("Transaction binding mismatch");
       const hash = await submitOperation(prepared.operation, async () => {
         await api(`/chain/intents/${prepared.id}/begin`, session, {});
         began = true;
