@@ -105,3 +105,72 @@ test("unknown operation warns against retry and has no unverified explorer link"
     page.getByRole("link", { name: "View verified transaction" }),
   ).toHaveCount(0);
 });
+test("late chain state from a previous mandate cannot replace the current review", async ({
+  page,
+}) => {
+  const second = {
+    ...policy,
+    mandateId: "77777777-7777-4777-8777-777777777777",
+    taskReference: "Second mandate",
+  };
+  let release: () => void = () => {};
+  const wait = new Promise<void>((r) => {
+    release = r;
+  });
+  let oldRequested = false;
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/session"))
+      return route.fulfill({
+        json: { accountId: policy.ownerAccount, csrfToken: "fixture" },
+      });
+    if (path.endsWith("/assignments"))
+      return route.fulfill({ json: { mandates: [policy, second] } });
+    if (path.endsWith("/status"))
+      return route.fulfill({
+        json: { status: "NOT_AUTHORIZED", submissionEnabled: false },
+      });
+    const old = path.includes(policy.mandateId);
+    if (old) {
+      oldRequested = true;
+      await wait;
+    }
+    return route.fulfill({
+      json: {
+        policy: old ? policy : second,
+        onchain: null,
+        block: null,
+        proposals: [],
+        reviews: [],
+        intents: old
+          ? [
+              {
+                id: "stale",
+                state: "UNKNOWN",
+                reason: "STALE_RESPONSE_MUST_NOT_APPEAR",
+                operation: { methodName: "fund_mandate" },
+              },
+            ]
+          : [],
+      },
+    });
+  });
+  await page.goto("/workspace/settlement");
+  await page
+    .getByRole("combobox", { name: "Mandate", exact: true })
+    .selectOption(policy.mandateId);
+  await expect.poll(() => oldRequested).toBe(true);
+  await page
+    .getByRole("combobox", { name: "Mandate", exact: true })
+    .selectOption(second.mandateId);
+  await expect(
+    page.getByRole("heading", { name: "Second mandate" }),
+  ).toBeVisible();
+  release();
+  await expect(
+    page.getByText("No blockchain operations prepared."),
+  ).toBeVisible();
+  await expect(
+    page.getByText("STALE_RESPONSE_MUST_NOT_APPEAR", { exact: false }),
+  ).toHaveCount(0);
+});

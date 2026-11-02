@@ -17,7 +17,8 @@ Status: local verification passed; hosted verification pending; **not live-Testn
 
 1. Real sandbox receipts exposed an incorrect immediate-success assumption. M3 returns its callback promise. The verifier now follows the exact `SuccessReceiptId`, verifies finalized transfer plus callback result and matching contract state. Successful payment and confirmed transfer failure are both exercised against actual local sandbox receipts.
 2. Initial M6 membership lookup did not filter disabled memberships. It now requires active status and locks authorization rows, with a regression proving disabled membership cannot prepare or begin owner operations.
-3. Reconciliation initially depended on the new-submission enable flag. The worker now continues reading and reconciling retained intents when new submissions are disabled.
+3. A late response after switching mandates could display the previous mandate’s chain state. A request-generation guard and policy identity checks now discard stale responses; the browser regression passes.
+4. Reconciliation initially depended on the new-submission enable flag. The worker now continues reading and reconciling retained intents when new submissions are disabled.
 
 No Rust contract behavior or financial invariant was changed. This is agent self-review, not independent security assessment.
 
@@ -26,7 +27,7 @@ No Rust contract behavior or financial invariant was changed. This is agent self
 - `pnpm check`: lint, TypeScript, integration and adversarial checks passed. Final unit rerun: **136 unit tests passed**; **18 integration + 13 adversarial tests passed**. Together with PostgreSQL, this is **313 application/API/SQL tests**.
 - `pnpm test:identity-db`: **146 real PostgreSQL tests passed**, using isolated schemas; application records not used as fixtures.
 - `pnpm build`: optimized Next.js build and TypeScript checks passed.
-- `pnpm test:e2e`: **49 Chromium tests passed**, including narrow-screen settlement states. Browser fixture tests do not prove real wallet/testnet execution.
+- `pnpm test:e2e`: **50 Chromium tests passed**, including narrow-screen settlement states. Browser fixture tests do not prove real wallet/testnet execution.
 - `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, release Wasm build and Wasm method/capability check passed.
 - `cargo test --workspace --locked -- --nocapture`: **33 Rust unit tests + 7 real local sandbox tests passed**. Existing authority, replay, quorum, dispute, accounting, concurrent reservations, failed/missing callbacks, storage insolvency and withdrawals remain covered.
 - New actual sandbox-to-TypeScript integration verified **CONFIRMED_SUCCESS (6 finalized receipts)** with recipient balance delta, and **CONFIRMED_FAILED (7 finalized receipts)** with restored availability and zero spent. These are local synthetic-ledger transactions, not public testnet payments.
@@ -44,3 +45,5 @@ No M6 real-wallet transaction, live deployment, genuine independent-source payme
 M6 must not be represented as ready to transact until the account/deployment package is approved, actual artifact/key/domain verification succeeds, and controlled live acceptance is performed. Draft PR and exact-head CI results will determine code-review readiness, not financial execution authorization.
 
 Final local recovery evidence: stopping PostgreSQL caused both API and worker readiness to return unavailable while their liveness remained available. Restarting PostgreSQL restored both health checks and the web/API/database smoke test. Retained application counts after migration/recovery: 2 organizations, 4 registered agents, 7 mandates, 3 proposals, 0 evidence reviews, 0 chain intents. Existing PostgreSQL volume and local HTTPS certificate setup were preserved.
+
+Draft review PR: https://github.com/Ajayfrizzy/avroqen/pull/10 (target `staging`; no merge authorization). Hosted checks must pass on the final feature head.

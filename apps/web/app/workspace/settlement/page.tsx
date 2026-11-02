@@ -5,7 +5,7 @@ import {
   nearToAtomic,
 } from "@avroqen/domain";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Map1 } from "../../../../../packages/domain/src/evidence";
 import type { ProposalInput } from "../../../../../packages/domain/src/proposals";
 import type {
@@ -92,21 +92,29 @@ export default function Settlement() {
     [reviewId, setReviewId] = useState("");
   const [prepared, setPrepared] = useState<Intent>();
   const policy = assignments.find((p) => p.mandateId === selected);
+  const refreshVersion = useRef(0);
   const refresh = useCallback(async () => {
     if (!session) return;
+    const version = ++refreshVersion.current;
     const status = await api<{ submissionEnabled: boolean; status: string }>(
       "/chain/status",
       session,
     );
+    if (version !== refreshVersion.current) return;
     setEnabled(status.submissionEnabled);
     setDeployment(status.status);
-    if (policy)
-      setDetail(
-        await api<Detail>(
-          `/organizations/${policy.organizationId}/mandates/${policy.mandateId}/chain`,
-          session,
-        ),
+    if (policy) {
+      const result = await api<Detail>(
+        `/organizations/${policy.organizationId}/mandates/${policy.mandateId}/chain`,
+        session,
       );
+      if (
+        version === refreshVersion.current &&
+        result.policy.mandateId === policy.mandateId &&
+        result.policy.organizationId === policy.organizationId
+      )
+        setDetail(result);
+    }
   }, [session, policy]);
   useEffect(() => {
     let active = true;
@@ -250,6 +258,7 @@ export default function Settlement() {
               value={selected}
               disabled={busy}
               onChange={(e) => {
+                refreshVersion.current++;
                 setSelected(e.target.value);
                 setKind(
                   assignments.find((p) => p.mandateId === e.target.value)
