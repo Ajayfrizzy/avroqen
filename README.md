@@ -159,3 +159,24 @@ only; no onchain mandate or payment is created. The vault identifier is unverifi
 Run `pnpm test:identity-db` for real SQL/crypto consent tests and `pnpm test:e2e` for
 browser fixtures. See docs/M2_REPORT.md for actual results and pending real-wallet
 acceptance. M2 consent must never substitute for M3 wallet-signed onchain actions.
+
+
+## M3 local contract verification
+
+M3 replaces the disabled Rust scaffold with a native NEAR MandateVault. **No public
+vault is deployed and the application still cannot fund or execute payments.**
+M2 wallet messages remain offchain consent. See [M3 evidence](docs/M3_REPORT.md)
+and [approved design](docs/M3_DESIGN.md). Earlier M0 scaffold descriptions above
+are historical foundation context, not the current contract interface.
+
+```sh
+cargo build -p mandate-vault --target wasm32-unknown-unknown --release --locked
+cargo test --workspace --locked -- --nocapture
+pnpm test:wasm
+```
+
+Do this to see actual local sandbox recipient balance changes, failed transfers,
+rollback and concurrent-spend rejection. Sandbox 2.14.0 downloads on first use;
+Linux x86_64/aarch64 and Apple Silicon are supported by the pinned runner. Tests
+create only temporary local identities with valueless balances. Public testnet
+requires separate approval of the deployment/transaction plan; see the runbook.

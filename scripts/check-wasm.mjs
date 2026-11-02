@@ -6,54 +6,69 @@ const bytes = readFileSync(
 );
 const module = await WebAssembly.compile(bytes);
 const methods = WebAssembly.Module.exports(module)
-  .filter((entry) => entry.kind === "function")
-  .map((entry) => entry.name);
-assert.ok(methods.includes("payments_enabled"));
-for (const method of methods) {
+  .filter((e) => e.kind === "function")
+  .map((e) => e.name)
+  .sort();
+assert.deepEqual(
+  methods,
+  [
+    "new",
+    "payments_enabled",
+    "contract_source_metadata",
+    "storage_deposit",
+    "register_mandate",
+    "fund_mandate",
+    "pause_mandate",
+    "resume_mandate",
+    "revoke_mandate",
+    "submit_proposal",
+    "attest_proposal",
+    "authorize_and_execute",
+    "on_settlement_result",
+    "withdraw_available",
+    "withdraw_storage_credit",
+    "on_withdrawal_result",
+    "get_mandate",
+    "get_proposal",
+    "get_execution",
+    "get_withdrawal",
+    "get_storage_credit",
+    "get_accounting",
+  ].sort(),
+  "Unexpected M3 callable surface",
+);
+const imports = WebAssembly.Module.imports(module).map((e) => e.name);
+assert.ok(
+  imports.includes("promise_batch_action_transfer"),
+  "Native transfer implementation missing",
+);
+for (const required of [
+  "sha256",
+  "panic_utf8",
+  "promise_then",
+  "promise_result",
+]) {
   assert.ok(
-    ["payments_enabled", "contract_source_metadata"].includes(method),
-    `Unexpected callable method: ${method}`,
+    imports.includes(required),
+    `Required NEAR host capability missing: ${required}`,
   );
 }
-const imports = WebAssembly.Module.imports(module).map((entry) => entry.name);
-assert.ok(
-  !imports.includes("promise_batch_action_transfer"),
-  "Foundation must not include a transfer host call",
-);
-assert.ok(
-  !imports.includes("promise_batch_action_deploy_contract"),
-  "Foundation must not include an upgrade host call",
-);
+for (const forbidden of [
+  "deploy_contract",
+  "delete_account",
+  "add_key",
+  "delete_key",
+  "stake",
+  "create_account",
+]) {
+  assert.ok(
+    !imports.some(
+      (name) =>
+        name.startsWith("promise_batch_action_") && name.includes(forbidden),
+    ),
+    `Forbidden host capability: ${forbidden}`,
+  );
+}
 console.info(
-  "Compiled Wasm exposes only foundation views and no transfer/upgrade host calls.",
-);
-
-// Exercise the generated Wasm/JSON boundary with an explicitly simulated empty
-// storage host. This is not a NEAR sandbox, transaction or settlement receipt.
-let returned;
-let instance;
-instance = await WebAssembly.instantiate(module, {
-  env: {
-    storage_read: () => 0n,
-    register_len: () => {
-      throw new Error("Unexpected register access");
-    },
-    read_register: () => {
-      throw new Error("Unexpected register access");
-    },
-    value_return: (length, pointer) => {
-      returned = new TextDecoder().decode(
-        new Uint8Array(
-          instance.exports.memory.buffer,
-          Number(pointer),
-          Number(length),
-        ),
-      );
-    },
-  },
-});
-instance.exports.payments_enabled();
-assert.equal(JSON.parse(returned), false);
-console.info(
-  "Generated Wasm view returns JSON false against simulated empty storage.",
+  "M3 Wasm method allowlist and forbidden administrative capabilities passed. Execution verified separately by sandbox tests.",
 );

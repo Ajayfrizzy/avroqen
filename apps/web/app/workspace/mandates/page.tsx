@@ -385,6 +385,18 @@ export default function Mandates() {
           onchain ownership.
         </p>
       </aside>
+      <section aria-label="Onchain vault status">
+        <h2>Onchain vault — not deployed</h2>
+        <p>
+          Registration, funding, payments and onchain pause or revocation are
+          unavailable. Offchain consent below is separate from contract
+          authorization.
+        </p>
+        <p>
+          Funded balance: unavailable · Reserved funds: unavailable ·
+          Settlement: unavailable
+        </p>
+      </section>
       {error && (
         <p role="alert" className="error">
           {error}

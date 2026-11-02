@@ -18,7 +18,7 @@
     "test:database": "node --env-file=.env --import tsx scripts/check-database.ts",
     "build": "pnpm --filter @avroqen/web build && tsc --noEmit",
     "check": "pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:integration && pnpm test:adversarial",
-    "test:contract": "cargo test --workspace --locked",
+    "test:contract": "pnpm build:contract && cargo test --workspace --locked",
     "build:contract": "cargo build -p mandate-vault --target wasm32-unknown-unknown --release --locked",
     "setup:env": "node scripts/setup-env.mjs",
     "dev:api": "node --env-file=.env --import tsx apps/api/src/index.ts",
@@ -31,7 +31,8 @@
     "test:identity-db": "node --env-file=.env node_modules/vitest/vitest.mjs run tests/database",
     "setup:https": "node --import tsx scripts/setup-local-https.ts",
     "dev:https": "node --import tsx scripts/local-https-proxy.ts",
-    "test:https": "node --import tsx scripts/check-local-https.ts"
+    "test:https": "node --import tsx scripts/check-local-https.ts",
+    "test:sandbox": "cargo test -p mandate-vault --test sandbox --locked -- --nocapture"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
