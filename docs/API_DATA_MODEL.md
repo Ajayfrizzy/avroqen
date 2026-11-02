@@ -104,3 +104,14 @@ INDEPENDENCE_REQUIRED, SOURCE_UNAVAILABLE, CLAIM_MISMATCH, REVIEW_ALREADY_FINAL,
 DELIVERY_DISPUTED, INVALID_PROOF, AGENT_DISABLED and CONSENT_UNAVAILABLE.
 Migration004 adds evidence_submissions/challenges/reviews/events, exact proposal
 binding guards and immutable row triggers. It adds no secret/provider/file storage.
+
+## M6 API and durable chain records
+
+- `GET /api/chain/status`: authenticated, verified deployment status; disabled unless an approved complete manifest is configured.
+- `GET /api/chain/assignments`: exact owner/agent/designated-verifier mandate assignments, bounded to 50.
+- `GET /api/organizations/:orgId/mandates/:mandateId/chain`: scoped policy, exact onchain mandate/proposal snapshots and authorized intent history. Unavailable state is null, never a zero balance. Explorer links require an RPC-matched hash.
+- `POST .../chain/intents`: strict `{idempotencyKey, operation}`; allowlisted typed operations only. No arbitrary receiver, arguments, signer, method or raw transfer action.
+- `POST /api/chain/intents/:intentId/begin`: rechecks original actor, live role/session/consent/agent bindings and deployment manifest before marking the prompt attempted.
+- `POST /api/chain/intents/:intentId/report`: `{hash: string|null}` is an untrusted wallet report, not settlement evidence. Missing hash means UNKNOWN; subsequent blind retry is prohibited.
+
+Migration 005 adds immutable intent bindings and append-only chain events, per-wallet/vault unresolved-operation uniqueness, idempotency and monotonic finalized observation protections. Worker leases and finalized scan cursors survive restarts. Intent transitions and audit evidence commit atomically. Existing migrations and financial contract state are not rewritten. See M6_RECONCILIATION.md for receipt and withdrawal verification.

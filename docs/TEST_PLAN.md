@@ -77,3 +77,7 @@ This is not full-product release acceptance or production security approval.
 
 ## Full-product release gates
 All mandatory CI checks pass; sandbox tests demonstrate onchain behavior; network-specific testnet receipts recorded; threat-model assumptions documented; external secrets scan clean; independent manual review of critical code changes. Explicit owner approval before mainnet deployment or funding.
+
+## M6 integration gates
+
+M6 adds typed-operation and wallet-sender boundary tests, real PostgreSQL intent concurrency/rollback/restart/isolation tests, deployment/RPC failure tests, finalized receipt graph and missing-hash scanner tests, desktop/mobile settlement UI tests, and actual Rust-sandbox-to-TypeScript receipt verification for both successful and definitively failed transfers. Retain all M1–M5 tests. The worker must remain alive but unready during a database outage, and must preserve UNKNOWN during RPC failures. Public testnet acceptance still requires the separate deployment/transaction authorization package; M8 owns integrated real-wallet and genuine independent-source acceptance. Fixture and local sandbox success never satisfy live acceptance.

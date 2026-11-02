@@ -260,3 +260,13 @@ fixtures remain useful automated tests, never genuine source or payment evidence
 No authority boundary, expiry, nonce, quorum, accounting, custody or key policy is
 changed. No deployment, token transfer, merge or repository-publication permission
 is granted by this sequencing decision.
+
+## D018 — M6 intended deployment account and retained-key governance
+
+Owner decision (November 2, 2026): target `avroqen-vault.testnet`; retain an owner-controlled deployment full-access key for the small hackathon demo, accepting contract replacement and direct-transfer risk. No deployment/account creation/key mutation/transaction is authorized by this selection. At the initial observation, finalized public testnet RPC reported `UNKNOWN_ACCOUNT` (superseded by D019); account control, public keys, balance, deployed artifact and initialized domain must be verified before live authorization. See M6_DESIGN.md. Backend, worker and AI never receive wallet keys; all M3 financial invariants remain mandatory.
+
+## D019 — Demonstration governance disclosure and future vault direction
+
+Owner-directed M6 review, 2026-11-02: D018's retained owner-controlled FullAccess key applies only to the dedicated low-value Testnet demonstration. Its code-replacement, direct-transfer and account-deletion powers are outside MandateVault restrictions. Do not claim immutable deployment or fully noncustodial operation. The account now exists with 4.5 NEAR, no code and one FullAccess key at finalized block 275954911; this supersedes D018's earlier UNKNOWN_ACCOUNT observation.
+
+Proposed production direction is a versioned verified factory and separate user/organization vaults, independent mandate ownership, no platform master withdrawal or unilateral customer upgrade/full-access authority, explicit cost responsibilities and auditable provenance. Immutable versus user-governed upgrade/migration/recovery remains a future reviewed choice. Current M3 direct initialization/authority is not factory/DAO compatible and is unchanged. See VAULT_GOVERNANCE.md. This records design direction, not deployment, spending, key mutation or production approval.

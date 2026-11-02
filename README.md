@@ -207,3 +207,9 @@ Local exercises never count toward live quorum. See [M5 report](docs/M5_REPORT.m
 [manual runbook](docs/M5_VERIFIER_RUNBOOK.md) and
 [MAP-1 integration](docs/M5_MAP1_INTEGRATION.md). Public transaction transport,
 deployment and actual testnet receipts remain separately gated; no send is enabled.
+
+### M6 testnet settlement preparation
+
+The authenticated `/workspace/settlement` workspace prepares typed wallet operations and displays verified chain state. Submission is disabled until a separately approved deployment manifest is configured. The API and persistent worker never hold signing keys or broadcast transactions; uncertain results remain quarantined. Local HTTPS development continues to use `docker compose -f compose.yaml -f compose.https.yaml up --build -d --wait` and the existing private HTTPS proxy. Do not deploy or fund a vault merely to try this page.
+
+Read [M6 report](docs/M6_REPORT.md), [reconciliation design](docs/M6_RECONCILIATION.md), [controlled Testnet authorization package](docs/M6_TESTNET_RUNBOOK.md) and [managed-service preparation](docs/M6_RUMPTYCLOUD_PREPARATION.md). Live wallet and genuine evidence acceptance are integrated M8 work, separately authorized; local sandbox results are not live Testnet payments.
