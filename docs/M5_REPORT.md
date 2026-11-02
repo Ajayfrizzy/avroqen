@@ -3,7 +3,8 @@
 M5 implements the owner-approved A/B2 design: fresh wallet-signed human reviews of
 independently obtained source evidence. This is agent implementation/self-review,
 not an independent audit. Offchain functionality is prepared for draft review;
-human M5 acceptance and controlled public-testnet integration remain pending.
+human M5 acceptance is scheduled for integrated M8 testing (D017), and controlled
+public-testnet orchestration belongs to M6. M5 is not being reopened or expanded.
 
 ## Repository and approved authority
 
@@ -97,7 +98,9 @@ terminal dispute and no payment reservation/spending after rejection.
 ## Manual and independent evidence — explicitly pending
 
 No owner-confirmed M5 desktop/Android wallet or authentic provider observation has
-been supplied. Earlier M1/M2 passes do not establish M5 acceptance. Follow
+been supplied. Under D017, these are pending integrated M8 tests; do not request
+further repetitive standalone desktop/Android walkthroughs before the product is
+integrated. Earlier M1/M2 passes do not establish M5 acceptance. Retain
 M5_VERIFIER_RUNBOOK for real message approval/cancellation/retry, assigned versus
 unassigned accounts, source mismatches, separate owner signature and disputes.
 iOS remains deferred. HTTPS host verification does not assert browser trust.
@@ -129,3 +132,20 @@ no public deployment, repository visibility change or merge performed. Existing
 PostgreSQL data, HTTPS override and development CA are retained. Publish only this
 feature branch and a draft PR to staging. Both foundation/rust must be green on its
 exact head; consult the PR run evidence rather than treating local tests as hosted CI.
+
+
+## Hackathon integration acceptance — owner direction D017
+
+Preserve the completed M5 verifier and all automated security gates. Missing real
+wallet/source acceptance is a pending M8 integrated obligation, not a blocker to
+M5's development integration. PR #9 is eligible subject to required green CI on its
+current head and no confirmed blocking defects. No financial or authentication
+boundary changes, manual passes or production security approval are implied.
+
+Implementation commit `2a967302f6800311819e3343dd76e418e0bddbd6` passed both required
+jobs in [run 41486519563](https://github.com/Ajayfrizzy/avroqen/actions/runs/41486519563).
+Documentation updates must be distinguished from that implementation test evidence;
+check the latest PR head separately. Final merge still needs owner authorization.
+The integrated delivery sequence, M8 manual matrix and temporary RumptyCloud M9
+plan are defined in MILESTONES.md and TEST_PLAN.md. No deployment or token movement
+is authorized by this acceptance change.

@@ -1,6 +1,11 @@
 # M5 verifier operations and manual acceptance
 
-Status: procedures prepared; M5 human wallet/provider tests **not yet performed**.
+Status: procedures retained for **pending integrated M8 acceptance** (D017).
+M5 human wallet/provider tests are not yet performed. Complete the integrated
+product before requesting repetitive standalone desktop/Android walkthroughs.
+This runbook remains component-level coverage, not a new M5 implementation task.
+During M8, distinguish these offchain message steps from M6’s separately authorized
+onchain transaction flow; the full suite must cover both.
 Owner approved B2 independent human source verification and fresh NEP-413 decisions
 (D016). This is not an automated provider integration or independent security audit.
 iOS remains deferred. Never collect wallet secrets, auth bodies, signatures, cookies,
