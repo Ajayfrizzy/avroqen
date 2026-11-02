@@ -213,3 +213,7 @@ deployment and actual testnet receipts remain separately gated; no send is enabl
 The authenticated `/workspace/settlement` workspace prepares typed wallet operations and displays verified chain state. Submission is disabled until a separately approved deployment manifest is configured. The API and persistent worker never hold signing keys or broadcast transactions; uncertain results remain quarantined. Local HTTPS development continues to use `docker compose -f compose.yaml -f compose.https.yaml up --build -d --wait` and the existing private HTTPS proxy. Do not deploy or fund a vault merely to try this page.
 
 Read [M6 report](docs/M6_REPORT.md), [reconciliation design](docs/M6_RECONCILIATION.md), [controlled Testnet authorization package](docs/M6_TESTNET_RUNBOOK.md) and [managed-service preparation](docs/M6_RUMPTYCLOUD_PREPARATION.md). Live wallet and genuine evidence acceptance are integrated M8 work, separately authorized; local sandbox results are not live Testnet payments.
+
+## M7 security workspace
+
+Open `/workspace/security` at the configured origin to inspect organization-scoped alerts, incident history and safe emergency-action reviews. Monitoring is advisory and dashboard-only; incident resolution and application access removal never imply onchain pause/revocation. The worker still has no signing/broadcast capability. See docs/M7_DESIGN.md, docs/M7_REPORT.md and docs/M7_INCIDENT_RUNBOOK.md. Run `pnpm security:status` locally for redacted global operational indicators; no tenant-admin API exists.

@@ -93,3 +93,21 @@ it("does not treat malformed wallet result as success", async () => {
     "unknown",
   );
 });
+it("a canceled emergency pause remains an attempted unknown outcome and is never retried", async () => {
+  f.sign.mockRejectedValue(new Error("Action was cancelled"));
+  const begin = vi.fn(async () => {});
+  await expect(
+    submitOperation(
+      {
+        ...operation,
+        kind: "PAUSE",
+        methodName: "pause_mandate",
+        args: { mandate_id: "m" },
+        deposit: "1",
+      },
+      begin,
+    ),
+  ).rejects.toThrow();
+  expect(begin).toHaveBeenCalledOnce();
+  expect(f.sign).toHaveBeenCalledOnce();
+});

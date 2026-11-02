@@ -9,6 +9,7 @@ import {
   type ConsentAction,
   readApiConfig,
 } from "../../packages/domain/src/index.js";
+import { monitorOnce } from "../../services/security/monitor.js";
 
 const schema = `m5_${randomUUID().replaceAll("-", "")}`;
 const settings = readApiConfig(process.env).database;
@@ -643,4 +644,30 @@ it("forged provider success and injected authority fields cannot create a review
     (await pool.query("SELECT count(*)::int AS n FROM evidence_reviews"))
       .rows[0].n,
   ).toBe(0);
+});
+
+it("records mismatched verifier proof as scoped denial without retaining signatures", async () => {
+  const c = await reviewChallenge();
+  const input = reviewSignature(c);
+  const r = await post(
+    `/api/evidence/${proposal.proposalId}/verify`,
+    { ...input, signature: Buffer.alloc(64).toString("base64") },
+    verifier,
+  );
+  expect(r.statusCode).not.toBe(200);
+  await monitorOnce(pool);
+  const alert = (
+    await pool.query(
+      "SELECT org_id,mandate_id,classification FROM security_alerts WHERE rule='VERIFIER_BINDING' AND org_id=$1",
+      [org],
+    )
+  ).rows[0];
+  expect(alert).toMatchObject({
+    org_id: org,
+    mandate_id: mandateId,
+    classification: "POLICY_REJECTION",
+  });
+  expect(
+    JSON.stringify((await pool.query("SELECT * FROM security_events")).rows),
+  ).not.toContain(input.signature);
 });

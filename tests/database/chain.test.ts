@@ -11,6 +11,10 @@ import {
 } from "../../packages/domain/src/index.js";
 import { NearReader } from "../../services/chain/rpc.js";
 import { runOnce } from "../../services/chain/worker.js";
+import {
+  monitorOnce,
+  sampleLocalHealth,
+} from "../../services/security/monitor.js";
 
 const schema = `m6_${randomUUID().replaceAll("-", "")}`;
 const settings = readApiConfig(process.env).database;
@@ -32,10 +36,13 @@ const manifest = {
   authorization: "test-only-authorization",
 };
 let rpcDown = false;
+let guardian: string | null = null;
+let duringDeployment: (() => Promise<void>) | undefined;
 let rpcResult: unknown;
 class FixtureReader extends NearReader {
   override async deployment(_manifest?: unknown, at?: string) {
     if (rpcDown) throw new Error("outage");
+    await duringDeployment?.();
     return {
       block: {
         height:
@@ -72,6 +79,31 @@ class FixtureReader extends NearReader {
           : undefined,
     );
     return { header: d.block, chunks: [] };
+  }
+  override async view() {
+    const row = (
+      await pool.query(
+        "SELECT canonical_policy,policy_digest FROM mandate_policies WHERE id=$1",
+        [mandateId],
+      )
+    ).rows[0];
+    return {
+      policy: JSON.parse(row.canonical_policy),
+      policy_digest: row.policy_digest,
+      guardian,
+      status: "Active",
+      available: "0",
+      reserved: "0",
+      spent: "0",
+      withdrawal_pending: "0",
+      withdrawn: "0",
+      deposited: "0",
+      pending_count: 0,
+      successful_count: 0,
+      proposal_count: 0,
+      storage_limit: "100",
+      storage_used: "0",
+    };
   }
   override async rpc() {
     if (rpcResult !== undefined) return rpcResult;
@@ -200,6 +232,8 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   rpcDown = false;
+  guardian = null;
+  duringDeployment = undefined;
   rpcResult = undefined;
   hook = undefined;
   keyAllowed = true;
@@ -554,4 +588,158 @@ it("historical finalized success cannot settle a new intent or release its lock"
   expect(
     (await prepare({ kind: "STORAGE_DEPOSIT", amount: "1" })).statusCode,
   ).toBe(409);
+});
+
+it("only the finalized guardian with active organization access can prepare pause; never resume or revoke", async () => {
+  guardian = "guardian.testnet";
+  const g = await login("guardian.testnet");
+  await pool.query(
+    "INSERT INTO memberships(org_id,network,account_id,role) VALUES($1,'testnet','guardian.testnet','viewer')",
+    [org],
+  );
+  const route = `${path(mandateId)}/chain/intents`;
+  for (const kind of ["RESUME", "REVOKE", "WITHDRAW_STORAGE"]) {
+    const operation =
+      kind === "WITHDRAW_STORAGE" ? { kind, amount: "1" } : { kind };
+    expect(
+      (await post(route, { idempotencyKey: randomUUID(), operation }, g))
+        .statusCode,
+    ).toBe(403);
+  }
+  const r = await post(
+    route,
+    { idempotencyKey: randomUUID(), operation: { kind: "PAUSE" } },
+    g,
+  );
+  expect(r.statusCode).toBe(201);
+  expect(r.json().operation.signerId).toBe("guardian.testnet");
+  guardian = "different.testnet";
+  expect(
+    (await post(`/api/chain/intents/${r.json().id}/begin`, {}, g)).statusCode,
+  ).toBe(403);
+});
+it("unassigned members and unavailable deployment cannot prepare a guardian pause", async () => {
+  const g = await login("guardian.testnet");
+  await pool.query(
+    "INSERT INTO memberships(org_id,network,account_id,role) VALUES($1,'testnet','guardian.testnet','viewer')",
+    [org],
+  );
+  const body = { idempotencyKey: randomUUID(), operation: { kind: "PAUSE" } };
+  expect(
+    (await post(`${path(mandateId)}/chain/intents`, body, g)).statusCode,
+  ).toBe(403);
+  guardian = "guardian.testnet";
+  rpcDown = true;
+  expect(
+    (await post(`${path(mandateId)}/chain/intents`, body, g)).statusCode,
+  ).toBe(503);
+});
+
+it("warns on aged attempted outcomes but never releases unresolved locks", async () => {
+  const r = await prepare({ kind: "STORAGE_DEPOSIT", amount: "1" }),
+    id = r.json().id;
+  await post(`/api/chain/intents/${id}/begin`, {});
+  await pool.query(
+    "INSERT INTO chain_events(intent_id,state,reason,occurred_at) VALUES($1,'AWAITING_WALLET','WALLET_PROMPT_OPENING',clock_timestamp()-interval '11 minutes')",
+    [id],
+  );
+  await sampleLocalHealth(pool);
+  await monitorOnce(pool);
+  expect(
+    (
+      await pool.query(
+        "SELECT * FROM security_alerts WHERE rule='SETTLEMENT_DELAY' AND mandate_id=$1",
+        [mandateId],
+      )
+    ).rowCount,
+  ).toBe(1);
+  expect(
+    (await prepare({ kind: "STORAGE_DEPOSIT", amount: "1" })).statusCode,
+  ).toBe(409);
+});
+it("keeps reconciliation operating when monitoring projection fails", async () => {
+  const r = await prepare({ kind: "STORAGE_DEPOSIT", amount: "1" }),
+    id = r.json().id;
+  await post(`/api/chain/intents/${id}/begin`, {});
+  await post(`/api/chain/intents/${id}/report`, {
+    hash: bs58.encode(Buffer.alloc(32, 5)),
+  });
+  await pool.query(
+    "ALTER TABLE security_events RENAME TO unavailable_security_events",
+  );
+  try {
+    await expect(monitorOnce(pool)).rejects.toThrow();
+    rpcResult = finalizedFixture(r.json().operation);
+    await runOnce(pool, reader);
+    expect(
+      (await pool.query("SELECT state FROM chain_intents WHERE id=$1", [id]))
+        .rows[0].state,
+    ).toBe("CONFIRMED_SUCCESS");
+  } finally {
+    await pool.query(
+      "ALTER TABLE unavailable_security_events RENAME TO security_events",
+    );
+  }
+  await monitorOnce(pool);
+});
+it("projects receipt mismatch as unverified evidence without financial success", async () => {
+  const r = await prepare({ kind: "STORAGE_DEPOSIT", amount: "1" }),
+    id = r.json().id;
+  await post(`/api/chain/intents/${id}/begin`, {});
+  await post(`/api/chain/intents/${id}/report`, {
+    hash: bs58.encode(Buffer.alloc(32, 5)),
+  });
+  const raw = finalizedFixture(r.json().operation);
+  raw.transaction.receiver_id = "other.testnet";
+  rpcResult = raw;
+  await runOnce(pool, reader);
+  await monitorOnce(pool);
+  expect(
+    (
+      await pool.query(
+        "SELECT classification FROM security_alerts WHERE rule='CHAIN_INCONSISTENCY' AND mandate_id=$1",
+        [mandateId],
+      )
+    ).rows[0].classification,
+  ).toBe("UNVERIFIED_OBSERVATION");
+  expect(
+    (await pool.query("SELECT state FROM chain_intents WHERE id=$1", [id]))
+      .rows[0].state,
+  ).toBe("UNKNOWN");
+});
+
+it("guardian RPC never holds authorization locks and membership is rechecked afterward", async () => {
+  guardian = "guardian.testnet";
+  const g = await login("guardian.testnet");
+  await pool.query(
+    "INSERT INTO memberships(org_id,network,account_id,role) VALUES($1,'testnet','guardian.testnet','viewer')",
+    [org],
+  );
+  duringDeployment = async () => {
+    const c = await pool.connect();
+    try {
+      await c.query("BEGIN");
+      await c.query("SET LOCAL lock_timeout='200ms'");
+      await c.query(
+        "UPDATE memberships SET status='disabled' WHERE org_id=$1 AND account_id='guardian.testnet'",
+        [org],
+      );
+      await c.query("COMMIT");
+    } finally {
+      c.release();
+    }
+  };
+  expect(
+    (
+      await post(
+        `${path(mandateId)}/chain/intents`,
+        { idempotencyKey: randomUUID(), operation: { kind: "PAUSE" } },
+        g,
+      )
+    ).statusCode,
+  ).toBe(403);
+  expect(
+    (await pool.query("SELECT count(*)::int AS n FROM chain_intents")).rows[0]
+      .n,
+  ).toBe(0);
 });

@@ -190,6 +190,27 @@ footer {
   border-top: 1px solid #cdd4cb;
   padding: 20px 0;
 }
+
+.security-workspace article {
+  border: 1px solid #cdd4cb;
+  border-left: 4px solid #bd7426;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+}
+.security-workspace p,
+.security-workspace a {
+  overflow-wrap: anywhere;
+}
+.security-workspace button {
+  margin: 8px 12px 8px 0;
+}
+.security-workspace section[aria-label="Incident details"] {
+  border: 2px solid #397b66;
+  padding: 20px;
+  border-radius: 8px;
+}
+
 .workspace .agents p {
   margin: 8px 0;
 }

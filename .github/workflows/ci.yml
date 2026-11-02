@@ -36,6 +36,7 @@ jobs:
       - run: docker compose config --quiet
       - run: docker compose up --build -d --wait
       - run: pnpm test:containers
+      - run: node scripts/check-monitoring-isolation.mjs
       - run: pnpm test:database
       - run: pnpm test:identity-db
       - run: pnpm test:smoke

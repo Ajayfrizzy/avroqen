@@ -15,3 +15,7 @@ Index chain receipts and account state; detect failed/unknown callbacks, prolong
 
 ## Operational safety
 No customer money before independent professional security review; demo funds must be limited to free testing tokens. Backups, audit-log access control, data retention, minimal personally identifiable evidence. Publish known limitations and reproducible demo instructions.
+
+## Implemented M7 response clarification
+
+Use M7_INCIDENT_RUNBOOK.md. Earlier generic runbook wording does not authorize automatic key revocation, freezing already-dispatched transfers, or verifier-list editing. Current M3 policies are immutable, guardians pause only, and actual onchain controls require the permitted wallet and separate Testnet authorization. Revoke app bearers/disable agents through existing scoped APIs; contain verifier compromise through owner pause/revoke and fresh policies/proofs, never a verifier-admin override. Alert dismissal never releases reserves.

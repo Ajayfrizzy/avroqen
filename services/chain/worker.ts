@@ -1,5 +1,6 @@
 import type pg from "pg";
 import type { IntentState } from "../../packages/domain/src/settlement.js";
+import { safeFailure } from "../security/rules.js";
 import { type Intent, type Observation, observe } from "./reconcile.js";
 import { NearReader } from "./rpc.js";
 export async function runOnce(
@@ -16,8 +17,8 @@ export async function runOnce(
   let result: Observation;
   try {
     result = await observe(reader, intent);
-  } catch {
-    result = { state: "UNKNOWN", reason: "RPC_OR_EVIDENCE_UNAVAILABLE" };
+  } catch (error) {
+    result = { state: "UNKNOWN", reason: safeFailure(error) };
   }
   const db = await pool.connect();
   try {

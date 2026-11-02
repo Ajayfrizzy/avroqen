@@ -115,3 +115,9 @@ binding guards and immutable row triggers. It adds no secret/provider/file stora
 - `POST /api/chain/intents/:intentId/report`: `{hash: string|null}` is an untrusted wallet report, not settlement evidence. Missing hash means UNKNOWN; subsequent blind retry is prohibited.
 
 Migration 005 adds immutable intent bindings and append-only chain events, per-wallet/vault unresolved-operation uniqueness, idempotency and monotonic finalized observation protections. Worker leases and finalized scan cursors survive restarts. Intent transitions and audit evidence commit atomically. Existing migrations and financial contract state are not rewritten. See M6_RECONCILIATION.md for receipt and withdrawal verification.
+
+## M7 monitoring and incidents
+
+Migration 006 adds immutable security_observations (server call sites only), security_events (unique source identities as processed checkpoints), security_rule_hits, security_alert_evidence, append-only security_incident_history, versioned security_alerts and security_worker_health. No arbitrary JSON/log bodies or public ingestion endpoint exists. Scope derives from stored source relationships; SQL guards bind mandates to organizations. Identity audit records gain append-only protection.
+
+Active organization members GET /api/organizations/:orgId/security (50 alerts/page, counts and safe health), and GET .../security/:alertId (100 history/evidence refs/page). Existing owner/admin roles POST to the latter with version, state and optional reason; stale version returns 409. OPEN → ACKNOWLEDGED → INVESTIGATING → RESOLVED/DISMISSED; terminal transitions require an allowlisted reason. No incident mutation touches a financial table. Notification and original-owner emergency permissions are explicit. Existing M6 begin/report and agent-disable/capability-revoke APIs remain the action paths.

@@ -68,3 +68,5 @@ term change. Never autofill an agent's claim as an independent verifier observat
 Keep essential owner/verifier actions prominent, with clear cancellation, errors,
 loading, pending/unknown and final outcomes. Simplification must retain explicit
 wallet approvals, independent evidence, quorum and every onchain financial check.
+
+M7 implementation evidence is in M7_REPORT.md: deterministic advisory detection, tenant-scoped incidents, independent monitor loop and existing owner/guardian wallet control integration. M7 automated acceptance never substitutes for M8's integrated real Testnet, independent-source/verifier and physical Android demonstration. Review and merge remain separate owner decisions.
