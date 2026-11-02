@@ -17,7 +17,7 @@ import type pg from "pg";
 import { hash, verifyMessage } from "../identity/crypto.js";
 import type { IdentityOptions, Session } from "../identity/routes.js";
 
-interface Context extends IdentityOptions {
+export interface Context extends IdentityOptions {
   deny: (status: number, code: string) => never;
   tokenOf: (request: FastifyRequest) => string;
   session: (

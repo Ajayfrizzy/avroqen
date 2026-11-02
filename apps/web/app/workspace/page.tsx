@@ -439,6 +439,9 @@ export default function Workspace() {
             <section className="panel">
               <h2>Agents in {org.name}</h2>
               <p>
+                <Link href="/workspace/proposals">
+                  Restricted agent proposals
+                </Link>
                 <Link href={`/workspace/mandates?organization=${org.id}`}>
                   Create and review typed mandates
                 </Link>

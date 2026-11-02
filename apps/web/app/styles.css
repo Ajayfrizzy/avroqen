@@ -323,3 +323,19 @@ footer {
   outline: 2px solid #397b66;
   outline-offset: 6px;
 }
+
+.workspace textarea {
+  width: 100%;
+  min-height: 6rem;
+  padding: 0.75rem;
+  font: inherit;
+}
+.workspace section[aria-label="Review proposal"] {
+  scroll-margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid currentColor;
+  border-radius: 0.75rem;
+}
+.workspace section[aria-label="Mandate scope"] button {
+  margin: 0.5rem 0.5rem 0.5rem 0;
+}

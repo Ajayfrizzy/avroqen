@@ -10,6 +10,7 @@ import {
 import cookie from "@fastify/cookie";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type pg from "pg";
+import { agentRoutes } from "../agents/routes.js";
 import { mandateRoutes } from "../mandates/routes.js";
 import type { IdentityConfig } from "./config.js";
 import { csrfFor, hash, verifyMessage } from "./crypto.js";
@@ -480,6 +481,16 @@ export async function identityRoutes(
       });
     },
   );
+  agentRoutes(app, {
+    pool,
+    config,
+    verifyKey,
+    deny,
+    tokenOf,
+    session,
+    membership,
+    transaction,
+  });
   mandateRoutes(app, {
     pool,
     config,

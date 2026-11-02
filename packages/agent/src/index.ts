@@ -1,6 +1,7 @@
 import { atomicAmount } from "@avroqen/domain";
 import { z } from "zod";
 // Validation only. No signer, credentials, network client or executor is provided.
+// M0 schema compatibility only. The live M4 API exclusively dispatches runtimeTool.
 export const agentRequest = z.discriminatedUnion("tool", [
   z.strictObject({
     tool: z.literal("query"),
@@ -13,3 +14,5 @@ export const agentRequest = z.discriminatedUnion("tool", [
     amount: atomicAmount,
   }),
 ]);
+
+export { denialReasons, prepareProposal, runtimeTool } from "./runtime.js";

@@ -70,3 +70,15 @@ endpoint is added. Changed policies need a new ID and fresh signature. SQL migra
 002 adds mandate policies, consents, challenges and append-only events without
 changing existing M1 migration history. Privileged database control is outside
 these guards and conveys no financial authority.
+
+
+## M4 implemented offchain proposals
+
+Migration 003 adds hash-only agent_credentials, immutable agent_proposals and
+append-only agent_events. Scope derives from the immutable M2 policy. The original
+wallet owner issues/rotates/revokes narrow capabilities; active members can read
+mandate proposal history. POST `/api/agent/tools` independently authenticates an
+agent and dispatches a strict fixed union for summary/status/prepare/submit/denials.
+`/v1` sketches remain unimplemented, not alternate financial routes. See
+[M4_PROPOSAL_API.md](M4_PROPOSAL_API.md) for exact schemas, pagination, denial codes,
+limits, idempotency and authority boundaries.
