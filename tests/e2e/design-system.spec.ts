@@ -83,6 +83,13 @@ test("mobile drawer traps keyboard focus, closes on Escape and restores trigger"
   await page.setViewportSize({ width: 390, height: 844 });
   await uiFixture(page);
   await openScreen(page, "wallet");
+  const skip = page.getByRole("link", { name: "Skip to content" });
+  await expect(skip).toHaveCSS("opacity", "0");
+  await skip.focus();
+  await expect(skip).toHaveCSS("opacity", "1");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#workspace-content")).toBeFocused();
+  await expect(skip).toHaveCSS("opacity", "0");
   const trigger = page.getByRole("button", { name: "Open navigation" });
   await trigger.focus();
   await page.keyboard.press("Enter");

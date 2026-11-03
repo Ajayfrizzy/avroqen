@@ -1,6 +1,6 @@
 # M8 UI/UX redesign report
 
-Date: 2026-11-03. Branch: `feat/m8-integrated-acceptance`. PR #12 was found already merged externally at `0d5852e7038ad8d6114b6be508533d48a2ce6b86`; this redesign requires a successor draft PR targeting staging. This is frontend experience work, not deployment or full live acceptance.
+Date: 2026-11-03. Branch: `feat/m8-integrated-acceptance`. PR #12 was found already merged externally at `0d5852e7038ad8d6114b6be508533d48a2ce6b86`; this redesign is delivered in successor draft PR #13 targeting staging. The identical pre-redesign staging tree was reconciled into the feature history without changing staging or main. This is frontend experience work, not deployment or full live acceptance.
 
 ## Implementation
 
@@ -31,7 +31,7 @@ Total: **546 tests** (373 application/database, 133 browser, 40 Rust/sandbox), z
 
 Browser checks cover seven routes at 1440/768/390/320px, all seven in signed-out/loading/empty/error states, drawer Tab/Escape/focus, wizard validation/back/exact-value retention, tenant observation clearing and logout failure/success/CSRF. Axe WCAG 2 A/AA and 2.1 AA checks passed in 28 populated route/width combinations and six guided states. These scans do not prove all accessibility requirements or real-device behavior.
 
-Development failures corrected before the final run: explicit step wrappers prevent formatter-driven fragment flattening; native drawer focus escape is corrected with Tab wrapping; selectors use accessible combobox roles. No security assertions or tests were disabled.
+Development failures corrected before the final run: explicit step wrappers prevent formatter-driven fragment flattening; native drawer focus escape is corrected with Tab wrapping; selectors use accessible combobox roles; the offscreen skip-link is visually hidden until focused, including scrolled full-page captures, with a keyboard regression. No security assertions or tests were disabled.
 
 ## Rendered visual evidence
 
@@ -54,7 +54,7 @@ Inspection led to collapsing evidence lookup and technical IDs after selection, 
 
 ## Security review and remaining acceptance
 
-Diff is limited to frontend, tests, test dependency and documentation/evidence. Backend, database schema, Rust and wallet transaction reconstruction are unchanged. The smoke assertion now matches the truthful public-authorization disclosure while retaining the API payments-disabled assertion. Original-owner and tenant boundaries, independent evidence, distinct payment approval, receipt confirmation, unknown quarantine, pause-only guardian authority and incident integrity remain enforced by existing services/contracts. Dashboard guidance does not grant authority. Self-review is not an independent security assessment.
+Diff is limited to frontend, tests/smoke assertion, test dependency and documentation/evidence. Backend, database schema, Rust and wallet transaction reconstruction are unchanged. The smoke assertion now matches the truthful public-authorization disclosure while retaining the API payments-disabled assertion. Original-owner and tenant boundaries, independent evidence, distinct payment approval, receipt confirmation, unknown quarantine, pause-only guardian authority and incident integrity remain enforced by existing services/contracts. Dashboard guidance does not grant authority. Self-review is not an independent security assessment.
 
 Historical owner-confirmed M1/M2 tests remain historical; this redesign has not been physically tested on Android or with genuine wallet/source flows. Pending: coordinated desktop and physical Android integrated acceptance, screen-reader/manual accessibility review, genuine independent verifier evidence/signing and separately authorized public Testnet receipt verification. iOS remains deferred. Responsive viewport tests are not device acceptance. Dark mode is intentionally not introduced. No deployment, funding, transaction, key rotation or visibility change is authorized or performed.
 
