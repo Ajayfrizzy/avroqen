@@ -2,6 +2,8 @@
 import { agentInput, challengeInput, organizationInput } from "@avroqen/domain";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useWorkspaceIdentity } from "../components/shell";
+import { Icon, LoadingState, PageHeader } from "../components/ui";
 import { type Challenge, signChallenge } from "./wallet";
 import { WalletSignInError } from "./wallet-errors";
 
@@ -237,30 +239,18 @@ export default function Workspace() {
       setBusy(false);
     }
   }
+  useWorkspaceIdentity(
+    session?.accountId,
+    organizations.find((o) => o.id === selected)?.name,
+    session?.network,
+  );
   return (
     <main className="workspace">
-      <header>
-        <Link href="/" className="brand">
-          Avroqen<span className="dot">.</span>
-        </Link>
-        <span className="badge">Identity & agent access</span>
-      </header>
-      <h1>Your workspace</h1>
-      <Link href="/workspace/evidence">Evidence and verifier review</Link>
-      <Link href="/workspace/security">Security and incidents</Link>
-      <Link href="/workspace/settlement">Testnet settlement</Link>
-      <p className="intro">
-        Connect your wallet to manage organizations and agent records.
-      </p>
-      <aside>
-        <strong>Application access only</strong>
-        <p>
-          Signing a login message sends no transaction. Application roles and
-          registered agents grant no treasury access, owner signing rights,
-          verifier credentials, or settlement authority. Payments are not
-          enabled.
-        </p>
-      </aside>
+      <PageHeader
+        eyebrow="Organization & access"
+        title="Your workspace"
+        description="Connect your wallet. Build your organization. Keep authority in your hands."
+      />
       {notice && <p role="status">{notice}</p>}
       {error && (
         <p role="alert" className="error">
@@ -291,71 +281,113 @@ export default function Workspace() {
         </button>
       )}
       {loading ? (
-        <p role="status">Loading your session…</p>
+        <LoadingState label="Loading your session…" />
       ) : !session ? (
-        <section className="panel">
-          <h2>Sign in with your NEAR wallet</h2>
-          <p>
-            Network: {config?.network ?? "Unavailable"}. Use an active
-            full-access Ed25519 wallet key. Review the account, network, origin,
-            and expiration in your wallet.
-          </p>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void run(async () => {
-                if (!config) return;
-                if (config.origin !== window.location.origin)
-                  throw new ApiError(
-                    403,
-                    "Open the configured application origin to sign in.",
+        <div className="wallet-intro">
+          <div className="wallet-story">
+            <div>
+              <p className="eyebrow">Your intent. Your authority.</p>
+              <h2>
+                Delegate the work.
+                <br />
+                Keep control of the money.
+              </h2>
+              <p>
+                Give agents clear limits, require independent evidence and
+                authorize every financial action with your wallet.
+              </p>
+            </div>
+            <div className="story-steps">
+              <div>
+                <Icon name="mandate" /> Define a bounded mandate
+              </div>
+              <div>
+                <Icon name="shield" /> Verify independent evidence
+              </div>
+              <div>
+                <Icon name="wallet" /> Approve with your wallet
+              </div>
+            </div>
+            <small>
+              Controlled Testnet prototype · No production custody claims
+            </small>
+          </div>
+          <section className="panel">
+            <h2>Sign in with your NEAR wallet</h2>
+            <p>
+              Network: {config?.network ?? "Unavailable"}. Use an active
+              full-access Ed25519 wallet key. Review the account, network,
+              origin, and expiration in your wallet.
+            </p>
+            <p className="notice-card">
+              Signing a login message sends no transaction. No new wallet key is
+              requested.
+            </p>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void run(async () => {
+                  if (!config) return;
+                  if (config.origin !== window.location.origin)
+                    throw new ApiError(
+                      403,
+                      "Open the configured application origin to sign in.",
+                    );
+                  const challenge = await api<Challenge>(
+                    "/auth/challenge",
+                    null,
+                    challengeInput.parse({
+                      accountId: account,
+                      network: config.network,
+                    }),
                   );
-                const challenge = await api<Challenge>(
-                  "/auth/challenge",
-                  null,
-                  challengeInput.parse({
-                    accountId: account,
+                  const signed = await signChallenge(challenge, config.network);
+                  const current = await api<Session>("/auth/verify", null, {
+                    challengeId: challenge.challengeId,
                     network: config.network,
-                  }),
-                );
-                const signed = await signChallenge(challenge, config.network);
-                const current = await api<Session>("/auth/verify", null, {
-                  challengeId: challenge.challengeId,
-                  network: config.network,
-                  accountId: signed.accountId,
-                  publicKey: signed.publicKey,
-                  signature: signed.signature,
+                    accountId: signed.accountId,
+                    publicKey: signed.publicKey,
+                    signature: signed.signature,
+                  });
+                  setSession(current);
+                  await loadOrganizations(current);
                 });
-                setSession(current);
-                await loadOrganizations(current);
-              });
-            }}
-          >
-            <label htmlFor="wallet-account">NEAR account</label>
-            <input
-              id="wallet-account"
-              value={account}
-              onChange={(e) => setAccount(e.target.value)}
-              required
-              minLength={2}
-              maxLength={64}
-              autoCapitalize="none"
-              autoComplete="off"
-              placeholder="your-account.testnet"
-            />
-            <button disabled={busy || !config} type="submit">
-              {busy ? "Waiting for wallet…" : "Connect wallet & sign message"}
-            </button>
-          </form>
-          <p>
-            Allow the wallet popup. Canceling leaves you signed out. Never enter
-            a private key here.
-          </p>
-        </section>
+              }}
+            >
+              <label htmlFor="wallet-account">NEAR account</label>
+              <input
+                id="wallet-account"
+                value={account}
+                onChange={(e) => setAccount(e.target.value)}
+                required
+                minLength={2}
+                maxLength={64}
+                autoCapitalize="none"
+                autoComplete="off"
+                placeholder="your-account.testnet"
+              />
+              <button disabled={busy || !config} type="submit">
+                {busy ? "Waiting for wallet…" : "Connect wallet & sign message"}
+              </button>
+            </form>
+            <p>
+              Allow the wallet popup. Canceling leaves you signed out. Never
+              enter a private key here.
+            </p>
+          </section>
+        </div>
       ) : (
         <>
           <section className="panel">
-            <h2>Signed in as {session.accountId}</h2>
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Wallet connected</p>
+                <h2>Signed in as {session.accountId}</h2>
+              </div>
+              <Link className="button-link" href="/workspace/journey">
+                Open overview <Icon name="arrow" size={16} />
+              </Link>
+            </div>
             <p>
               {session.network} · Session expires{" "}
               {new Date(session.expiresAt).toLocaleTimeString()}

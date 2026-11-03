@@ -3,6 +3,8 @@ import { atomicToNear, type MandateView, nearToAtomic } from "@avroqen/domain";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProposalInput } from "../../../../../packages/domain/src/proposals";
+import { useWorkspaceIdentity } from "../../components/shell";
+import { PageHeader } from "../../components/ui";
 
 import { hashEvidenceFile } from "../evidence-file";
 
@@ -211,15 +213,17 @@ export default function Proposals() {
     );
     setHistoryNext(h.nextOffset);
   }
+  useWorkspaceIdentity(
+    session?.accountId,
+    orgs.find((o) => o.id === org)?.name,
+  );
   return (
     <main className="workspace">
-      <Link href="/workspace">← Wallet and organizations</Link>
-      <h1>Restricted agent proposals</h1>
-      <p>
-        Offchain preparation only. No payment, wallet transaction or
-        independently verified evidence is produced. Check verified chain state
-        in Testnet settlement before any wallet transaction.
-      </p>
+      <PageHeader
+        eyebrow="Agent workspace"
+        title="Agents & proposals"
+        description="Turn bounded tasks into proposals. Your wallet remains in control of payments."
+      />
       {!loaded ? (
         <p role="status">Loading workspace…</p>
       ) : !session ? (

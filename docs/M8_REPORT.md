@@ -55,3 +55,7 @@ Hackathon **development integration** may be considered only after exact-head fo
 ## Delivery
 
 Draft PR and exact final SHA/hosted workflow are reported in the delivery message and PR check metadata (avoids a self-referential commit hash in this file). Both hosted jobs must pass on the actual pushed head; older milestones' green CI cannot pass M8.
+
+## UI redesign verification addendum — 2026-11-03
+
+The subsequent owner-requested redesign supersedes the UI/test counts above: **166 unit + 19 integration + 13 adversarial + 175 PostgreSQL + 133 browser + 33 Rust unit + 7 sandbox = 546 tests**, all passing locally. Lint/typecheck, production build, Rust format/Clippy and release Wasm allowlist passed. Backend/contracts/security policy remain unchanged; one pinned test-only axe dependency was added. Shared shell, real-data overview and guided forms replace the prototype presentation. [UI_DESIGN_SYSTEM](UI_DESIGN_SYSTEM.md) and [M8_UX_REDESIGN_REPORT](M8_UX_REDESIGN_REPORT.md) document components, 20 inspected synthetic screenshots, accessibility checks and remaining physical/live acceptance. Prior historical manual results do not certify the redesign. No deployment or public transaction occurred.

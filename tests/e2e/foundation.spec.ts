@@ -6,7 +6,9 @@ test("foundation page is honest and usable on mobile", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Authority stays with the owner." }),
   ).toBeVisible();
-  await expect(page.getByText("Payments are not enabled.")).toBeVisible();
+  await expect(
+    page.getByText("Public transactions require separate authorization."),
+  ).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,

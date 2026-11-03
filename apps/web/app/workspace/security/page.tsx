@@ -1,6 +1,8 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useWorkspaceIdentity } from "../../components/shell";
+import { Badge, Dialog, PageHeader, Timeline } from "../../components/ui";
 
 type Session = { accountId: string; csrfToken: string };
 type Alert = {
@@ -263,23 +265,17 @@ export default function Security() {
       setBusy(false);
     }
   }
+  useWorkspaceIdentity(
+    session?.accountId,
+    orgs.find((o) => o.id === org)?.name,
+  );
   return (
     <main className="workspace security-workspace">
-      <header>
-        <p>Avroqen · Security</p>
-        <h1>Security and incident response</h1>
-        <p>
-          Alerts help you investigate. They do not authorize payments or
-          automatically pause a vault.
-        </p>
-        <nav>
-          <Link href="/workspace">Workspace</Link>
-          {" · "}
-          <Link href="/workspace/settlement">
-            Verified settlement and wallet controls
-          </Link>
-        </nav>
-      </header>
+      <PageHeader
+        eyebrow="Monitoring & response"
+        title="Security"
+        description="Investigate signals, preserve evidence and take deliberate action."
+      />
       <section>
         <h2>Organization</h2>
         <label>
@@ -324,20 +320,38 @@ export default function Security() {
       {message && <p role="alert">{message}</p>}
       {loading && <p role="status">Loading security information…</p>}
       {overview && (
-        <>
+        <div className="security-dashboard">
           <section>
             <h2>Overview</h2>
             <p>
               Notification channel: this dashboard only. No email, push message
               or owner contact is claimed.
             </p>
-            <p>
-              {overview.counts.length
-                ? overview.counts
-                    .map((c) => `${labels[c.severity]}: ${c.count}`)
-                    .join(" · ")
-                : "No active alerts in this organization."}
-            </p>
+            {!overview.counts.length && (
+              <p>No active alerts in this organization.</p>
+            )}
+            <div className="severity-grid">
+              {["HIGH", "MEDIUM", "LOW"].map((severity) => (
+                <div key={severity}>
+                  <Badge
+                    tone={
+                      severity === "HIGH"
+                        ? "danger"
+                        : severity === "MEDIUM"
+                          ? "warning"
+                          : "neutral"
+                    }
+                  >
+                    {labels[severity]}
+                  </Badge>
+                  <strong>
+                    {overview.counts.find((c) => c.severity === severity)
+                      ?.count ?? 0}
+                  </strong>
+                  <small>Active alerts</small>
+                </div>
+              ))}
+            </div>
             <h3>Worker health</h3>
             {["reconciliation", "monitoring"].map((w) => (
               <p key={w}>
@@ -407,7 +421,7 @@ export default function Security() {
               Next incidents
             </button>
           </section>
-        </>
+        </div>
       )}
       {detail && (
         <section aria-label="Incident details">
@@ -486,41 +500,43 @@ export default function Security() {
           ) : (
             <p>You have read-only incident access.</p>
           )}
-          <h3>Emergency actions</h3>
-          <p>
-            Wallet approval and verified receipts are required for an onchain
-            pause, resume or terminal revoke. Preparing an action is not
-            confirmation.
-          </p>
-          {detail.alert.mandate_id ? (
-            <>
-              <Link
-                href={`/workspace/settlement?mandate=${detail.alert.mandate_id}&action=PAUSE`}
-              >
-                Review wallet-authorized pause
+          <div className="emergency-panel">
+            <h3>Emergency actions</h3>
+            <p>
+              Wallet approval and verified receipts are required for an onchain
+              pause, resume or terminal revoke. Preparing an action is not
+              confirmation.
+            </p>
+            {detail.alert.mandate_id ? (
+              <>
+                <Link
+                  href={`/workspace/settlement?mandate=${detail.alert.mandate_id}&action=PAUSE`}
+                >
+                  Review wallet-authorized pause
+                </Link>
+                {detail.ownerActions && (
+                  <>
+                    {" · "}
+                    <Link
+                      href={`/workspace/settlement?mandate=${detail.alert.mandate_id}&action=REVOKE`}
+                    >
+                      Review owner-only terminal revocation
+                    </Link>
+                    {" · "}
+                    <Link
+                      href={`/workspace/settlement?mandate=${detail.alert.mandate_id}&action=RESUME`}
+                    >
+                      Review owner-only resume
+                    </Link>
+                  </>
+                )}
+              </>
+            ) : (
+              <Link href="/workspace/settlement">
+                Choose an affected mandate and review verified state
               </Link>
-              {detail.ownerActions && (
-                <>
-                  {" · "}
-                  <Link
-                    href={`/workspace/settlement?mandate=${detail.alert.mandate_id}&action=REVOKE`}
-                  >
-                    Review owner-only terminal revocation
-                  </Link>
-                  {" · "}
-                  <Link
-                    href={`/workspace/settlement?mandate=${detail.alert.mandate_id}&action=RESUME`}
-                  >
-                    Review owner-only resume
-                  </Link>
-                </>
-              )}
-            </>
-          ) : (
-            <Link href="/workspace/settlement">
-              Choose an affected mandate and review verified state
-            </Link>
-          )}
+            )}
+          </div>
           <h3>Application access only</h3>
           <p>
             Disabling an agent or revoking a capability does not revoke its
@@ -555,26 +571,34 @@ export default function Security() {
             </p>
           ))}
           {confirm && (
-            <fieldset aria-label="Confirm application containment">
-              <p>
-                Remove this application access? This cannot stop an
-                already-dispatched transfer.
-              </p>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void contain()}
-              >
-                Confirm application access removal
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setConfirm(null)}
-              >
-                Cancel
-              </button>
-            </fieldset>
+            <Dialog
+              open={!!confirm}
+              onClose={() => {
+                if (!busy) setConfirm(null);
+              }}
+              title="Confirm application containment"
+            >
+              <fieldset aria-label="Confirm application containment">
+                <p>
+                  Remove this application access? This cannot stop an
+                  already-dispatched transfer.
+                </p>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void contain()}
+                >
+                  Confirm application access removal
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setConfirm(null)}
+                >
+                  Cancel
+                </button>
+              </fieldset>
+            </Dialog>
           )}
           <h3>Wallet or key compromise</h3>
           <p>
@@ -585,16 +609,22 @@ export default function Security() {
             key custody or reverse transfers.
           </p>
           <h3>Incident history</h3>
-          {detail.history.map((h) => (
-            <p key={h.version}>
-              {labels[h.action] ??
+          <Timeline
+            items={detail.history.map((h) => ({
+              id: String(h.version),
+              title:
+                labels[h.action] ??
                 (h.action === "DETECTED"
                   ? "Alert generated"
-                  : "Additional observation")}{" "}
-              · {new Date(h.occurred_at).toLocaleString()} ·{" "}
-              {h.actor_account ?? "Monitoring worker"}
-            </p>
-          ))}
+                  : "Additional observation"),
+              detail: (
+                <p>
+                  {new Date(h.occurred_at).toLocaleString()} ·{" "}
+                  {h.actor_account ?? "Monitoring worker"}
+                </p>
+              ),
+            }))}
+          />
           <details>
             <summary>Technical evidence references</summary>
             <p>
