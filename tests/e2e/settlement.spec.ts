@@ -225,3 +225,114 @@ test("tampered prepared transaction cannot reach a wallet prompt", async ({
     page.getByRole("button", { name: "Open wallet and authorize" }),
   ).toHaveCount(0);
 });
+
+for (const failure of ["status", "detail"])
+  test(`failed ${failure} refresh hides stale balances and blocks wallet actions`, async ({
+    page,
+  }) => {
+    let failed = false;
+    await page.route("**/api/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith("/session"))
+        return route.fulfill({
+          json: { accountId: policy.ownerAccount, csrfToken: "fixture" },
+        });
+      if (path.endsWith("/assignments"))
+        return route.fulfill({ json: { mandates: [policy] } });
+      if (
+        failed &&
+        ((failure === "status" && path.endsWith("/status")) ||
+          (failure === "detail" && path.endsWith("/chain")))
+      )
+        return route.abort();
+      if (path.endsWith("/status"))
+        return route.fulfill({
+          json: { status: "VERIFIED", submissionEnabled: true },
+        });
+      return route.fulfill({
+        json: {
+          policy,
+          onchain: {
+            status: "Active",
+            available: "1000000000000000000000000",
+            reserved: "0",
+            spent: "0",
+            withdrawal_pending: "0",
+          },
+          block: { height: 123 },
+          intents: [],
+          proposals: [],
+          reviews: [],
+        },
+      });
+    });
+    await page.goto(`/workspace/settlement?mandate=${policy.mandateId}`);
+    await expect(
+      page.getByText("Available: 1 NEAR", { exact: false }),
+    ).toBeVisible();
+    failed = true;
+    await page.getByRole("button", { name: "Refresh verified state" }).click();
+    await expect(
+      page.getByText("Available: 1 NEAR", { exact: false }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Prepare exact operation" }),
+    ).toBeDisabled();
+    failed = false;
+    await page.getByRole("button", { name: "Refresh verified state" }).click();
+    await expect(
+      page.getByText("Available: 1 NEAR", { exact: false }),
+    ).toBeVisible();
+  });
+
+test("optional guardian is bound in exact registration and tampered response cannot open wallet", async ({
+  page,
+}) => {
+  let operation: Record<string, unknown> | undefined;
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/session"))
+      return route.fulfill({
+        json: { accountId: policy.ownerAccount, csrfToken: "fixture" },
+      });
+    if (path.endsWith("/assignments"))
+      return route.fulfill({ json: { mandates: [policy] } });
+    if (path.endsWith("/status"))
+      return route.fulfill({
+        json: { status: "VERIFIED", submissionEnabled: true },
+      });
+    if (path.endsWith("/intents")) {
+      operation = route.request().postDataJSON().operation;
+      return route.fulfill({
+        json: { id: "fixture", operation: { guardian: "attacker.testnet" } },
+      });
+    }
+    return route.fulfill({
+      json: {
+        policy,
+        onchain: null,
+        block: null,
+        intents: [],
+        proposals: [],
+        reviews: [],
+      },
+    });
+  });
+  await page.goto(`/workspace/settlement?mandate=${policy.mandateId}`);
+  await page.getByLabel("Storage spending ceiling (NEAR)").fill("0.15");
+  await page.getByLabel("Optional guardian account").fill("guardian.testnet");
+  await page.getByRole("button", { name: "Prepare exact operation" }).click();
+  await expect
+    .poll(() => operation)
+    .toEqual({
+      kind: "REGISTER",
+      storageLimit: "150000000000000000000000",
+      guardian: "guardian.testnet",
+    });
+  await expect(
+    page.getByText("Prepared transaction does not match", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Open wallet and authorize" }),
+  ).toHaveCount(0);
+});

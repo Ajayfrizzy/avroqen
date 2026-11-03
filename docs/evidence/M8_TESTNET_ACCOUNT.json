@@ -1,0 +1,132 @@
+{
+  "observedAtUtc": "2026-11-02T23:42:56.763Z",
+  "endpoint": "https://rpc.testnet.near.org",
+  "network": "testnet",
+  "accountId": "avroqen-vault.testnet",
+  "finality": "final",
+  "block": {
+    "height": 275969229,
+    "hash": "37MFWf1Df6UbLekt4kWPWMVyADNXH6JNB8dydudjDfph",
+    "timestampNanosec": "1793662970929602288"
+  },
+  "account": {
+    "amount": "4500000000000000000000000",
+    "block_hash": "37MFWf1Df6UbLekt4kWPWMVyADNXH6JNB8dydudjDfph",
+    "block_height": 275969229,
+    "code_hash": "11111111111111111111111111111111",
+    "locked": "0",
+    "storage_paid_at": 0,
+    "storage_usage": 182
+  },
+  "keys": [
+    {
+      "publicKey": "ed25519:8mdwv8CXTf2w5QyP9XwqcJzsPaFVQ5K6vh4fWRxcEpVz",
+      "permission": "FullAccess",
+      "fingerprint": "01323ff188aed5cb6d5d74e27131a25f6b77ede4556b06bb89bac9360012ab82"
+    }
+  ],
+  "protocolVersion": 88,
+  "storageAmountPerByte": "10000000000000000000",
+  "transactionCosts": {
+    "action_creation_config": {
+      "add_key_cost": {
+        "full_access_cost": {
+          "execution": 101765125000,
+          "send_not_sir": 101765125000,
+          "send_sir": 101765125000
+        },
+        "function_call_cost": {
+          "execution": 102217625000,
+          "send_not_sir": 102217625000,
+          "send_sir": 102217625000
+        },
+        "function_call_cost_per_byte": {
+          "execution": 1925331,
+          "send_not_sir": 47683715,
+          "send_sir": 1925331
+        }
+      },
+      "create_account_cost": {
+        "execution": 7200000000000,
+        "send_not_sir": 500000000000,
+        "send_sir": 500000000000
+      },
+      "delegate_cost": {
+        "execution": 200000000000,
+        "send_not_sir": 200000000000,
+        "send_sir": 200000000000
+      },
+      "delete_account_cost": {
+        "execution": 147489000000,
+        "send_not_sir": 147489000000,
+        "send_sir": 147489000000
+      },
+      "delete_key_cost": {
+        "execution": 94946625000,
+        "send_not_sir": 94946625000,
+        "send_sir": 94946625000
+      },
+      "deploy_contract_cost": {
+        "execution": 184765750000,
+        "send_not_sir": 184765750000,
+        "send_sir": 184765750000
+      },
+      "deploy_contract_cost_per_byte": {
+        "execution": 64572944,
+        "send_not_sir": 47683715,
+        "send_sir": 6812999
+      },
+      "function_call_cost": {
+        "execution": 780000000000,
+        "send_not_sir": 200000000000,
+        "send_sir": 200000000000
+      },
+      "function_call_cost_per_byte": {
+        "execution": 2235934,
+        "send_not_sir": 47683715,
+        "send_sir": 2235934
+      },
+      "stake_cost": {
+        "execution": 102217625000,
+        "send_not_sir": 141715687500,
+        "send_sir": 141715687500
+      },
+      "transfer_cost": {
+        "execution": 115123062500,
+        "send_not_sir": 115123062500,
+        "send_sir": 115123062500
+      }
+    },
+    "action_receipt_creation_config": {
+      "execution": 108059500000,
+      "send_not_sir": 108059500000,
+      "send_sir": 108059500000
+    },
+    "burnt_gas_reward": [0, 1],
+    "data_receipt_creation_config": {
+      "base_cost": {
+        "execution": 36486732312,
+        "send_not_sir": 36486732312,
+        "send_sir": 36486732312
+      },
+      "cost_per_byte": {
+        "execution": 17212011,
+        "send_not_sir": 47683715,
+        "send_sir": 17212011
+      }
+    },
+    "ml_dsa_65_verification_cost": 100000000000,
+    "pessimistic_gas_price_inflation_ratio": [1, 1],
+    "storage_usage_config": {
+      "num_bytes_account": 100,
+      "num_extra_bytes_record": 40
+    }
+  },
+  "gasPrice": "100000000",
+  "artifact": {
+    "path": "target/wasm32-unknown-unknown/release/mandate_vault.wasm",
+    "bytes": 366735,
+    "sha256": "b2ce7469301f8de912a4af955e254fa4ff2d9a5c097411bde1d00d0dd450ef48"
+  },
+  "scope": "Read-only public account observation; not ownership proof or deployment/transaction authorization."
+}

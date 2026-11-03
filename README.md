@@ -217,3 +217,21 @@ Read [M6 report](docs/M6_REPORT.md), [reconciliation design](docs/M6_RECONCILIAT
 ## M7 security workspace
 
 Open `/workspace/security` at the configured origin to inspect organization-scoped alerts, incident history and safe emergency-action reviews. Monitoring is advisory and dashboard-only; incident resolution and application access removal never imply onchain pause/revocation. The worker still has no signing/broadcast capability. See docs/M7_DESIGN.md, docs/M7_REPORT.md and docs/M7_INCIDENT_RUNBOOK.md. Run `pnpm security:status` locally for redacted global operational indicators; no tenant-admin API exists.
+
+## M8 integrated acceptance workspace
+
+Open `/workspace/journey` at the configured origin (private HTTPS testing:
+**https://127.0.0.1:8443/workspace/journey**) to follow wallet/organization,
+mandates, restricted proposals, independent evidence, Testnet settlement and
+security response. Shared navigation connects all workspaces. Enter NEAR decimal
+amounts; the application converts exact atomic values and can hash local evidence
+bytes without uploading them. A hash does not prove source truth.
+
+Earlier milestone descriptions above are historical. Current transaction
+orchestration exists but live submission remains disabled pending separately
+approved deployment. Use [M8 report](docs/M8_REPORT.md),
+[S01–S20 matrix](docs/M8_TEST_MATRIX.md),
+[deployment authorization package](docs/M8_DEPLOYMENT_AUTHORIZATION.md) and
+[coordinated live runbook](docs/M8_LIVE_TESTNET_RUNBOOK.md). Public Testnet payment,
+genuine source and integrated physical-device results remain pending; no local
+fixture or sandbox result is a public financial demonstration.

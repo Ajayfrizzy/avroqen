@@ -121,7 +121,7 @@ async function setup(page: Page, mode = "normal") {
       .getByLabel("Mandate", { exact: true })
       .selectOption(policy.mandateId);
 }
-async function prepare(page: Page, amount = "1") {
+async function prepare(page: Page, amount = "0.000000000000000000000001") {
   await page.getByRole("button", { name: "Enable scoped demo" }).click();
   await page
     .getByLabel("Task description")
@@ -143,14 +143,16 @@ for (const width of [1280, 390])
     const review = page.getByRole("region", { name: "Review proposal" });
     await expect(review).toBeFocused();
     await expect(review).toBeInViewport();
-    await expect(review).toContainText("PREFLIGHT_ACCEPTED — advisory only");
+    await expect(review).toContainText("Within app limits — advisory only");
     await expect(review).toContainText("vendor.testnet");
     await page
       .getByRole("button", { name: "Submit offchain proposal" })
       .click();
     await expect(
       page.getByRole("region", { name: "Proposal history" }),
-    ).toContainText("SUBMITTED_OFFCHAIN — NOT_SUBMITTED onchain");
+    ).toContainText(
+      "Recorded offchain; chain submission and payment are not verified here.",
+    );
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -168,10 +170,10 @@ for (const width of [1280, 390])
   });
 test("above-limit preparation cannot be submitted", async ({ page }) => {
   await setup(page);
-  await prepare(page, "11");
+  await prepare(page, "0.000000000000000000000011");
   await expect(
     page.getByRole("region", { name: "Review proposal" }),
-  ).toContainText("PREFLIGHT_REJECTED");
+  ).toContainText("Cannot submit");
   await expect(
     page.getByRole("button", { name: "Submit offchain proposal" }),
   ).toBeDisabled();
@@ -233,7 +235,7 @@ test("submission retry retains identical proposal and idempotency identifiers", 
   await page.getByRole("button", { name: "Submit offchain proposal" }).click();
   await expect(
     page.getByRole("region", { name: "Proposal history" }),
-  ).toContainText("SUBMITTED_OFFCHAIN");
+  ).toContainText("Recorded offchain");
   expect(attempts).toHaveLength(2);
   expect(attempts[0]).toEqual(attempts[1]);
 });
@@ -258,7 +260,7 @@ test("pending submission disables duplicate actions and selection changes", asyn
   release();
   await expect(
     page.getByRole("region", { name: "Proposal history" }),
-  ).toContainText("SUBMITTED_OFFCHAIN");
+  ).toContainText("Recorded offchain");
 });
 test("changing mandate selection clears token and prepared review", async ({
   page,
@@ -279,3 +281,32 @@ test("changing mandate selection clears token and prepared review", async ({
     page.getByRole("button", { name: "Prepare proposal", exact: true }),
   ).toHaveCount(0);
 });
+
+for (const width of [1280, 390])
+  test(`local document hashing and exact NEAR conversion at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await setup(page);
+    await page.getByRole("button", { name: "Enable scoped demo" }).click();
+    await page.getByLabel("Task description").fill("Untrusted source record");
+    await page.getByLabel("Exact amount").fill("0.000000000000000000000001");
+    await page.getByLabel("Hash evidence document locally").setInputFiles({
+      name: "record.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("abc"),
+    });
+    await expect(page.getByLabel("Evidence SHA-256")).toHaveValue(
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
+    await page
+      .getByRole("button", { name: "Prepare proposal", exact: true })
+      .click();
+    await expect(
+      page.getByRole("region", { name: "Review proposal" }),
+    ).toContainText("Within app limits");
+    await page.getByText("Exact proposal and atomic units").click();
+    await expect(
+      page.getByRole("region", { name: "Review proposal" }).locator("pre"),
+    ).toContainText('"amountAtomic": "1"');
+  });

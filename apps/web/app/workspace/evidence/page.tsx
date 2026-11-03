@@ -1,5 +1,9 @@
 "use client";
-import { atomicToNear, type MandatePolicy } from "@avroqen/domain";
+import {
+  atomicToNear,
+  type MandatePolicy,
+  nearToAtomic,
+} from "@avroqen/domain";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -12,6 +16,7 @@ import {
   validateMap1,
 } from "../../../../../packages/domain/src/evidence";
 import type { ProposalInput } from "../../../../../packages/domain/src/proposals";
+import { hashEvidenceFile } from "../evidence-file";
 import { type Challenge, signChallenge } from "../wallet";
 import { WalletSignInError } from "../wallet-errors";
 
@@ -317,10 +322,7 @@ export default function Evidence() {
                   </div>
                   <div>
                     <dt>Amount</dt>
-                    <dd>
-                      {atomicToNear(view.proposal.amountAtomic)} NEAR (
-                      {view.proposal.amountAtomic} yoctoNEAR)
-                    </dd>
+                    <dd>{atomicToNear(view.proposal.amountAtomic)} NEAR</dd>
                   </div>
                   <div>
                     <dt>Intended vault / network</dt>
@@ -456,31 +458,10 @@ export default function Evidence() {
                       accept="application/pdf,text/plain,application/json,image/png,image/jpeg"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
+                        setDigest("");
                         if (!file) return;
                         void run(async () => {
-                          if (
-                            file.size < 1 ||
-                            file.size > 5242880 ||
-                            ![
-                              "application/pdf",
-                              "text/plain",
-                              "application/json",
-                              "image/png",
-                              "image/jpeg",
-                            ].includes(file.type)
-                          )
-                            throw new Error(
-                              "Unsupported file type or size. No file was uploaded.",
-                            );
-                          const hash = await crypto.subtle.digest(
-                            "SHA-256",
-                            await file.arrayBuffer(),
-                          );
-                          setDigest(
-                            [...new Uint8Array(hash)]
-                              .map((b) => b.toString(16).padStart(2, "0"))
-                              .join(""),
-                          );
+                          setDigest(await hashEvidenceFile(file));
                         });
                         e.target.value = "";
                       }}
@@ -505,7 +486,9 @@ export default function Evidence() {
                                 ).toString(),
                                 event: f.get("event"),
                                 recipient: f.get("recipient"),
-                                amountAtomic: f.get("amount"),
+                                amountAtomic: nearToAtomic(
+                                  String(f.get("amount")),
+                                ),
                                 evidenceDigest: f.get("digest"),
                                 independentlyObtained:
                                   f.get("independent") === "on",
@@ -599,14 +582,14 @@ export default function Evidence() {
                         required
                       />
                       <label htmlFor="observed-amount">
-                        Observed exact amount (yoctoNEAR)
+                        Observed exact amount (NEAR)
                       </label>
                       <input
                         id="observed-amount"
                         name="amount"
                         required
-                        inputMode="numeric"
-                        maxLength={39}
+                        inputMode="decimal"
+                        maxLength={64}
                       />
                       <label htmlFor="observed-digest">
                         Independently obtained document SHA-256
@@ -646,8 +629,7 @@ export default function Evidence() {
                     Issuer/reference: {draft.observation.issuer} /{" "}
                     {draft.observation.reference}. Recipient:{" "}
                     {draft.observation.recipient}. Amount:{" "}
-                    {atomicToNear(draft.observation.amountAtomic)} NEAR (
-                    {draft.observation.amountAtomic} yoctoNEAR).
+                    {atomicToNear(draft.observation.amountAtomic)} NEAR.
                   </p>
                   <p className="evidence-digest">
                     Observed digest: {draft.observation.evidenceDigest}
@@ -789,9 +771,16 @@ export default function Evidence() {
                   ))
                 )}
               </section>
-              <button type="button" disabled>
-                Onchain attestation unavailable — not deployed
-              </button>
+              <Link
+                href={`/workspace/settlement?mandate=${view.policy.mandateId}`}
+              >
+                Review separate onchain attestation in Testnet settlement
+              </Link>
+              <p>
+                Offchain reviews do not establish onchain quorum. Check verified
+                chain state and sign a separate wallet transaction only after
+                deployment authorization.
+              </p>
             </>
           )}
         </>

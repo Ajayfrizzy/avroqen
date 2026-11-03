@@ -112,3 +112,7 @@ The hackathon uses a dedicated, owner-controlled Testnet demonstration vault wit
 services/security projects internal audit/reconciliation sources into durable redacted tenant-scoped incidents. Detection is deterministic/advisory: no LLM or caller event authorizes blockchain state. A separate monitoring loop and PostgreSQL pool share the existing non-root worker service without gating M6 reconciliation. Source identities provide durable replay checkpoints; SQL guards preserve history and scoped incident versions.
 
 /workspace/security exposes incidents and links to explicit M6 wallet review for owner/verified-guardian controls. App disabling and capability revocation stay offchain. The worker is read-only toward NEAR, including code/key/domain and gas/backing observations. No signer, broadcast client or financial scheduler was added. See M7_DESIGN.md and M7_INCIDENT_RUNBOOK.md.
+
+## M8 integrated observation boundary
+
+`/workspace/journey` uses existing assignment/tenant endpoints to connect M1–M7; it cannot grant roles or financial authority. Settlement hides stale financial observations and gates wallet actions after refresh failure, retaining unresolved-history warnings. Proposal and verifier forms convert decimal NEAR exactly and locally hash bounded evidence bytes without upload/source inference. Browser transaction reconstruction and all server/contract checks remain mandatory. See M8_DESIGN and M8_TEST_MATRIX; public Testnet, authentic-source and physical-device evidence are distinct from automated fixtures and local sandbox.
