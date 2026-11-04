@@ -59,3 +59,15 @@ Draft PR and exact final SHA/hosted workflow are reported in the delivery messag
 ## UI redesign verification addendum — 2026-11-03
 
 The subsequent owner-requested redesign supersedes the UI/test counts above: **166 unit + 19 integration + 13 adversarial + 175 PostgreSQL + 133 browser + 33 Rust unit + 7 sandbox = 546 tests**, all passing locally. Lint/typecheck, production build, Rust format/Clippy and release Wasm allowlist passed. Backend/contracts/security policy remain unchanged; one pinned test-only axe dependency was added. Shared shell, real-data overview and guided forms replace the prototype presentation. [UI_DESIGN_SYSTEM](UI_DESIGN_SYSTEM.md) and [M8_UX_REDESIGN_REPORT](M8_UX_REDESIGN_REPORT.md) document components, 20 inspected synthetic screenshots, accessibility checks and remaining physical/live acceptance. Prior historical manual results do not certify the redesign. No deployment or public transaction occurred.
+
+## Monitoring contention correction — 2026-11-04
+
+Hosted PostgreSQL verification exposed a missing receipt-mismatch alert. The monitor used the single database-wide advisory key `413007`; parallel test suites had isolated schemas but shared that key. Losing the nonblocking lock correctly skipped a cycle, so the test could observe no alert despite the durable chain event. This was not evidence of successful settlement or released obligations.
+
+A deterministic real-PostgreSQL regression holds one actual monitoring transaction immediately after its lock query, then runs workers for the same and a separate event store. Before the fix, the separate store returned zero (expected positive progress). Monitoring now uses a namespaced two-part advisory key derived from the resolved `security_events` relation OID. Different search paths resolving to the same table share a lock; unrelated schemas do not contend. A hash collision would only serialize unrelated stores, never permit concurrent writers to the same store. Same-store skip, exactly-once projection and one alert occurrence remain asserted. No sleeps, retry masking, disabled test parallelism, financial-state changes or weakened receipt checks were introduced.
+
+For a running multi-worker deployment, restart monitoring workers together when adopting the new lock namespace; old and new versions use different advisory keys. No public deployment was performed. This change does not alter reconciliation, session/tenant authorization, settlement or quarantine rules.
+
+Verification results are recorded with the fix PR and exact hosted head; the failing contention regression and subsequent full PostgreSQL runs are actual database execution, not public Testnet evidence.
+
+Local fix verification: `pnpm check` passed lint/typecheck and 166 unit + 19 integration + 13 adversarial tests; `pnpm test:identity-db` passed all 176 tests on three consecutive runs with ordinary file parallelism enabled; production build and Gitleaks passed. The new contention test failed before the code correction and passed afterward. Rust/frontend behavior is unchanged by this fix; exact-head hosted foundation/rust remain required for PR review.

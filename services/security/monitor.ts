@@ -117,8 +117,13 @@ export async function monitorOnce(pool: pg.Pool) {
     await db.query("SET LOCAL statement_timeout='5s'");
     await db.query("SET LOCAL lock_timeout='1s'");
     if (
-      !(await db.query("SELECT pg_try_advisory_xact_lock(413007) AS acquired"))
-        .rows[0].acquired
+      // Serialize the actual event store, not unrelated schemas in this database.
+      // Resolve the relation OID so different search_paths sharing a table still lock together.
+      !(
+        await db.query(
+          "SELECT pg_try_advisory_xact_lock(413007, hashtext('security_events'::regclass::oid::text)) AS acquired",
+        )
+      ).rows[0].acquired
     ) {
       await db.query("ROLLBACK");
       return 0;
