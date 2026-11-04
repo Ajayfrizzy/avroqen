@@ -2,33 +2,32 @@ const boundaries = [
   [
     "01",
     "Owners authorize",
-    "Typed mandates will define recipients, limits and expiry.",
+    "Typed mandates define recipients, limits and expiry.",
   ],
   [
     "02",
     "Agents propose",
-    "Agents will submit bounded proposals without custody keys.",
+    "Agents submit bounded proposals without custody keys.",
   ],
   [
     "03",
     "Verifiers attest",
-    "Independent evidence will support precisely scoped claims.",
+    "Independent evidence supports precisely scoped claims.",
   ],
   [
     "04",
     "The vault enforces",
-    "Onchain checks will govern reservations and settlement.",
+    "Onchain checks govern reservations and settlement.",
   ],
 ];
 export default function Home() {
   return (
     <main>
-      <a href="/workspace">Open identity workspace</a>
       <header>
         <span className="brand">
           Avroqen<span className="dot">.</span>
         </span>
-        <span className="badge">M0 · Development foundation</span>
+        <span className="badge">Controlled Testnet prototype</span>
       </header>
       <section className="hero">
         <p className="eyebrow">TASK-BOUND FINANCIAL AUTHORITY</p>
@@ -38,19 +37,21 @@ export default function Home() {
           with the owner.
         </h1>
         <p className="intro">
-          A foundation for agents that propose, independent verifiers that
+          A workspace for agents that propose, independent verifiers that
           attest, and a vault that enforces the terms.
         </p>
         <aside>
-          <strong>Payments are not enabled.</strong>
+          <strong>Public transactions require separate authorization.</strong>
           <p>
-            This is the development foundation. Wallet authorization, custody,
-            verification and settlement are not implemented. No funds or
-            blockchain activity are shown.
+            Connect your wallet, define a mandate and review each approval. No
+            public deployment or payment is implied by this workspace.
           </p>
         </aside>
+        <a className="button-link" href="/workspace/journey">
+          Open your workspace →
+        </a>
       </section>
-      <section aria-label="Planned security boundaries" className="grid">
+      <section aria-label="Security boundaries" className="grid">
         {boundaries.map(([number, title, description]) => (
           <article key={number}>
             <span className="number">{number}</span>

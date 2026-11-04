@@ -155,21 +155,31 @@ test("mobile draft and exact review clearly distinguish offchain consent", async
     task: "Hosting",
     vault: "vault.testnet",
     recipient: "vendor.testnet",
+  }))
+    await page.locator(`#${id}`).fill(value);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  for (const [id, value] of Object.entries({
     per: "1.000000000000000000000001",
     total: "3",
     executions: "3",
     expiry: "2030-01-01T00:00",
-    verifiers: "verifier.testnet",
-    threshold: "1",
   }))
     await page.locator(`#${id}`).fill(value);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.locator("#agent").selectOption(agent);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.locator("#verifiers").fill("verifier.testnet");
+  await page.locator("#threshold").fill("1");
   await page.getByLabel("Service confirmed", { exact: true }).check();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: "Save draft & review" }).click();
   const review = page.getByRole("region", { name: "Policy review" });
+  await review
+    .getByText("Immutable policy identifiers and exact signed terms")
+    .click();
   await expect(review).toContainText("1000000000000000000000001 yoctoNEAR");
-  await expect(review).toContainText("NOT_SUBMITTED");
-  await expect(review).toContainText("unverified / not deployed");
+  await expect(review).toContainText("consent is not vault authorization");
+  await expect(review).toContainText("unverified by this consent flow");
   await expect(
     page.getByRole("button", { name: "Sign offchain approval" }),
   ).toBeDisabled();
@@ -382,11 +392,15 @@ test("M3 boundary stays unavailable on a narrow screen", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await setup(page);
   await page.goto("/workspace/mandates");
-  const region = page.getByRole("region", { name: "Onchain vault status" });
-  await expect(region.getByRole("heading")).toHaveText(
-    "Onchain vault — not deployed",
-  );
-  await expect(region).toContainText("Settlement: unavailable");
+  await expect(
+    page.getByText("Consent here is offchain only.", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("No funds move here", { exact: false }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Funded balance: 0", { exact: false }),
+  ).toHaveCount(0);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,

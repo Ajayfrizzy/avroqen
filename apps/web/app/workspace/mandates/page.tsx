@@ -10,6 +10,9 @@ import {
 } from "@avroqen/domain";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useWorkspaceIdentity } from "../../components/shell";
+import { Badge, FormReview, GuidedForm, PageHeader } from "../../components/ui";
+import { savedOrganization } from "../organization-preference";
 import { type Challenge, signChallenge } from "../wallet";
 import { WalletSignInError } from "../wallet-errors";
 
@@ -77,7 +80,7 @@ function Terms({ value }: { value: MandateView }) {
           </dd>
         </div>
         <div>
-          <dt>Intended vault — unverified / not deployed by M2</dt>
+          <dt>Intended vault — unverified by this consent flow</dt>
           <dd>{p.vaultAccount}</dd>
         </div>
         <div>
@@ -93,27 +96,20 @@ function Terms({ value }: { value: MandateView }) {
         </div>
         <div>
           <dt>Per-payment ceiling</dt>
-          <dd>
-            {atomicToNear(p.maxPerPaymentAtomic)} NEAR
-            <small>{p.maxPerPaymentAtomic} yoctoNEAR</small>
-          </dd>
+          <dd>{atomicToNear(p.maxPerPaymentAtomic)} NEAR</dd>
         </div>
         <div>
           <dt>Total ceiling</dt>
-          <dd>
-            {atomicToNear(p.totalBudgetAtomic)} NEAR
-            <small>{p.totalBudgetAtomic} yoctoNEAR</small>
-          </dd>
+          <dd>{atomicToNear(p.totalBudgetAtomic)} NEAR</dd>
         </div>
         <div>
           <dt>Maximum executions</dt>
-          <dd>{p.maxExecutions} (reserved + successful in the future vault)</dd>
+          <dd>{p.maxExecutions} (reserved + successful onchain)</dd>
         </div>
         <div>
           <dt>Expires (UTC)</dt>
           <dd>
             {new Date(Number(BigInt(p.expiresAtNs) / 1000000n)).toISOString()}
-            <small>{p.expiresAtNs} ns</small>
           </dd>
         </div>
         <div>
@@ -137,7 +133,7 @@ function Terms({ value }: { value: MandateView }) {
         </div>
         <div>
           <dt>Onchain status</dt>
-          <dd>NOT_SUBMITTED — no enforceable vault authorization</dd>
+          <dd>Not verified here — consent is not vault authorization</dd>
         </div>
       </dl>
       <details>
@@ -147,6 +143,10 @@ function Terms({ value }: { value: MandateView }) {
           {p.organizationId}
         </p>
         <p>SHA-256 {value.policyDigest}</p>
+        <p>
+          Per payment: {p.maxPerPaymentAtomic} yoctoNEAR · Total:{" "}
+          {p.totalBudgetAtomic} yoctoNEAR · Expiry: {p.expiresAtNs} ns
+        </p>
         <pre>{canonicalPolicy(p)}</pre>
       </details>
       <p>
@@ -260,6 +260,7 @@ export default function Mandates() {
         );
         if (o.organizations.some((v) => v.id === requested))
           setSelected(requested ?? "");
+        else setSelected(savedOrganization(s.accountId, o.organizations));
       } catch (e) {
         if (live.current) fail(e);
       } finally {
@@ -362,41 +363,22 @@ export default function Mandates() {
     setAction(a);
     setConfirmed(false);
   }
+  useWorkspaceIdentity(
+    session?.accountId,
+    orgs.find((o) => o.id === selected)?.name,
+    session?.network,
+  );
   return (
     <main className="workspace mandates-workspace">
-      <header>
-        <Link href="/" className="brand">
-          Avroqen<span className="dot">.</span>
-        </Link>
-        <Link href="/workspace">Wallet & organizations</Link>
-      </header>
-      <p className="eyebrow">M2 · OWNER CONSENT</p>
-      <h1>Permission, precisely defined.</h1>
-      <p className="intro">
-        Give a proposed task clear boundaries. Review every term before your
-        wallet records consent.
-      </p>
-      <aside>
-        <strong>Offchain preparation only</strong>
-        <p>
-          No funds move here. Approval and revocation change application consent
-          only. No vault is deployed or called. M3 requires a separate
-          owner-signed onchain transaction. Application roles never replace
-          onchain ownership.
-        </p>
-      </aside>
-      <section aria-label="Onchain vault status">
-        <h2>Onchain vault — not deployed</h2>
-        <p>
-          Registration, funding, payments and onchain pause or revocation are
-          unavailable. Offchain consent below is separate from contract
-          authorization.
-        </p>
-        <p>
-          Funded balance: unavailable · Reserved funds: unavailable ·
-          Settlement: unavailable
-        </p>
-      </section>
+      <PageHeader
+        eyebrow="Spending policies"
+        title="Mandates"
+        description="Define exactly what an agent can propose, and where its authority ends."
+      />
+      <div className="notice-card">
+        Consent here is offchain only. Funding, payment and onchain revocation
+        require separate wallet transactions in Payments.
+      </div>
       {error && (
         <p role="alert" className="error">
           {error}
@@ -522,7 +504,19 @@ export default function Mandates() {
                       {atomicToNear(v.policy.totalBudgetAtomic)} NEAR total
                     </p>
                     <p>
-                      {labels[v.consentStatus]}
+                      Agent: {v.policy.agentAccount} · Per payment:{" "}
+                      {atomicToNear(v.policy.maxPerPaymentAtomic)} NEAR
+                    </p>
+                    <p>
+                      <Badge
+                        tone={
+                          v.consentStatus === "CONSENT_APPROVED_OFFCHAIN"
+                            ? "success"
+                            : "neutral"
+                        }
+                      >
+                        {labels[v.consentStatus]}
+                      </Badge>
                       {v.expired ? " · Expired" : ""}
                     </p>
                   </div>
@@ -585,7 +579,15 @@ export default function Mandates() {
                 Saved terms cannot be edited. Corrections require a new mandate
                 and fresh signature.
               </p>
-              <form
+              <GuidedForm
+                busy={busy}
+                steps={[
+                  "Task & recipient",
+                  "Spending limits",
+                  "Agent",
+                  "Evidence",
+                  "Review",
+                ]}
                 onSubmit={(e) => {
                   e.preventDefault();
                   const form = new FormData(e.currentTarget);
@@ -631,152 +633,168 @@ export default function Mandates() {
                   });
                 }}
               >
-                <label htmlFor="task">Task reference</label>
-                <input id="task" name="task" required maxLength={160} />
-                <label htmlFor="agent">Agent</label>
-                <select id="agent" name="agent" required defaultValue="">
-                  <option value="">Select an active agent</option>
-                  {agents
-                    .filter((a) => !a.disabledAt)
-                    .map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name} · {a.accountId}
-                      </option>
-                    ))}
-                </select>
-                {agentNext !== null && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(async () => {
-                        const a = await api<{
-                          agents: Agent[];
-                          nextOffset: number | null;
-                        }>(
-                          `/organizations/${selected}/agents?offset=${agentNext}`,
-                          session,
-                        );
-                        setAgents((old) => [...old, ...a.agents]);
-                        setAgentNext(a.nextOffset);
-                      })
-                    }
-                  >
-                    Load more agents
-                  </button>
-                )}
-                <label htmlFor="vault">
-                  Intended vault account (unverified; not deployed by M2)
-                </label>
-                <input
-                  id="vault"
-                  name="vault"
-                  required
-                  maxLength={64}
-                  autoCapitalize="none"
-                />
-                <label htmlFor="recipient">Exact recipient account</label>
-                <input
-                  id="recipient"
-                  name="recipient"
-                  required
-                  maxLength={64}
-                  autoCapitalize="none"
-                />
-                <label htmlFor="per">Maximum per payment (NEAR)</label>
-                <input
-                  id="per"
-                  name="per"
-                  inputMode="decimal"
-                  required
-                  maxLength={65}
-                />
-                <label htmlFor="total">Total budget ceiling (NEAR)</label>
-                <input
-                  id="total"
-                  name="total"
-                  inputMode="decimal"
-                  required
-                  maxLength={65}
-                />
-                <label htmlFor="executions">Maximum executions</label>
-                <input
-                  id="executions"
-                  name="executions"
-                  type="number"
-                  min={1}
-                  max={4294967295}
-                  step={1}
-                  required
-                />
-                <label htmlFor="expiry">
-                  Expiration date and time (UTC, not local time)
-                </label>
-                <input
-                  id="expiry"
-                  name="expiry"
-                  type="datetime-local"
-                  step={60}
-                  required
-                />
-                <fieldset>
-                  <legend>Evidence requirements</legend>
-                  <p>
-                    Quorum applies to every selected third-party claim. The
-                    owner must choose trusted, independent verifiers; account
-                    names do not prove independence.
-                  </p>
-                  <label htmlFor="verifiers">
-                    Verifier accounts, separated by commas (maximum 16)
+                <div>
+                  <label htmlFor="task">Task reference</label>
+                  <input id="task" name="task" required maxLength={160} />
+                  <label htmlFor="vault">
+                    Intended vault account (unverified; not deployed by M2)
                   </label>
                   <input
-                    id="verifiers"
-                    name="verifiers"
+                    id="vault"
+                    name="vault"
                     required
-                    maxLength={1040}
+                    maxLength={64}
                     autoCapitalize="none"
                   />
-                  <label htmlFor="threshold">
-                    Required verifier quorum per claim
-                  </label>
+                  <label htmlFor="recipient">Exact recipient account</label>
                   <input
-                    id="threshold"
-                    name="threshold"
+                    id="recipient"
+                    name="recipient"
+                    required
+                    maxLength={64}
+                    autoCapitalize="none"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="per">Maximum per payment (NEAR)</label>
+                  <input
+                    id="per"
+                    name="per"
+                    inputMode="decimal"
+                    required
+                    maxLength={65}
+                  />
+                  <label htmlFor="total">Total budget ceiling (NEAR)</label>
+                  <input
+                    id="total"
+                    name="total"
+                    inputMode="decimal"
+                    required
+                    maxLength={65}
+                  />
+                  <label htmlFor="executions">Maximum executions</label>
+                  <input
+                    id="executions"
+                    name="executions"
                     type="number"
                     min={1}
-                    max={16}
+                    max={4294967295}
                     step={1}
                     required
                   />
-                  <label className="check-label">
-                    <input
-                      type="checkbox"
-                      name="claims"
-                      value="INVOICE_ISSUED"
-                    />{" "}
-                    Invoice issued (not proof of delivery)
+                  <label htmlFor="expiry">
+                    Expiration date and time (UTC, not local time)
                   </label>
-                  <label className="check-label">
+                  <input
+                    id="expiry"
+                    name="expiry"
+                    type="datetime-local"
+                    step={60}
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="agent">Agent</label>
+                  <select id="agent" name="agent" required defaultValue="">
+                    <option value="">Select an active agent</option>
+                    {agents
+                      .filter((a) => !a.disabledAt)
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name} · {a.accountId}
+                        </option>
+                      ))}
+                  </select>
+                  {agentNext !== null && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(async () => {
+                          const a = await api<{
+                            agents: Agent[];
+                            nextOffset: number | null;
+                          }>(
+                            `/organizations/${selected}/agents?offset=${agentNext}`,
+                            session,
+                          );
+                          setAgents((old) => [...old, ...a.agents]);
+                          setAgentNext(a.nextOffset);
+                        })
+                      }
+                    >
+                      Load more agents
+                    </button>
+                  )}
+                </div>
+                <div>
+                  <fieldset>
+                    <legend>Evidence requirements</legend>
+                    <p>
+                      Quorum applies to every selected third-party claim. The
+                      owner must choose trusted, independent verifiers; account
+                      names do not prove independence.
+                    </p>
+                    <label htmlFor="verifiers">
+                      Verifier accounts, separated by commas (maximum 16)
+                    </label>
                     <input
-                      type="checkbox"
-                      name="claims"
-                      value="SERVICE_CONFIRMED"
-                    />{" "}
-                    Service confirmed
-                  </label>
-                  <label className="check-label">
+                      id="verifiers"
+                      name="verifiers"
+                      required
+                      maxLength={1040}
+                      autoCapitalize="none"
+                    />
+                    <label htmlFor="threshold">
+                      Required verifier quorum per claim
+                    </label>
                     <input
-                      type="checkbox"
-                      name="ownerApproval"
-                      defaultChecked
-                    />{" "}
-                    Also require separate owner approval for every payment
-                  </label>
-                </fieldset>
-                <button disabled={busy} type="submit">
-                  Save draft & review
-                </button>
-              </form>
+                      id="threshold"
+                      name="threshold"
+                      type="number"
+                      min={1}
+                      max={16}
+                      step={1}
+                      required
+                    />
+                    <label className="check-label">
+                      <input
+                        type="checkbox"
+                        name="claims"
+                        value="INVOICE_ISSUED"
+                      />{" "}
+                      Invoice issued (not proof of delivery)
+                    </label>
+                    <label className="check-label">
+                      <input
+                        type="checkbox"
+                        name="claims"
+                        value="SERVICE_CONFIRMED"
+                      />{" "}
+                      Service confirmed
+                    </label>
+                    <label className="check-label">
+                      <input
+                        type="checkbox"
+                        name="ownerApproval"
+                        defaultChecked
+                      />{" "}
+                      Also require separate owner approval for every payment
+                    </label>
+                  </fieldset>
+                </div>
+                <div>
+                  <FormReview />
+                  <p className="notice-card">
+                    Saving creates immutable terms only. Review the saved policy
+                    and sign a separate wallet message to grant offchain
+                    consent. No funds move.
+                  </p>{" "}
+                  <button disabled={busy} type="submit">
+                    Save draft & review
+                  </button>
+                </div>
+              </GuidedForm>
             </section>
           )}
           {review && (

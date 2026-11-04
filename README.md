@@ -21,8 +21,9 @@ docker compose up --build -d --wait
 pnpm test:smoke
 ```
 
-Open **http://127.0.0.1:3000** to see the responsive foundation page and its
-“Payments are not enabled” status. **http://127.0.0.1:3001/health** reports process
+Open **http://127.0.0.1:3000** to see the product entry page and its
+“Public transactions require separate authorization” disclosure. See the
+[design system](docs/UI_DESIGN_SYSTEM.md) and [redesign evidence](docs/M8_UX_REDESIGN_REPORT.md). **http://127.0.0.1:3001/health** reports process
 liveness; **/ready** checks actual PostgreSQL connectivity, not financial readiness.
 The database binds to **127.0.0.1:55432**. These are development services only.
 `pnpm setup:env` creates an ignored, mode-0600 `.env` with a random local database

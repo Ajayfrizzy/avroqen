@@ -16,6 +16,8 @@ import {
   validateMap1,
 } from "../../../../../packages/domain/src/evidence";
 import type { ProposalInput } from "../../../../../packages/domain/src/proposals";
+import { useWorkspaceIdentity } from "../../components/shell";
+import { FormReview, GuidedForm, PageHeader } from "../../components/ui";
 import { hashEvidenceFile } from "../evidence-file";
 import { type Challenge, signChallenge } from "../wallet";
 import { WalletSignInError } from "../wallet-errors";
@@ -201,14 +203,14 @@ export default function Evidence() {
     setView(null);
     setView(await api<View>(`/evidence/${id}`));
   }
+  useWorkspaceIdentity(session?.accountId, undefined, session?.network);
   return (
     <main className="workspace">
-      <Link href="/workspace">← Wallet workspace</Link>
-      <h1>Evidence and verifier review</h1>
-      <p>
-        Human source verification. No automated provider verification,
-        blockchain submission or payment. Onchain vault: not deployed.
-      </p>
+      <PageHeader
+        eyebrow="Human review"
+        title="Verification"
+        description="Independent evidence. Explicit claims. Decisions you can stand behind."
+      />
       {!loaded ? (
         <p role="status">Loading identity…</p>
       ) : !session ? (
@@ -217,51 +219,13 @@ export default function Evidence() {
         </p>
       ) : (
         <>
-          <p>
-            Reviewing as {session.accountId}. Obtain source evidence yourself
-            through your authenticated provider or issuer channel. Do not follow
-            agent-supplied links.
-          </p>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                const r = await api<{
-                  proposals: typeof assigned;
-                  nextOffset: number | null;
-                }>("/verifier/proposals");
-                setAssigned(r.proposals);
-                setNext(r.nextOffset);
-              })
-            }
-          >
-            Load assigned proposals
-          </button>
-          {assigned.length === 0 && (
+          <details open={!view} className="evidence-selector">
+            <summary>Choose a proposal to review</summary>
             <p>
-              No assigned proposals loaded. Owners can open a proposal from
-              their proposal history.
+              Reviewing as {session.accountId}. Obtain source evidence yourself
+              through your authenticated provider or issuer channel. Do not
+              follow agent-supplied links.
             </p>
-          )}
-          <ul>
-            {assigned.map((p) => (
-              <li key={p.proposalId}>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    setId(p.proposalId);
-                    setView(null);
-                    setDraft(null);
-                  }}
-                >
-                  {p.task} — {p.proposalId}
-                </button>
-              </li>
-            ))}
-          </ul>
-          {next !== null && (
             <button
               type="button"
               disabled={busy}
@@ -270,37 +234,78 @@ export default function Evidence() {
                   const r = await api<{
                     proposals: typeof assigned;
                     nextOffset: number | null;
-                  }>(`/verifier/proposals?offset=${next}`);
-                  setAssigned((a) => [...a, ...r.proposals]);
+                  }>("/verifier/proposals");
+                  setAssigned(r.proposals);
                   setNext(r.nextOffset);
                 })
               }
             >
-              Load more assignments
+              Load assigned proposals
             </button>
-          )}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void run(load);
-            }}
-          >
-            <label htmlFor="evidence-proposal">Proposal ID</label>
-            <input
-              id="evidence-proposal"
-              value={id}
-              disabled={busy}
-              required
-              onChange={(e) => {
-                setId(e.target.value);
-                setView(null);
-                setDraft(null);
+            {assigned.length === 0 && (
+              <p>
+                No assigned proposals loaded. Owners can open a proposal from
+                their proposal history.
+              </p>
+            )}
+            <ul>
+              {assigned.map((p) => (
+                <li key={p.proposalId}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setId(p.proposalId);
+                      setView(null);
+                      setDraft(null);
+                    }}
+                  >
+                    {p.task} — {p.proposalId}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {next !== null && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    const r = await api<{
+                      proposals: typeof assigned;
+                      nextOffset: number | null;
+                    }>(`/verifier/proposals?offset=${next}`);
+                    setAssigned((a) => [...a, ...r.proposals]);
+                    setNext(r.nextOffset);
+                  })
+                }
+              >
+                Load more assignments
+              </button>
+            )}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run(load);
               }}
-            />
-            <button type="submit" disabled={busy}>
-              Open evidence
-            </button>
-          </form>
+            >
+              <label htmlFor="evidence-proposal">Proposal ID</label>
+              <input
+                id="evidence-proposal"
+                value={id}
+                disabled={busy}
+                required
+                onChange={(e) => {
+                  setId(e.target.value);
+                  setView(null);
+                  setDraft(null);
+                }}
+              />
+              <button type="submit" disabled={busy}>
+                Open evidence
+              </button>
+            </form>
+          </details>
           {view && (
             <>
               <section aria-label="Evidence requirements">
@@ -309,12 +314,6 @@ export default function Evidence() {
                   <div>
                     <dt>Authorized task / service</dt>
                     <dd>{view.policy.taskReference}</dd>
-                  </div>
-                  <div>
-                    <dt>Mandate / policy version</dt>
-                    <dd>
-                      {view.policy.mandateId} / {view.policy.policyVersion}
-                    </dd>
                   </div>
                   <div>
                     <dt>Recipient</dt>
@@ -330,11 +329,18 @@ export default function Evidence() {
                       {view.proposal.vaultAccount} / {view.proposal.network}
                     </dd>
                   </div>
-                  <div>
-                    <dt>Evidence digest (not proof of authenticity)</dt>
-                    <dd>{view.proposal.evidenceDigest}</dd>
-                  </div>
                 </dl>
+                <details>
+                  <summary>Policy reference and exact evidence digest</summary>
+                  <p>
+                    Mandate {view.policy.mandateId} · version{" "}
+                    {view.policy.policyVersion}
+                  </p>
+                  <p className="evidence-digest">
+                    {view.proposal.evidenceDigest}
+                  </p>
+                  <p>Digest integrity is not proof of authenticity.</p>
+                </details>
                 <p>
                   {view.readiness.disputed
                     ? "Delivery disputed. Further application approvals are blocked. This does not cancel an already dispatched payment."
@@ -447,26 +453,16 @@ export default function Evidence() {
                       is your responsibility; the app cannot prove that you
                       accessed the issuer.
                     </p>
-                    <label htmlFor="hash-file">
-                      Optional: hash a local document (never uploaded; maximum 5
-                      MiB)
-                    </label>
-                    <input
-                      id="hash-file"
-                      type="file"
-                      disabled={busy}
-                      accept="application/pdf,text/plain,application/json,image/png,image/jpeg"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        setDigest("");
-                        if (!file) return;
-                        void run(async () => {
-                          setDigest(await hashEvidenceFile(file));
-                        });
-                        e.target.value = "";
-                      }}
-                    />
-                    <form
+                    <GuidedForm
+                      busy={busy}
+                      steps={[
+                        "Claim",
+                        "Source",
+                        "Document",
+                        "Exact facts",
+                        "Independence",
+                        "Decision",
+                      ]}
                       key={view.evidence.id}
                       onSubmit={(e) => {
                         e.preventDefault();
@@ -498,119 +494,167 @@ export default function Evidence() {
                         });
                       }}
                     >
-                      <label htmlFor="claim">Claim</label>
-                      <select id="claim" name="claim">
-                        {view.allowedClaims.map((c) => (
-                          <option key={c} value={c}>
-                            {labels[c]}
+                      <div>
+                        <p>
+                          Review the proposal above and select only a claim
+                          supported by your own assessment.
+                        </p>{" "}
+                        <label htmlFor="claim">Claim</label>
+                        <select id="claim" name="claim">
+                          {view.allowedClaims.map((c) => (
+                            <option key={c} value={c}>
+                              {labels[c]}
+                            </option>
+                          ))}
+                        </select>
+                        <label htmlFor="decision">Decision</label>
+                        <select id="decision" name="decision">
+                          <option value="APPROVE">
+                            Approve supported claim
                           </option>
-                        ))}
-                      </select>
-                      <label htmlFor="decision">Decision</label>
-                      <select id="decision" name="decision">
-                        <option value="APPROVE">Approve supported claim</option>
-                        <option value="REJECT">Reject claim</option>
-                        <option value="UNVERIFIABLE">
-                          Cannot verify source
-                        </option>
-                        <option value="PENDING">
-                          Source temporarily unavailable
-                        </option>
-                        <option value="DISPUTE">Dispute delivery</option>
-                      </select>
-                      <label htmlFor="source">How you obtained evidence</label>
-                      <select id="source" name="source">
-                        <option value="AUTHENTICATED_PROVIDER_PORTAL">
-                          My authenticated provider portal
-                        </option>
-                        <option value="AUTHENTICATED_ISSUER_COMMUNICATION">
-                          My authenticated issuer communication
-                        </option>
-                        <option value="LOCAL_EXERCISE">
-                          Local exercise — never live evidence
-                        </option>
-                        <option value="OWNER_DECISION">
-                          Separate owner payment decision
-                        </option>
-                      </select>
-                      <label htmlFor="event">Observed event</label>
-                      <select id="event" name="event">
-                        <option value="SERVICE_ACTIVATED">
-                          Service activated
-                        </option>
-                        <option value="SERVICE_FULFILLED">
-                          Service fulfilled
-                        </option>
-                        <option value="INVOICE_ISSUED">
-                          Invoice issued only
-                        </option>
-                        <option value="MISSING">
-                          No matching source record
-                        </option>
-                        <option value="UNAVAILABLE">
-                          Source temporarily unavailable
-                        </option>
-                        <option value="DISPUTED">Delivery disputed</option>
-                        <option value="OWNER_DECISION">
-                          Owner payment decision
-                        </option>
-                      </select>
-                      <label htmlFor="observedIssuer">
-                        Independently observed issuer
-                      </label>
-                      <input
-                        id="observedIssuer"
-                        name="observedIssuer"
-                        maxLength={120}
-                        required
-                      />
-                      <label htmlFor="observedReference">
-                        Independently observed reference
-                      </label>
-                      <input
-                        id="observedReference"
-                        name="observedReference"
-                        maxLength={120}
-                        required
-                      />
-                      <label htmlFor="observed-recipient">
-                        Observed recipient
-                      </label>
-                      <input
-                        id="observed-recipient"
-                        name="recipient"
-                        required
-                      />
-                      <label htmlFor="observed-amount">
-                        Observed exact amount (NEAR)
-                      </label>
-                      <input
-                        id="observed-amount"
-                        name="amount"
-                        required
-                        inputMode="decimal"
-                        maxLength={64}
-                      />
-                      <label htmlFor="observed-digest">
-                        Independently obtained document SHA-256
-                      </label>
-                      <input
-                        id="observed-digest"
-                        name="digest"
-                        value={digest}
-                        onChange={(e) => setDigest(e.target.value)}
-                        pattern="[0-9a-f]{64}"
-                        required
-                      />
-                      <label className="check-label">
-                        <input type="checkbox" name="independent" />I obtained
-                        this evidence independently of the proposing agent using
-                        my own authenticated source access.
-                      </label>
-                      <button type="submit" disabled={busy}>
-                        Review exact decision
-                      </button>
-                    </form>
+                          <option value="REJECT">Reject claim</option>
+                          <option value="UNVERIFIABLE">
+                            Cannot verify source
+                          </option>
+                          <option value="PENDING">
+                            Source temporarily unavailable
+                          </option>
+                          <option value="DISPUTE">Dispute delivery</option>
+                        </select>
+                      </div>
+                      <div>
+                        <p>
+                          Use your own authenticated source access. Agent
+                          statements are not independent evidence.
+                        </p>{" "}
+                        <label htmlFor="source">
+                          How you obtained evidence
+                        </label>
+                        <select id="source" name="source">
+                          <option value="AUTHENTICATED_PROVIDER_PORTAL">
+                            My authenticated provider portal
+                          </option>
+                          <option value="AUTHENTICATED_ISSUER_COMMUNICATION">
+                            My authenticated issuer communication
+                          </option>
+                          <option value="LOCAL_EXERCISE">
+                            Local exercise — never live evidence
+                          </option>
+                          <option value="OWNER_DECISION">
+                            Separate owner payment decision
+                          </option>
+                        </select>
+                        <label htmlFor="event">Observed event</label>
+                        <select id="event" name="event">
+                          <option value="SERVICE_ACTIVATED">
+                            Service activated
+                          </option>
+                          <option value="SERVICE_FULFILLED">
+                            Service fulfilled
+                          </option>
+                          <option value="INVOICE_ISSUED">
+                            Invoice issued only
+                          </option>
+                          <option value="MISSING">
+                            No matching source record
+                          </option>
+                          <option value="UNAVAILABLE">
+                            Source temporarily unavailable
+                          </option>
+                          <option value="DISPUTED">Delivery disputed</option>
+                          <option value="OWNER_DECISION">
+                            Owner payment decision
+                          </option>
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="hash-file">
+                          Optional: hash a local document (never uploaded;
+                          maximum 5 MiB)
+                        </label>
+                        <input
+                          id="hash-file"
+                          type="file"
+                          disabled={busy}
+                          accept="application/pdf,text/plain,application/json,image/png,image/jpeg"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            setDigest("");
+                            if (!file) return;
+                            void run(async () => {
+                              setDigest(await hashEvidenceFile(file));
+                            });
+                            e.target.value = "";
+                          }}
+                        />
+                        <label htmlFor="observed-digest">
+                          Independently obtained document SHA-256
+                        </label>
+                        <input
+                          id="observed-digest"
+                          name="digest"
+                          value={digest}
+                          onChange={(e) => setDigest(e.target.value)}
+                          pattern="[0-9a-f]{64}"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="observedIssuer">
+                          Independently observed issuer
+                        </label>
+                        <input
+                          id="observedIssuer"
+                          name="observedIssuer"
+                          maxLength={120}
+                          required
+                        />
+                        <label htmlFor="observedReference">
+                          Independently observed reference
+                        </label>
+                        <input
+                          id="observedReference"
+                          name="observedReference"
+                          maxLength={120}
+                          required
+                        />
+                        <label htmlFor="observed-recipient">
+                          Observed recipient
+                        </label>
+                        <input
+                          id="observed-recipient"
+                          name="recipient"
+                          required
+                        />
+                        <label htmlFor="observed-amount">
+                          Observed exact amount (NEAR)
+                        </label>
+                        <input
+                          id="observed-amount"
+                          name="amount"
+                          required
+                          inputMode="decimal"
+                          maxLength={64}
+                        />
+                      </div>
+                      <div>
+                        <p>
+                          A matching hash confirms bytes, not truth. Do not make
+                          this declaration for agent-supplied material alone.
+                        </p>{" "}
+                        <label className="check-label">
+                          <input type="checkbox" name="independent" />I obtained
+                          this evidence independently of the proposing agent
+                          using my own authenticated source access.
+                        </label>
+                      </div>
+                      <div>
+                        <FormReview />{" "}
+                        <button type="submit" disabled={busy}>
+                          Review exact decision
+                        </button>
+                      </div>
+                    </GuidedForm>
                   </section>
                 )}
               {draft && (

@@ -4,7 +4,10 @@ const web = await fetch("http://127.0.0.1:3000", {
   signal: AbortSignal.timeout(5000),
 });
 assert.equal(web.status, 200);
-assert.match(await web.text(), /Payments are not enabled/);
+assert.match(
+  await web.text(),
+  /Public transactions require separate authorization/,
+);
 const health = await fetch("http://127.0.0.1:3001/health", {
   signal: AbortSignal.timeout(5000),
 });

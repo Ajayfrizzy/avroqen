@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import "./styles.css";
 export const metadata: Metadata = {
-  title: "Avroqen | Foundation",
+  title: "Avroqen | Financial delegation",
   description:
-    "Owner-controlled financial authority for agents. Development foundation.",
+    "Bounded agent proposals, independent verification and explicit wallet authorization.",
 };
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (

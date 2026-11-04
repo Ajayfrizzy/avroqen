@@ -138,20 +138,26 @@ async function setup(page: Page, mode = "normal") {
   return { challenges: () => challenges, verifications: () => verifications };
 }
 async function review(page: Page) {
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page
+    .getByLabel("Independently obtained document SHA-256")
+    .fill(proposal.evidenceDigest);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByLabel("Independently observed issuer").fill("Issuer");
   await page.getByLabel("Independently observed reference").fill("INV-1");
   await page.getByLabel("Observed recipient").fill("vendor.testnet");
   await page
     .getByLabel("Observed exact amount")
     .fill("0.000000000000000000000001");
-  await page
-    .getByLabel("Independently obtained document SHA-256")
-    .fill(proposal.evidenceDigest);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page
     .getByRole("button", { name: "Review exact decision", exact: true })
     .click();
 }
+
 for (const width of [1280, 390])
   test(`readable human review, focus and no onchain action at ${width}px`, async ({
     page,
@@ -252,6 +258,8 @@ test("file hashing stays in browser and rejects unsupported types", async ({
     if (r.method() === "POST") posts++;
   });
   const bytes = Buffer.from("synthetic exercise\n");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page
     .getByLabel("Optional: hash a local document", { exact: false })
     .setInputFiles({

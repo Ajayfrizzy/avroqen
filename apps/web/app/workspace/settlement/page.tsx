@@ -16,6 +16,8 @@ import {
   operationInput,
 } from "../../../../../packages/domain/src/settlement";
 import type { VaultMandate } from "../../../../../packages/domain/src/vault";
+import { useWorkspaceIdentity } from "../../components/shell";
+import { Badge, PageHeader, TransactionSummary } from "../../components/ui";
 import { submitOperation } from "../transaction-wallet";
 
 type Session = { accountId: string; csrfToken: string };
@@ -354,19 +356,23 @@ export default function Settlement() {
     }
   }
   const owner = policy?.ownerAccount === session?.accountId;
+  useWorkspaceIdentity(session?.accountId);
   return (
     <main className="workspace">
-      <Link href="/workspace">← Wallet workspace</Link>
-      <h1>Testnet settlement</h1>
-      <p>
-        Every financial operation requires the designated wallet. Offchain
-        consent and reviews do not move funds.
-      </p>
+      <PageHeader
+        eyebrow="Wallet-authorized operations"
+        title="Payments"
+        description="Review exact operations and track their verified onchain outcome."
+      />
       <p role="status">
-        Deployment: {deployment}.{" "}
+        <Badge tone={enabled ? "success" : "warning"}>
+          {enabled ? "Deployment verified" : "Live submission disabled."}
+        </Badge>{" "}
         {enabled
-          ? "Verified configuration; review every wallet prompt."
-          : "Live submission disabled."}
+          ? "Review every wallet prompt."
+          : deployment === "NOT_AUTHORIZED"
+            ? "Deployment authorization is required before financial operations."
+            : deployment}
       </p>
       {loading && <p>Loading assignments…</p>}
       {message && <p role="status">{message}</p>}
@@ -629,13 +635,28 @@ export default function Settlement() {
                 </button>
               </section>
               {prepared && (
-                <section aria-label="Exact transaction review">
+                <section
+                  className="transaction-review"
+                  aria-label="Exact transaction review"
+                >
                   <h2>Review before signing</h2>
-                  <p>
-                    {prepared.operation.methodName} · Signed by{" "}
-                    {prepared.operation.signerId} · To vault{" "}
-                    {prepared.operation.receiverId}
-                  </p>
+                  <TransactionSummary
+                    entries={[
+                      { label: "Network", value: prepared.operation.network },
+                      {
+                        label: "Wallet signer",
+                        value: prepared.operation.signerId,
+                      },
+                      {
+                        label: "Destination vault",
+                        value: prepared.operation.receiverId,
+                      },
+                      {
+                        label: "Contract method",
+                        value: prepared.operation.methodName,
+                      },
+                    ]}
+                  />
                   <p>
                     Attached deposit: {atomicToNear(prepared.operation.deposit)}{" "}
                     NEAR. Network gas is additional. This action may move real
