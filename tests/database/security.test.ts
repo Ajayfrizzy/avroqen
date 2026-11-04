@@ -402,3 +402,71 @@ it.each([
     reason.startsWith("private") ? "RPC_OR_EVIDENCE_UNAVAILABLE" : reason,
   );
 });
+
+it("isolates monitoring locks between schemas while serializing the same event store", async () => {
+  const isolatedSchema = `monitor_${randomUUID().replaceAll("-", "")}`;
+  const isolated = new pg.Pool({
+    ...settings,
+    options: `-c search_path=${isolatedSchema}`,
+  });
+  await admin.query(`CREATE SCHEMA ${isolatedSchema}`);
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let acquired = (_value: boolean) => {};
+  const ready = new Promise<boolean>((resolve) => {
+    acquired = resolve;
+  });
+  let running: Promise<number> | undefined;
+  try {
+    await migrate(isolated);
+    await observeInternal(isolated, {
+      id: randomUUID(),
+      subject: "fixture",
+      type: "WORKER_HEALTH",
+      reason: "WORKER_STALLED",
+    });
+    await event();
+    const client = await pool.connect();
+    // Hold a real monitoring transaction after its actual advisory-lock query.
+    // Both queries and lock contention still execute in PostgreSQL.
+    const heldPool = {
+      connect: async () =>
+        new Proxy(client, {
+          get(target, property) {
+            if (property === "query")
+              return async (sql: string, values?: unknown[]) => {
+                const result = await target.query(sql, values);
+                if (sql.includes("pg_try_advisory_xact_lock")) {
+                  acquired(result.rows[0].acquired);
+                  await gate;
+                }
+                return result;
+              };
+            const value = Reflect.get(target, property);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        }),
+    } as pg.Pool;
+    running = monitorOnce(heldPool);
+    expect(await ready).toBe(true);
+    expect(await monitorOnce(pool)).toBe(0);
+    expect(await monitorOnce(isolated)).toBeGreaterThan(0);
+    release();
+    await running;
+    expect(await monitorOnce(pool)).toBe(0);
+    expect(
+      (
+        await pool.query(
+          "SELECT occurrences FROM security_alerts WHERE rule='SPENDING_LIMIT'",
+        )
+      ).rows,
+    ).toEqual([{ occurrences: 1 }]);
+  } finally {
+    release();
+    await running;
+    await isolated.end();
+    await admin.query(`DROP SCHEMA ${isolatedSchema} CASCADE`);
+  }
+});
