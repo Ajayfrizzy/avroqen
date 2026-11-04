@@ -76,7 +76,7 @@ const result = {
     "Read-only public account observation; not ownership proof or deployment/transaction authorization.",
 };
 await writeFile(
-  "docs/evidence/M8_TESTNET_ACCOUNT.json",
+  process.argv[2] ?? "docs/evidence/M8_TESTNET_ACCOUNT.json",
   `${JSON.stringify(result, null, 2)}\n`,
 );
 console.log(

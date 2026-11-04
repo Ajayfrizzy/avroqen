@@ -1,0 +1,33 @@
+{
+  "scope": "Local sandbox only; no public transaction, key or receipt",
+  "results": [
+    {
+      "scope": "local sandbox only",
+      "reason": "NETWORK_NOT_SUPPORTED",
+      "codeRolledBack": true,
+      "storageUnchanged": true,
+      "keysUnchanged": true,
+      "gasBurnt": "28286015661147"
+    },
+    {
+      "scope": "local sandbox only",
+      "artifactSha256": "b2ce7469301f8de912a4af955e254fa4ff2d9a5c097411bde1d00d0dd450ef48",
+      "gasBurnt": "28429737344682",
+      "tokensBurnt": "2842973734468200000000",
+      "balanceBefore": "4500000000000000000000000",
+      "balanceAfter": "4497157026265531800000000",
+      "storageBefore": 182,
+      "storageAfter": 367086,
+      "reserve": "100000000000000000000000",
+      "storageBacking": "3670860000000000000000000"
+    },
+    {
+      "scope": "local sandbox only",
+      "reason": "INSUFFICIENT_LIQUID_BACKING",
+      "codeRolledBack": true,
+      "storageUnchanged": true,
+      "keysUnchanged": true,
+      "gasBurnt": "28376642671341"
+    }
+  ]
+}
