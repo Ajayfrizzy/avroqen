@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkspaceIdentity } from "../../components/shell";
 import { Badge, Dialog, PageHeader, Timeline } from "../../components/ui";
+import { savedOrganization } from "../organization-preference";
 
 type Session = { accountId: string; csrfToken: string };
 type Alert = {
@@ -140,6 +141,7 @@ export default function Security() {
         if (live) {
           setSession(s);
           setOrgs(o.organizations);
+          setOrg(savedOrganization(s.accountId, o.organizations));
         }
       } catch (e) {
         if (live) setMessage((e as Error).message);

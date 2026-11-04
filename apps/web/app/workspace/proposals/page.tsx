@@ -5,8 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProposalInput } from "../../../../../packages/domain/src/proposals";
 import { useWorkspaceIdentity } from "../../components/shell";
 import { PageHeader } from "../../components/ui";
-
 import { hashEvidenceFile } from "../evidence-file";
+import { savedOrganization } from "../organization-preference";
 
 type Session = { accountId: string; csrfToken: string; expiresAt: string };
 type Org = { id: string; name: string; role: string };
@@ -134,6 +134,23 @@ export default function Proposals() {
             const result = await o.json();
             setOrgs(result.organizations);
             setOrgNext(result.nextOffset);
+            const preferred = savedOrganization(
+              s.accountId,
+              result.organizations,
+            );
+            if (preferred) {
+              setOrg(preferred);
+              const response = await fetch(
+                `/api/organizations/${preferred}/mandates`,
+                { cache: "no-store" },
+              );
+              if (!response.ok) throw new Error();
+              const data = await response.json();
+              if (active) {
+                setMandates(data.mandates);
+                setMandateNext(data.nextOffset);
+              }
+            }
           }
         }
       })
@@ -234,19 +251,6 @@ export default function Proposals() {
       ) : (
         <>
           <p>Signed in as {session.accountId}</p>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                await request("/auth/logout", {});
-                clearCredential();
-                setSession(null);
-              })
-            }
-          >
-            Logout
-          </button>
           <label htmlFor="proposal-org">Organization</label>
           <select
             id="proposal-org"

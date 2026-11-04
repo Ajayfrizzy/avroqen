@@ -140,9 +140,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   )}
                 </span>
                 <span>
-                  <strong>
-                    {identity.organization ?? "Select organization"}
-                  </strong>
+                  {identity.organization && (
+                    <strong>{identity.organization}</strong>
+                  )}
                   <small>{identity.account ?? "Connect your wallet"}</small>
                 </span>
               </Link>

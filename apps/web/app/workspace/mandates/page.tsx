@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkspaceIdentity } from "../../components/shell";
 import { Badge, FormReview, GuidedForm, PageHeader } from "../../components/ui";
+import { savedOrganization } from "../organization-preference";
 import { type Challenge, signChallenge } from "../wallet";
 import { WalletSignInError } from "../wallet-errors";
 
@@ -259,6 +260,7 @@ export default function Mandates() {
         );
         if (o.organizations.some((v) => v.id === requested))
           setSelected(requested ?? "");
+        else setSelected(savedOrganization(s.accountId, o.organizations));
       } catch (e) {
         if (live.current) fail(e);
       } finally {

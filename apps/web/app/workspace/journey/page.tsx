@@ -18,6 +18,7 @@ import {
   PageHeader,
   Timeline,
 } from "../../components/ui";
+import { savedOrganization } from "../organization-preference";
 import {
   type DashboardObservation,
   nextAction,
@@ -76,7 +77,11 @@ export default function Overview() {
         setAccount(s.accountId);
         setAssignments(a.mandates);
         setOrgs(o.organizations ?? []);
-        setOrg(o.organizations?.[0]?.id ?? "");
+        setOrg(
+          savedOrganization(s.accountId, o.organizations ?? []) ||
+            o.organizations?.[0]?.id ||
+            "",
+        );
       }
     })()
       .catch((e) => {

@@ -205,8 +205,8 @@ test("logout clears demonstration credential and controls", async ({
 }) => {
   await setup(page);
   await prepare(page);
-  await page.getByRole("button", { name: "Logout", exact: true }).click();
-  await expect(page.getByText("Sign in through the")).toBeVisible();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page).toHaveURL(/\/workspace$/);
   await expect(
     page.getByRole("button", { name: "Submit offchain proposal" }),
   ).toHaveCount(0);

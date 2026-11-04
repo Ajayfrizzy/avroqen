@@ -263,3 +263,107 @@ test("topbar logout waits for server invalidation, preserves session on failure 
     page.getByRole("button", { name: "Sign out", exact: true }),
   ).toHaveCount(0);
 });
+
+for (const width of [1440, 390]) {
+  test(`saved organization persists across routes and refresh at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await uiFixture(page);
+    await page.goto("/workspace");
+    await expect(page.locator(".account-pill")).not.toContainText(
+      "Select organization",
+    );
+    await expect(page.getByRole("link", { name: "Open overview" })).toHaveCount(
+      0,
+    );
+    await page
+      .getByLabel("Select organization", { exact: true })
+      .selectOption(orgId);
+    await page
+      .getByRole("button", { name: "Save organization", exact: true })
+      .click();
+    await expect(page.getByRole("status")).toContainText("Organization saved");
+    await expect(
+      page.getByRole("button", { name: "✓ Saved", exact: true }),
+    ).toBeDisabled();
+    for (const [path, selector] of [
+      ["/workspace/proposals", "#proposal-org"],
+      ["/workspace/mandates", "#mandate-organization"],
+      ["/workspace", "#organization"],
+    ] as const) {
+      await page.goto(path);
+      const selection =
+        path === "/workspace/mandates"
+          ? page.getByRole("combobox").first()
+          : page.locator(selector);
+      await expect(selection).toHaveValue(orgId);
+      await page.reload();
+      await expect(selection).toHaveValue(orgId);
+      if (path === "/workspace")
+        await expect(
+          page.getByRole("button", { name: "✓ Saved", exact: true }),
+        ).toBeDisabled();
+      if (path === "/workspace/proposals")
+        await expect(
+          page.getByRole("button", { name: "Logout", exact: true }),
+        ).toHaveCount(0);
+    }
+    await page.evaluate(() =>
+      localStorage.setItem(
+        "avroqen:testnet:organization:owner.testnet",
+        "unauthorized-org",
+      ),
+    );
+    await page.reload();
+    await expect(page.locator("#organization")).toHaveValue("");
+    await page.evaluate(
+      (id) =>
+        localStorage.setItem("avroqen:testnet:organization:owner.testnet", id),
+      orgId,
+    );
+    await page.route("**/api/auth/session", (route) =>
+      route.fulfill({
+        json: {
+          accountId: "other.testnet",
+          network: "testnet",
+          csrfToken: "synthetic-other",
+          expiresAt: "2030-01-01T00:00:00Z",
+        },
+      }),
+    );
+    await page.reload();
+    await expect(page.locator("#organization")).toHaveValue("");
+  });
+}
+
+test("wallet sign-in displays a spinner while the challenge is pending", async ({
+  page,
+}) => {
+  await uiFixture(page, "signed-out");
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/auth/challenge", async (route) => {
+    await gate;
+    await route.fulfill({ status: 503, json: { error: "UNAVAILABLE" } });
+  });
+  await page.goto("/workspace");
+  await page.getByLabel("NEAR account", { exact: true }).fill("owner.testnet");
+  await page
+    .getByRole("button", { name: "Connect wallet & sign message" })
+    .click();
+  const pending = page.getByRole("button", { name: "Waiting for wallet…" });
+  await expect(pending).toBeDisabled();
+  await expect(pending.locator(".button-spinner")).toBeVisible();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(pending.locator(".button-spinner")).toHaveCSS(
+    "animation-name",
+    "none",
+  );
+  release();
+  await expect(
+    page.getByRole("button", { name: "Connect wallet & sign message" }),
+  ).toBeEnabled();
+});

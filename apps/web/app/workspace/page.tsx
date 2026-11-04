@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkspaceIdentity } from "../components/shell";
 import { Icon, LoadingState, PageHeader } from "../components/ui";
+import { savedOrganization, saveOrganization } from "./organization-preference";
 import { type Challenge, signChallenge } from "./wallet";
 import { WalletSignInError } from "./wallet-errors";
 
@@ -93,6 +94,7 @@ export default function Workspace() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [savedOrg, setSavedOrg] = useState("");
   const [account, setAccount] = useState(""),
     [organizations, setOrganizations] = useState<Org[]>([]),
     [selected, setSelected] = useState("");
@@ -149,6 +151,14 @@ export default function Workspace() {
         offset ? [...old, ...data.organizations] : data.organizations,
       );
       setOrgNext(data.nextOffset);
+      if (!offset) {
+        const preferred = savedOrganization(
+          current.accountId,
+          data.organizations,
+        );
+        setSelected(preferred);
+        setSavedOrg(preferred);
+      }
     },
     [],
   );
@@ -366,7 +376,8 @@ export default function Workspace() {
                 autoComplete="off"
                 placeholder="your-account.testnet"
               />
-              <button disabled={busy || !config} type="submit">
+              <button disabled={busy || !config} type="submit" aria-busy={busy}>
+                {busy && <span className="button-spinner" aria-hidden="true" />}
                 {busy ? "Waiting for wallet…" : "Connect wallet & sign message"}
               </button>
             </form>
@@ -384,9 +395,6 @@ export default function Workspace() {
                 <p className="eyebrow">Wallet connected</p>
                 <h2>Signed in as {session.accountId}</h2>
               </div>
-              <Link className="button-link" href="/workspace/journey">
-                Open overview <Icon name="arrow" size={16} />
-              </Link>
             </div>
             <p>
               {session.network} · Session expires{" "}
@@ -429,6 +437,29 @@ export default function Workspace() {
                 </option>
               ))}
             </select>
+            <button
+              type="button"
+              disabled={busy || !org || savedOrg === selected}
+              onClick={() => {
+                if (!org) return;
+                if (saveOrganization(session.accountId, org.id)) {
+                  setSavedOrg(org.id);
+                  setError("");
+                } else
+                  setError(
+                    "Unable to save your organization. Allow browser storage and retry.",
+                  );
+              }}
+            >
+              {org && savedOrg === selected ? "✓ Saved" : "Save organization"}
+            </button>
+            <p role="status">
+              {org && savedOrg === selected
+                ? "Organization saved for this browser. Your selection will be restored when you return."
+                : org
+                  ? "Selection changed. Save to remember this organization."
+                  : ""}
+            </p>
             {orgNext !== null && (
               <button
                 disabled={busy}
@@ -473,7 +504,7 @@ export default function Workspace() {
           {org && (
             <section className="panel">
               <h2>Agents in {org.name}</h2>
-              <p>
+              <p className="workspace-links">
                 <Link href="/workspace/proposals">
                   Restricted agent proposals
                 </Link>
