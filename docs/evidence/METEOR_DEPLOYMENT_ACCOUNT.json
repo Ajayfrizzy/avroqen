@@ -1,0 +1,63 @@
+{
+  "authorization": "NONE_PREVIEW_ONLY",
+  "compatibility": "BLOCKED_WALLET_REVIEW_UNVERIFIED",
+  "network": "testnet",
+  "signerId": "avroqen-vault.testnet",
+  "receiverId": "avroqen-vault.testnet",
+  "actions": [
+    {
+      "type": "DeployContract",
+      "bytes": 366735,
+      "sha256": "b2ce7469301f8de912a4af955e254fa4ff2d9a5c097411bde1d00d0dd450ef48"
+    },
+    {
+      "type": "FunctionCall",
+      "methodName": "new",
+      "argsUtf8": "{\"network\":\"testnet\"}",
+      "argsBytes": 21,
+      "argsBase64": "eyJuZXR3b3JrIjoidGVzdG5ldCJ9",
+      "gas": "100000000000000",
+      "deposit": "0"
+    }
+  ],
+  "publicKey": "ed25519:8mdwv8CXTf2w5QyP9XwqcJzsPaFVQ5K6vh4fWRxcEpVz",
+  "keyPermission": "FullAccess",
+  "permissionFingerprint": "01323ff188aed5cb6d5d74e27131a25f6b77ede4556b06bb89bac9360012ab82",
+  "observation": {
+    "observedAtUtc": "2026-11-05T10:20:02.770Z",
+    "network": "testnet",
+    "accountId": "avroqen-vault.testnet",
+    "finality": "final",
+    "block": {
+      "hash": "FUdrmL77kALv8zC9Xh85gi8pPuPdfL7pbTgrUS3D9YsP",
+      "height": 276328269,
+      "timestampNanosec": "1793873996336720567"
+    },
+    "account": {
+      "amount": "4500000000000000000000000",
+      "locked": "0",
+      "storage_usage": 182,
+      "block_hash": "FUdrmL77kALv8zC9Xh85gi8pPuPdfL7pbTgrUS3D9YsP",
+      "block_height": 276328269,
+      "code_hash": "11111111111111111111111111111111"
+    },
+    "keys": [
+      {
+        "publicKey": "ed25519:8mdwv8CXTf2w5QyP9XwqcJzsPaFVQ5K6vh4fWRxcEpVz",
+        "permission": "FullAccess"
+      }
+    ],
+    "protocolVersion": 88,
+    "storageAmountPerByte": "10000000000000000000",
+    "gasPrice": "100000000"
+  },
+  "storageBackingAtomic": "3672680000000000000000000",
+  "protocolReserveAtomic": "100000000000000000000000",
+  "gasCeilingAtomic": "30000000000000000000000",
+  "safetyMarginAtomic": "200000000000000000000000",
+  "minimumBackingAtomic": "4002680000000000000000000",
+  "headroomAfterMarginAtomic": "497320000000000000000000",
+  "nonce": "NOT_PREPARED",
+  "blockHashForSigning": "NOT_PREPARED",
+  "walletInvocation": "NOT_AVAILABLE"
+}
