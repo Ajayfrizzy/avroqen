@@ -1,0 +1,21 @@
+{
+  "sdkVersion": "3.24.1",
+  "scope": "OFFLINE_SDK_SERIALIZATION_ONLY",
+  "unsignedBytes": 366924,
+  "base64Characters": 489232,
+  "transport": "v1_web postMessage inputs.transactions",
+  "transactionCount": 1,
+  "actionOrder": ["DeployContract", "FunctionCall"],
+  "artifactSha256": "b2ce7469301f8de912a4af955e254fa4ff2d9a5c097411bde1d00d0dd450ef48",
+  "artifactBytes": 366735,
+  "signer": "avroqen-vault.testnet",
+  "receiver": "avroqen-vault.testnet",
+  "method": "new",
+  "argsUtf8": "{\"network\":\"testnet\"}",
+  "gas": "100000000000000",
+  "deposit": "0",
+  "actualWalletTransport": "NOT_TESTED",
+  "transparentWalletReview": "NOT_TESTED",
+  "publicNonceAndBlock": "NOT_PREPARED",
+  "patchedSdkEsmSha256": "fa86d0a665cd4c49984524fcd3524bb2f3ae88ec3f02495865a70a2e48766c1e"
+}
