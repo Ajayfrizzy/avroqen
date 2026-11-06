@@ -1,5 +1,8 @@
 # NEAR Testnet deployment preflight — no live authorization
 
+> **November 6, 2026 safety-gate update:** one-key observations and signer instructions below are historical, not the current deployment authorization. The owner now approves exactly Primary `ed25519:8mdwv8CXTf2w5QyP9XwqcJzsPaFVQ5K6vh4fWRxcEpVz` AND Testing `ed25519:5hdgdb9oA4sQGYGgzyfsVSY8xvju3vAFhvovcdvTEn6G`, both FullAccess, for the DEPLOYMENT phase. Only Testing may sign deployment. POST_REVOCATION expects only Primary, after separately authorized removal of Testing. See [current CLI gate, owner commands and receipt/revocation procedure](NEAR_CLI_DEPLOYMENT.md) and [fresh evidence/results](DEPLOYMENT_KEY_GATE_REPORT.md). No live operation is enabled or authorized. Historical observations remain intact; they must not be used as fresh checks.
+
+
 Prepared **November 4, 2026 (Africa/Lagos)**. Recommendation: **BLOCKED for live authorization until a dedicated Meteor deployment-review path and wallet batch review are verified.** The artifact, account and local atomic-deployment checks pass. This is not a deployed vault and does not begin live financial acceptance.
 
 ## Repository and artifact provenance

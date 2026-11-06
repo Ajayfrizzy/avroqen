@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import { request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, expect, it, vi } from "vitest";
-import { SHA256 } from "../../packages/domain/src/deployment-preview.js";
+import {
+  PUBLIC_KEY,
+  SHA256,
+} from "../../packages/domain/src/deployment-preview.js";
 import { inspectSdk } from "../../scripts/deployment-review/sdk-inspection.js";
 import {
   createReviewer,
@@ -32,6 +35,7 @@ afterEach(async () => {
 it("round-trips the full approved artifact through actual pinned Meteor serialization", async () => {
   const { evidence } = await inspectSdk();
   expect(evidence.artifactSha256).toBe(SHA256);
+  expect(evidence.publicKey).toBe(PUBLIC_KEY);
   expect(evidence.artifactBytes).toBe(366735);
   expect(evidence.base64Characters).toBeGreaterThan(480000);
   expect(evidence.actionOrder).toEqual(["DeployContract", "FunctionCall"]);
@@ -73,11 +77,10 @@ it("serves a deterministic no-script preview without cookies or a wallet API", a
 });
 it("fails closed and sanitizes RPC and invalid account errors, without retaining successful state", async () => {
   const fixture = JSON.parse(
-    readFileSync(
-      "docs/evidence/TESTNET_DEPLOYMENT_PREFLIGHT_ACCOUNT.json",
-      "utf8",
-    ),
+    readFileSync("docs/evidence/DEPLOYMENT_KEY_GATE_ACCOUNT.json", "utf8"),
   );
+  fixture.observedAtUtc = new Date().toISOString();
+  fixture.block.timestampNanosec = (BigInt(Date.now()) * 1000000n).toString();
   const provider = vi
     .fn()
     .mockResolvedValueOnce(fixture)
@@ -90,10 +93,7 @@ it("fails closed and sanitizes RPC and invalid account errors, without retaining
 });
 it("pins read-only account/key queries to fresh final block and never sends transaction methods", async () => {
   const fixture = JSON.parse(
-    readFileSync(
-      "docs/evidence/TESTNET_DEPLOYMENT_PREFLIGHT_ACCOUNT.json",
-      "utf8",
-    ),
+    readFileSync("docs/evidence/DEPLOYMENT_KEY_GATE_ACCOUNT.json", "utf8"),
   );
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
   const fetcher = vi.fn(async (_url: unknown, options?: RequestInit) => {
@@ -115,12 +115,12 @@ it("pins read-only account/key queries to fresh final block and never sends tran
           : {
               block_hash: fixture.block.hash,
               block_height: fixture.block.height,
-              keys: [
-                {
-                  public_key: fixture.keys[0].publicKey,
-                  access_key: { permission: "FullAccess" },
-                },
-              ],
+              keys: fixture.keys.map(
+                (k: { publicKey: string; permission: string }) => ({
+                  public_key: k.publicKey,
+                  access_key: { permission: k.permission },
+                }),
+              ),
             };
     else if (method === "gas_price") result = { gas_price: fixture.gasPrice };
     else
@@ -158,10 +158,7 @@ it.each(["stale block", "key block mismatch", "RPC error"])(
   "rejects %s in the live read-only path",
   async (fault) => {
     const fixture = JSON.parse(
-      readFileSync(
-        "docs/evidence/TESTNET_DEPLOYMENT_PREFLIGHT_ACCOUNT.json",
-        "utf8",
-      ),
+      readFileSync("docs/evidence/DEPLOYMENT_KEY_GATE_ACCOUNT.json", "utf8"),
     );
     const fetcher = vi.fn(async (_url: unknown, options?: RequestInit) => {
       const { method, params } = JSON.parse(String(options?.body));

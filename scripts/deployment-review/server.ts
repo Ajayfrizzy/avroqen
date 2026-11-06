@@ -97,10 +97,7 @@ export function createReviewer(
       ? await observationProvider()
       : JSON.parse(
           await readFile(
-            new URL(
-              "docs/evidence/TESTNET_DEPLOYMENT_PREFLIGHT_ACCOUNT.json",
-              root,
-            ),
+            new URL("docs/evidence/DEPLOYMENT_KEY_GATE_ACCOUNT.json", root),
             "utf8",
           ),
         );
@@ -109,7 +106,7 @@ export function createReviewer(
         mode: live
           ? "LIVE_READ_ONLY_OBSERVATION"
           : "OFFLINE_HISTORICAL_PREVIEW",
-        ...inspect(candidate(wasm), observation),
+        ...inspect(candidate(wasm), observation, live ? "LIVE" : "HISTORICAL"),
       },
       null,
       2,

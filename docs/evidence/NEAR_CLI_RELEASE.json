@@ -1,0 +1,30 @@
+{
+  "observedDate": "2026-11-05",
+  "repository": "https://github.com/near/near-cli-rs",
+  "release": "v0.30.1",
+  "releaseUrl": "https://github.com/near/near-cli-rs/releases/tag/v0.30.1",
+  "publishedAt": "2026-09-02T23:42:02Z",
+  "sourceCommit": "0854b6cb70c82cd44cb83a1245ab9a58b9dfc3d9",
+  "annotatedTag": "39499b00b11c53337d2fe94a3f242e43b855f399",
+  "tagVerification": {
+    "verified": false,
+    "reason": "unsigned"
+  },
+  "assets": [
+    {
+      "name": "near-cli-rs-aarch64-apple-darwin.tar.gz",
+      "url": "https://github.com/near/near-cli-rs/releases/download/v0.30.1/near-cli-rs-aarch64-apple-darwin.tar.gz",
+      "publishedDigest": "sha256:46015e2fe2fddb49116ee4d256c70f6cf96123cff0cb9fd5683b2623228acebb",
+      "downloadDigestMatched": true
+    },
+    {
+      "name": "source.tar.gz",
+      "url": "https://github.com/near/near-cli-rs/releases/download/v0.30.1/source.tar.gz",
+      "publishedDigest": "sha256:acfffe5c9e7d7bee80f35b37d07df1787d1e8687c265100483e45cd56b61d0bf",
+      "downloadDigestMatched": true
+    }
+  ],
+  "cliOnPath": false,
+  "binaryInstalledOrExecuted": false,
+  "scope": "Official source/archive inspection only; no credential access, signing or public transaction."
+}
