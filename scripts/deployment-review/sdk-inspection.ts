@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import bs58 from "bs58";
 import {
   ACCOUNT,
   candidate,
@@ -66,6 +67,9 @@ export async function inspectSdk() {
   const deploy = decoded.actions[0]?.deployContract;
   const init = decoded.actions[1]?.functionCall;
   if (
+    `ed25519:${bs58.encode(decoded.publicKey.ed25519Key?.data ?? new Uint8Array())}` !==
+      PUBLIC_KEY ||
+    !Buffer.from(decoded.encode()).equals(Buffer.from(encoded)) ||
     decoded.signerId !== ACCOUNT ||
     decoded.receiverId !== ACCOUNT ||
     decoded.actions.length !== 2 ||
@@ -92,6 +96,7 @@ export async function inspectSdk() {
         .digest("hex"),
       artifactBytes: deploy.code.length,
       signer: decoded.signerId,
+      publicKey: `ed25519:${bs58.encode(decoded.publicKey.ed25519Key?.data ?? new Uint8Array())}`,
       receiver: decoded.receiverId,
       method: init.methodName,
       argsUtf8: Buffer.from(init.args).toString("utf8"),

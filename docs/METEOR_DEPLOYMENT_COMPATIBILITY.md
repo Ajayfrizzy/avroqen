@@ -1,5 +1,8 @@
 # Meteor deployment compatibility — preview only
 
+> **November 6, 2026 safety-gate update:** one-key observations and signer instructions below are historical, not the current deployment authorization. The owner now approves exactly Primary `ed25519:8mdwv8CXTf2w5QyP9XwqcJzsPaFVQ5K6vh4fWRxcEpVz` AND Testing `ed25519:5hdgdb9oA4sQGYGgzyfsVSY8xvju3vAFhvovcdvTEn6G`, both FullAccess, for the DEPLOYMENT phase. Only Testing may sign deployment. POST_REVOCATION expects only Primary, after separately authorized removal of Testing. See [current CLI gate, owner commands and receipt/revocation procedure](NEAR_CLI_DEPLOYMENT.md) and [fresh evidence/results](DEPLOYMENT_KEY_GATE_REPORT.md). No live operation is enabled or authorized. Historical observations remain intact; they must not be used as fresh checks.
+
+
 Prepared November 5, 2026 (Africa/Lagos). **Compatibility path: BLOCKED for a signing-capable wallet session. The isolated local preview is ready for owner inspection.** No wallet prompt, signature, broadcast, deployment, transfer or key change was performed. No tool or dependency was installed. M6 financial adapters and transaction enablement are unchanged.
 
 PR #15 merged as `a8a697ecc014a2b76eb760fc418a99c32b93f501`; staging [CI 42005209724](https://github.com/Ajayfrizzy/avroqen/actions/runs/42005209724) passed. This work branches from that commit. Final feature SHA and exact-head CI are recorded in the draft PR/delivery, not embedded self-referentially in this document.

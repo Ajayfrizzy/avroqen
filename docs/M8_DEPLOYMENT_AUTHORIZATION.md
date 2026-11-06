@@ -1,5 +1,8 @@
 # M8 deployment authorization package — NOT AUTHORIZED
 
+> **November 6, 2026 safety-gate update:** one-key observations and signer instructions below are historical, not the current deployment authorization. The owner now approves exactly Primary `ed25519:8mdwv8CXTf2w5QyP9XwqcJzsPaFVQ5K6vh4fWRxcEpVz` AND Testing `ed25519:5hdgdb9oA4sQGYGgzyfsVSY8xvju3vAFhvovcdvTEn6G`, both FullAccess, for the DEPLOYMENT phase. Only Testing may sign deployment. POST_REVOCATION expects only Primary, after separately authorized removal of Testing. See [current CLI gate, owner commands and receipt/revocation procedure](NEAR_CLI_DEPLOYMENT.md) and [fresh evidence/results](DEPLOYMENT_KEY_GATE_REPORT.md). No live operation is enabled or authorized. Historical observations remain intact; they must not be used as fresh checks.
+
+
 This is a reviewable proposal, not permission to deploy, fund, sign, alter keys or enable live submissions. No public transaction was performed. Revalidate immediately before any separately authorized execution; account state, gas and artifact may change.
 
 ## Fresh read-only evidence

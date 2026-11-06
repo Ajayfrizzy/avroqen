@@ -1,0 +1,33 @@
+{
+  "observedAtUtc": "2026-11-06T19:21:06.367Z",
+  "network": "testnet",
+  "accountId": "avroqen-vault.testnet",
+  "finality": "final",
+  "block": {
+    "hash": "5dEo4ZqbS5akyG7r1YNVXxXrTB6JBQjQUHd5B3JHiD11",
+    "height": 276527142,
+    "timestampNanosec": "1793992858545816401"
+  },
+  "account": {
+    "amount": "4499958035075000000000000",
+    "block_hash": "5dEo4ZqbS5akyG7r1YNVXxXrTB6JBQjQUHd5B3JHiD11",
+    "block_height": 276527142,
+    "code_hash": "11111111111111111111111111111111",
+    "locked": "0",
+    "storage_paid_at": 0,
+    "storage_usage": 264
+  },
+  "keys": [
+    {
+      "publicKey": "ed25519:5hdgdb9oA4sQGYGgzyfsVSY8xvju3vAFhvovcdvTEn6G",
+      "permission": "FullAccess"
+    },
+    {
+      "publicKey": "ed25519:8mdwv8CXTf2w5QyP9XwqcJzsPaFVQ5K6vh4fWRxcEpVz",
+      "permission": "FullAccess"
+    }
+  ],
+  "protocolVersion": 88,
+  "storageAmountPerByte": "10000000000000000000",
+  "gasPrice": "100000000"
+}
