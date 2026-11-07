@@ -38,6 +38,8 @@ Total application checks: **369** (162+19+13+175), plus **67** browser and **40*
 
 ## Read-only Testnet observation and deployment recommendation
 
+**November 7, 2026 update:** see the [owner-verified deployment/initialization evidence](DEPLOYMENT_KEY_GATE_REPORT.md#owner-verified-testnet-deployment--november-7-2026). This supersedes historical no-deployment/no-public-transaction statements for deployment only. Integrated financial acceptance remains pending, financial operations remain disabled, both Primary and Testing FullAccess keys remain present, and no independent security audit is claimed.
+
 At **2026-11-02 23:42:56.763 UTC / November 3 00:42:56.763 Lagos**, finalized height **275969229** / hash **37MFWf1Df6UbLekt4kWPWMVyADNXH6JNB8dydudjDfph**, `avroqen-vault.testnet` has **4.5 NEAR**, locked0, storage182, **no code**, one FullAccess key (fingerprint in deployment package). Protocol88, storage10^19 yocto/byte, gas10^8 yocto/gas. These were fresh pinned queries, not reuse of M6 historical evidence. RPC does not prove human custody.
 
 Release artifact **366735 bytes**, SHA-256 **b2ce7469301f8de912a4af955e254fa4ff2d9a5c097411bde1d00d0dd450ef48**. Conservative storage+reserve+gas envelope **3.87268 NEAR**, leaving **0.62732 NEAR** headroom at observed4.5. Recommend maintaining4.5; **no additional funding now**. Proposed separate owner storage0.2, mandate ceiling0.15, funding0.003, first payment0.001 and aggregate gas0.1 all require explicit approval. Exact atomic deploy+init/signing identity/cost assumptions and post-deploy checks: [M8_DEPLOYMENT_AUTHORIZATION](M8_DEPLOYMENT_AUTHORIZATION.md). Fresh revalidation is mandatory before signing; no funding or deployment is authorized by this estimate.

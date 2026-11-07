@@ -1,5 +1,7 @@
 # NEAR CLI deployment — final owner safety gate
 
+**November 7, 2026 status:** deployment and initialization are complete per [verified owner-provided evidence](DEPLOYMENT_KEY_GATE_REPORT.md#owner-verified-testnet-deployment--november-7-2026). Both Primary and Testing FullAccess keys remain present; no third key. The preparation/signing procedure below is historical and must not be rerun based on this documentation. Financial operations remain disabled; no key removal or live configuration change is authorized.
+
 Status: preparation only. No signing, deployment, key removal, funding or live financial operation is authorized by this document or its PR. The owner must approve the exact fresh transaction separately. See [gate evidence](DEPLOYMENT_KEY_GATE_REPORT.md), [governance](VAULT_GOVERNANCE.md) and [historical preflight](TESTNET_DEPLOYMENT_PREFLIGHT.md).
 
 ## Approved phases (November 6, 2026)
