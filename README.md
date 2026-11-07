@@ -164,8 +164,10 @@ acceptance. M2 consent must never substitute for M3 wallet-signed onchain action
 
 ## M3 local contract verification
 
-M3 replaces the disabled Rust scaffold with a native NEAR MandateVault. **No public
-vault is deployed and the application still cannot fund or execute payments.**
+**November 7, 2026 update:** owner-verified Testnet deployment and initialization are recorded in the [deployment report](docs/DEPLOYMENT_KEY_GATE_REPORT.md#owner-verified-testnet-deployment--november-7-2026). Historical undeployed-state statements below are superseded by that report. Financial operations remain disabled; independent security audit is not claimed.
+
+M3 replaces the disabled Rust scaffold with a native NEAR MandateVault. **The application still cannot fund or execute payments.** Public Testnet
+deployment status is recorded in the linked deployment report.
 M2 wallet messages remain offchain consent. See [M3 evidence](docs/M3_REPORT.md)
 and [approved design](docs/M3_DESIGN.md). Earlier M0 scaffold descriptions above
 are historical foundation context, not the current contract interface.
@@ -229,8 +231,8 @@ amounts; the application converts exact atomic values and can hash local evidenc
 bytes without uploading them. A hash does not prove source truth.
 
 Earlier milestone descriptions above are historical. Current transaction
-orchestration exists but live submission remains disabled pending separately
-approved deployment. Use [M8 report](docs/M8_REPORT.md),
+orchestration exists but financial submission remains disabled pending separate
+manifest and financial-operation authorization. Use [M8 report](docs/M8_REPORT.md),
 [S01–S20 matrix](docs/M8_TEST_MATRIX.md),
 [deployment authorization package](docs/M8_DEPLOYMENT_AUTHORIZATION.md) and
 [coordinated live runbook](docs/M8_LIVE_TESTNET_RUNBOOK.md). Public Testnet payment,

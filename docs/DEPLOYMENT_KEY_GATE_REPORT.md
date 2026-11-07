@@ -2,6 +2,37 @@
 
 Scope: review-only preparation on `feat/deployment-key-safety-gate`, targeting staging. No signing, Keychain access, live transaction, key change, deployment or financial enablement. This is implementation self-review and automated verification, not an independent external audit.
 
+## Owner-verified Testnet deployment — November 7, 2026
+
+This update records only verified owner-provided evidence. No RPC refresh or independent chain verification was performed for this documentation update. The preparation results below remain historical; their undeployed-state and unperformed-deployment statements are superseded only by the evidence recorded here.
+
+- Network: **Testnet**; account: **`avroqen-vault.testnet`**.
+- Finalized transaction: **`4PtZ7AoK1yVCFKit8LXJ8m4MqgCCh7JtwFu3gy2R7JD5`**.
+- Transaction execution status: **FINAL**, with **SuccessValue** and **successful receipt outcomes**.
+- Deployed approved Wasm: **366735 bytes**, SHA-256 **`b2ce7469301f8de912a4af955e254fa4ff2d9a5c097411bde1d00d0dd450ef48`**.
+- Original Meteor **Primary** and temporary **Testing** keys are both present with **FullAccess**; **no third key**. Testing has not been revoked. Retained FullAccess keys permit code replacement and direct account transfers outside the contract's restrictions.
+
+Initialized `get_accounting` evidence (amounts in integer yoctoNEAR; storage usage in bytes):
+
+| Field | Owner-verified value |
+| --- | --- |
+| `network` | `testnet` |
+| `vault` | `avroqen-vault.testnet` |
+| `available` | `0` |
+| `payment_reserved` | `0` |
+| `withdrawal_pending` | `0` |
+| `storage_credit` | `0` |
+| `storage_locked` | `0` |
+| `unallocated_owner_balance` | `0` |
+| `protocol_reserve_minimum` | `100000000000000000000000` |
+| `storage_usage_bytes` | `367168` |
+| `storage_byte_cost` | `10000000000000000000` |
+| `account_balance` | `4497113237340531800000000` |
+
+**Financial operations remain disabled.** Deployment/initialization success does not authorize a manifest/configuration change, funding, mandates, attestations, payments, withdrawals or key removal, and does not pass integrated financial acceptance. **No independent security audit is claimed.**
+
+The old and new protected deployment directories are preserved without accessing or modifying their sensitive contents. This documentation update did not inspect Keychain, private keys, signatures or signed transaction files, and did not sign, broadcast, revoke, deploy or change live configuration. No deployment procedure should be rerun on the basis of this report.
+
 ## Changes and findings
 
 - DEPLOYMENT requires exactly the owner-approved Primary and temporary Testing FullAccess keys, in either order, and the transaction candidate must select Testing. Strict transaction schema retains the approved 366735-byte artifact, SHA-256 b2ce7469301f8de912a4af955e254fa4ff2d9a5c097411bde1d00d0dd450ef48 and exactly ordered DeployContract + new({"network":"testnet"}),100Tgas,0deposit. Primary is rejected as a deployment signer.
