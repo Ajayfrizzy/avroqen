@@ -333,3 +333,43 @@ Unresolved concerns include browser bundling failures on Node dependencies (`uti
 If a future proof is required, prefer investigating Meteor's supported public off-chain message-signing interface. That approach also remains **unverified** and is **not authorization to sign** or a workaround for provenance/build gates. Any future method requires separate review and explicit authorization. Its safe boundary must keep original immutable challenge state and exact Primary-key signature/fresh finalized permission verification in the Node-only isolated verifier; browser data is untrusted, raw signatures stay transient and unlogged/unpersisted, and no `/api/auth/verify`, application session issuance or blockchain transaction is involved.
 
 Current status for `avroqen-vault.testnet`: **Primary-key proof BLOCKED; temporary Testing key RETAINED** pending a separately reviewed and authorized verification method. This is a retention decision, not a fresh on-chain observation. Live Primary control, independent security audit and Testing-key retirement readiness are not established or claimed. **Financial operations remain disabled.** No signing, key revocation, configuration change or financial activation is authorized. See [the wallet runbook's current status](M1_WALLET_ACCEPTANCE.md#current-status--step-108j).
+
+## D027 — Public SAMPLE display contract, not financial authority
+
+Owner-directed M9.1, November 8, 2026: prepare PRD F11's six-route public SAMPLE
+journey using a single deeply immutable versioned display dataset and synthetic
+aliases. M9.1 adds no rendered page or route entrypoint. Reuse reviewed visual
+primitives later, never authenticated workspace pages or AppShell. Closed imports,
+route lookup and offline adversarial source checks exclude wallet/auth/API/RPC,
+storage/identity, server actions and archived Primary research. Same-origin cookies
+may accompany navigation; static SAMPLE rendering must not read identity. This is
+not separate-origin isolation or a JavaScript security sandbox.
+
+Eligibility, illustrative review and narrative identifiers grant no authorization,
+source authenticity, funded balance or settlement. Synthetic cards and every page
+must retain visible SAMPLE disclosure. Browser/request/accessibility gates remain
+pending until pages exist. See [M9_SAMPLE_CONTRACT](M9_SAMPLE_CONTRACT.md) for exact
+routes, amounts, boundaries and acceptance. M8 live gates and M9 hosting/submission
+remain separate; no paid service, publication or financial activation is approved.
+D026 is unchanged: Primary proof BLOCKED, Testing key RETAINED, financial operations
+DISABLED. The stopped private Meteor integration is not resumed.
+
+### M9.2 — Static SAMPLE walkthrough
+
+Implement the six closed public routes and a dedicated ordinary-link shell from
+D027's unchanged dataset. No authenticated workspace shell, API, cookie/session
+read or wallet import. Reviewed exceptions permit only Next not-found handling,
+the existing pure atomic formatter and the literal skip-link target. Source pins
+cover reviewed formatter dependencies and scoped demo response headers. No live
+feature gate or D026 change. Browser fixture/isolation evidence remains separate
+from genuine source, public financial, physical-device and hosted M9 acceptance.
+
+### M9.3 — Targeted responsive and accessibility corrections
+
+Keep the existing ordinary-link shell and immutable dataset. Use container-aware
+summary stacking, readable labels derived from exact disclosed status codes,
+distinct route titles, bounded prose, tighter card spacing and a 44px brand-link
+target. No drawer, identity read, request or financial action is introduced.
+Offline and Chromium evidence is recorded in [M9_SAMPLE_CONTRACT](M9_SAMPLE_CONTRACT.md);
+physical-device, assistive-technology and genuine browser-zoom acceptance remains
+pending. D026 and all live security gates remain unchanged.
