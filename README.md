@@ -1,6 +1,18 @@
 # Avroqen — foundation and identity
 
-**Status:** Avroqen is the owner-confirmed product name. **Prior working name:** MandateFlow. **Prepared:** 2026-10-29. **Implementation:** M0 foundation implemented locally after the official start, 2026-11-01 00:00 UTC. Local and hosted CI checks pass; human review and required branch-check enforcement remain pending. See [the actual verification report](docs/M0_REPORT.md).
+**Current status — November 8, 2026:** The merged six-page
+[SAMPLE judge demo](http://127.0.0.1:3000/demo) is implemented and documented in
+the [canonical judge walkthrough and evidence ledger](docs/M9_JUDGE_DEMO.md).
+Owner-verified Testnet evidence records MandateVault deployment and initialization;
+it is not payment evidence. M8 live financial acceptance remains pending, and
+public hosting and full M9 readiness are incomplete. Financial operations remain
+disabled.
+
+**Historical foundation status:** Avroqen is the owner-confirmed product name.
+**Prior working name:** MandateFlow. **Prepared:** 2026-10-29. M0 was implemented
+locally after the official start, 2026-11-01 00:00 UTC. Its local and hosted CI
+checks passed; human review and required branch-check enforcement were pending.
+See [the M0 verification report](docs/M0_REPORT.md).
 
 **Proposed product line (draft, not approved marketing copy):** Task-bound financial authority for autonomous agents.
 
@@ -238,3 +250,14 @@ manifest and financial-operation authorization. Use [M8 report](docs/M8_REPORT.m
 [coordinated live runbook](docs/M8_LIVE_TESTNET_RUNBOOK.md). Public Testnet payment,
 genuine source and integrated physical-device results remain pending; no local
 fixture or sandbox result is a public financial demonstration.
+
+## M9 public SAMPLE judge walkthrough
+
+Open **http://127.0.0.1:3000/demo** after starting the web app to explore the six
+public, read-only SAMPLE pages without a wallet or login. The walkthrough uses
+fictional data and never calls application APIs, NEAR RPC or financial operations.
+Follow the [canonical judge walkthrough and evidence ledger](docs/M9_JUDGE_DEMO.md)
+for do-X-see-Y instructions, provenance and limitations. The SAMPLE slice is
+implemented; hosting, screenshots, recording, submission and M8 live financial
+acceptance remain pending and separately authorized. Primary proof is blocked, the
+temporary Testing FullAccess key is retained and financial operations are disabled.
