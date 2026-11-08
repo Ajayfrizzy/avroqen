@@ -248,3 +248,13 @@ is established by this dataset. iOS stays deferred.
 D026 still stops the private Meteor integration. **Primary proof BLOCKED. Temporary
 Testing FullAccess key RETAINED. Financial operations DISABLED.** No wallet message,
 live challenge, contract call, key change or live configuration is authorized.
+
+## M9.5 judge documentation status
+
+The [canonical judge walkthrough and evidence ledger](M9_JUDGE_DEMO.md) is prepared
+for documentation review. It records the six-step presentation, evidence classes,
+acceptance boundaries, local reproduction and human release gates without changing
+this contract or the immutable SAMPLE dataset. The linked
+[M9 artifact manifest](evidence/m9/README.md) is intentionally empty: no screenshot,
+recording, hosted capture, hash or publication is claimed. M9.5 documentation does
+not complete M8 live acceptance or full M9 release readiness.

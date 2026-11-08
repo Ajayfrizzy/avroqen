@@ -15,6 +15,13 @@
 | M8 | Complete M1–M7 end-to-end security/UX acceptance and integration hardening | S01-S20, desktop and physical Android, genuine verifier signing/source verification, actual testnet receipts, residual risks |
 | M9 | Polished reproducible judges’ demo temporarily hosted on RumptyCloud; docs and authorized submission preparation | Genuine NEAR Testnet results, HTTPS/secret isolation and teardown; separately authorized hosting/publication/submission |
 
+**M9 substatus — November 8, 2026:** PRD F11's isolated six-route SAMPLE
+walkthrough is implemented and merged. The [M9.5 canonical judge documentation](M9_JUDGE_DEMO.md)
+and empty evidence-manifest template are prepared for review. Screenshots, video,
+hosting, genuine Testnet financial results, publication and submission remain
+pending; none is authorized by documentation preparation. Full M8 acceptance and
+full M9 completion are not claimed.
+
 ## Codex workflow
 One change set at a time with scoped tests, PR review, merge only when gates pass. Do not produce PRs that bypass security checks. Ask the owner about substantive security design changes, upgrades, new privileged operations or mainnet spending.
 
