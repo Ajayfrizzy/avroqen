@@ -1,0 +1,8 @@
+{
+  "source": "https://github.com/C2SP/wycheproof/blob/main/testvectors_v1/ed25519_test.json",
+  "tcId": 84,
+  "scope": "Public verification-only vector; not an Avroqen credential or transaction signature",
+  "publicKeyHex": "100fdf47fb94f1536a4f7c3fda27383fa03375a8f527c537e6f1703c47f94f86",
+  "digestHex": "124e583f8b8eca58bb29c271b41d36986bbc45541f8e51f9cb0133eca447601e",
+  "signatureHex": "dac119d6ca87fc59ae611c157048f4d4fc932a149dbe20ec6effd1436abf83ea05c7df0fef06147241259113909bc71bd3c53ba4464ffcad3c0968f2ffffff0f"
+}

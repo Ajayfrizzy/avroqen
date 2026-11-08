@@ -23,3 +23,6 @@ test-results
 **/.near-credentials
 .local
 **/.local
+/scripts/deployment-review/OWNER_EXECUTION.md
+/scripts/deployment-review/owner-execute-testnet.py
+/tests/deployment-review/
