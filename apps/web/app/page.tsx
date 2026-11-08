@@ -50,6 +50,9 @@ export default function Home() {
         <a className="button-link" href="/workspace/journey">
           Open your workspace →
         </a>
+        <a className="button-link secondary" href="/demo">
+          Explore SAMPLE demo
+        </a>
       </section>
       <section aria-label="Security boundaries" className="grid">
         {boundaries.map(([number, title, description]) => (
