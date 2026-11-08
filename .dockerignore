@@ -26,3 +26,13 @@ test-results
 /scripts/deployment-review/OWNER_EXECUTION.md
 /scripts/deployment-review/owner-execute-testnet.py
 /tests/deployment-review/
+/scripts/primary-key-verification/
+/tests/adversarial/primary-popup-session.test.ts
+/tests/adversarial/primary-popup.test.ts
+/tests/fixtures/primary-key.ts
+/tests/fixtures/primary-popup.ts
+/tests/integration/primary-key-verification.test.ts
+/tests/integration/primary-popup-sdk.test.ts
+/tests/unit/primary-challenge-lookup.test.ts
+/tests/unit/primary-challenge-randomness.test.ts
+/tests/unit/primary-key-verification.test.ts
