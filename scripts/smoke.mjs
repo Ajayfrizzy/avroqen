@@ -12,7 +12,15 @@ const health = await fetch("http://127.0.0.1:3001/health", {
   signal: AbortSignal.timeout(5000),
 });
 assert.equal(health.status, 200);
-assert.equal((await health.json()).paymentsEnabled, false);
+assert.deepEqual(await health.json(), {
+  status: "alive",
+  stage: "foundation",
+  financial: {
+    configurationReady: false,
+    readOnlyVerificationConfigured: false,
+    submissionEnabled: false,
+  },
+});
 const ready = await fetch("http://127.0.0.1:3001/ready", {
   signal: AbortSignal.timeout(5000),
 });
