@@ -34,7 +34,11 @@ establish implementation of the proposed `/v1` financial interfaces.
 - `POST /v1/evidence` authorized upload/token, hash/size/type checks, short-lived private storage; no public secrets.
 - `POST /v1/attestation-previews` verifier-only preflight, **not a blockchain approval**.
 - `POST /v1/agents/:id/disable` app-level credential revocation; also provide owner-signed onchain change to remove spending authority.
-- `GET /health`, `GET /ready` separate liveness/dependency checks.
+- `GET /health`, `GET /ready` separate liveness/dependency checks. Health exposes
+  only non-secret booleans for complete deployment configuration, configured
+  read-only verification and explicit financial-submission enablement; it does not
+  perform or claim a fresh RPC verification. Readiness remains database-connectivity
+  only and neither endpoint is an onchain pause or payment-success signal.
 
 ## Validation
 Zod schemas shared between API and client; `amount_atomic` always decimal string <=u128; no JS `number` for token units. Strict network, contract and account IDs. Rate limits, size limits, signed sessions and CSRF protections where appropriate. Never expose provider evidence raw by default. Error codes stable (`MANDATE_REVOKED`, `UNAUTHORIZED_VERIFIER`, `OVER_BUDGET`, `SETTLEMENT_PENDING`, etc.).

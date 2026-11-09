@@ -373,3 +373,29 @@ target. No drawer, identity read, request or financial action is introduced.
 Offline and Chromium evidence is recorded in [M9_SAMPLE_CONTRACT](SAMPLE_CONTRACT.md);
 physical-device, assistive-technology and genuine browser-zoom acceptance remains
 pending. D026 and all live security gates remain unchanged.
+
+## D028 — Read-only deployment verification is not submission authority
+
+Owner-directed nonfinancial readiness hardening, November 9, 2026: parse a complete
+M6 deployment manifest independently of `M6_TRANSACTIONS_ENABLED`, so authenticated
+read-only status and monitoring can verify the expected Testnet account, approved
+Wasm, complete key-permission fingerprints and initialized accounting/domain while
+financial submission remains disabled. Every intent preparation and wallet-prompt
+opening still requires the explicit submission switch. Manifest presence is neither
+transaction authorization nor an onchain pause.
+
+The trusted-RPC boundary now requires a bounded, unambiguous JSON-RPC 2.0 response,
+the exact issued request ID, exactly one result-or-error member and no duplicate
+decoded keys or unknown outer fields. Current deployment verification accepts a
+finalized head no older than 120 seconds and at most 30 seconds ahead of the local
+clock, then pins account/code/key/domain observations to its hash. Historical
+receipt-block checks remain exact-hash checks after a fresh head verification.
+These controls do not provide light-client consensus or remove the trusted-provider
+assumption.
+
+Health output reports only non-secret configuration/read-only/submission booleans;
+it neither exposes manifest values nor claims a fresh RPC check. No wallet, signer,
+contract, access-key, UNKNOWN/retry or financial-policy behavior changes. Hashless
+UNKNOWN terminal clearance remains separately blocked for review. D026/D027 remain
+unchanged: Primary proof BLOCKED, Testing FullAccess key RETAINED and financial
+operations DISABLED. No historical amount becomes an approved budget.

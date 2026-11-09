@@ -24,6 +24,10 @@ verification is implied by this restructuring.
 - Primary proof is **BLOCKED** under D026. The temporary Testing FullAccess key is
   **RETAINED**. Financial operations remain **DISABLED**. No documentation change
   grants authority to sign, deploy, remove keys or enable financial submission.
+- Nonfinancial readiness hardening separates read-only manifest verification from
+  submission authority and strengthens RPC envelope/finalized-head checks. This is
+  implementation assurance only: it does not refresh deployment evidence, resolve
+  Primary control, authorize funding or pass any pending M8 live acceptance gate.
 
 ## Pending integrated financial and human acceptance
 

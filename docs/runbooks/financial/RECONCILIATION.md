@@ -6,7 +6,17 @@ The wallet connector uses in-memory storage, refuses key storage, omits all acce
 
 `chain_intents` persists operation bytes, actor/org/mandate, deployment manifest, idempotency key, finalized scan anchor, claimed/verified hashes, receipt IDs and observation height/hash. One unresolved intent per wallet/vault prevents app-level parallel retries. Append-only `chain_events` record status changes atomically. SQL triggers protect scope and terminal observations. Worker leases use `SKIP LOCKED`, expire after process loss, and compare the lease and hash claim before publishing observations. Terminal records are not reprocessed; stale/conflicting finalized observations cannot advance a projection. A database rollback does not advance progress or imply success.
 
-`services/chain/rpc.ts` has only allowlisted read RPC methods and fixed NEAR testnet endpoints. It checks actual chain ID, finalized bytecode SHA-256/code hash, all pinned access-key permission fingerprints and contract domain. Neither provider errors nor raw transaction/authentication payloads are logged. Responses and timeouts are bounded. This is authenticated HTTPS **trusted-RPC verification**, not consensus/light-client proof. A malicious trusted provider is a residual risk; no claim of independent multi-provider consensus is made.
+`services/chain/rpc.ts` has only allowlisted read RPC methods and fixed NEAR testnet endpoints. It checks actual chain ID, finalized bytecode SHA-256/code hash, all pinned access-key permission fingerprints and contract domain. Each response must be an unambiguous JSON-RPC 2.0 envelope with the exact issued request ID; duplicate decoded object keys, extra envelope members, conflicting result/error members, malformed/truncated bodies and responses over 4 MiB fail closed. Provider details are reduced to fixed diagnostic codes, and neither raw provider errors nor transaction/authentication payloads are logged. This is authenticated HTTPS **trusted-RPC verification**, not consensus/light-client proof. A malicious trusted provider is a residual risk; no claim of independent multi-provider consensus is made.
+
+The current finalized deployment head must be no older than 120 seconds and no
+more than 30 seconds ahead of the application clock. Exact boundary values pass;
+missing/invalid, older or further-future timestamps fail closed. Code, account,
+complete access-key set and accounting/domain queries are pinned to that verified
+block hash. Explicit historical receipt-block checks do not apply current-head age
+to the old block; reconciliation first requires a fresh current deployment check
+and then verifies each attributable historical block by its exact hash and canonical
+height. This preserves historical receipt verification without treating an old
+provider head as current.
 
 The receipt verifier matches signer, receiver, one exact FunctionCall, argument bytes, gas and deposit; requires `FINAL` and a complete, nonduplicated descendant outcome graph. For native transfers it requires the dispatch's exact returned callback, private predecessor/receiver bindings, matching transfer amount/recipient, callback data dependency, finalized transfer outcome, successful callback result and matching contract execution/withdrawal state. Failed callbacks quarantine funds even if a recipient received a transfer. `SuccessReceiptId` is a promise reference, not an immediate success value. Failure before dispatch is a confirmed rejection; transfer failure is terminal only after a successful false callback and `ConfirmedFailed` state.
 
@@ -39,7 +49,9 @@ or missing receipt bodies remain unresolved. It cannot repair contract state.
 
 ## Manifest and immutable operation boundary
 
-Submission is disabled by default. Any separately authorized enabled manifest must
+Submission is disabled by default. A complete manifest may be configured for
+authenticated read-only deployment verification while submission remains disabled;
+manifest presence never enables transactions. Any separately authorized enabled manifest must
 pin Testnet, vault account, approved Wasm SHA-256, every expected public-key/permission
 fingerprint and the authorization reference. Finalized read-only RPC checks actual
 chain ID, account/code hashes, all access keys and initialized contract domain at
@@ -56,6 +68,13 @@ authorization. LOCAL_EXERCISE evidence is ineligible. Original-owner recovery
 withdrawal/revocation remains accessible after offchain consent expiry/revocation;
 recovery never restores spending authority. No server/worker signer or broadcast
 path is introduced by manifest configuration.
+
+The authenticated chain status reports manifest configuration, successful
+read-only verification and submission enablement as separate facts. Public process
+health reports only non-secret configuration booleans; it does not expose the
+vault, artifact hash, key fingerprints or authorization reference and does not
+claim that a configured deployment has just been verified. Database readiness
+remains database-connectivity-only. The application flag is not an onchain pause.
 
 ## MAP-1 transaction versus offchain review
 

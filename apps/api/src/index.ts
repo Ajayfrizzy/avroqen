@@ -1,6 +1,10 @@
 import { readApiConfig } from "@avroqen/domain";
 import pg from "pg";
-import { deploymentConfig, NearReader } from "../../../services/chain/rpc.js";
+import {
+  financialSubmissionEnabled,
+  NearReader,
+  readOnlyDeploymentConfig,
+} from "../../../services/chain/rpc.js";
 import { buildApi } from "./app.js";
 import { databaseConfig } from "./db/config.js";
 import { identityConfig } from "./identity/config.js";
@@ -19,6 +23,10 @@ async function main() {
     console.error("Database connection unavailable");
   });
   const auth = identityConfig(process.env);
+  const manifest = readOnlyDeploymentConfig(process.env);
+  const submissionEnabled = financialSubmissionEnabled(process.env);
+  if (submissionEnabled && !manifest)
+    throw new Error("DEPLOYMENT_MANIFEST_REQUIRED");
   const app = buildApi(
     async () => {
       await pool.query("SELECT 1 FROM auth_sessions LIMIT 0");
@@ -28,7 +36,8 @@ async function main() {
       config: auth,
       verifyKey: fullAccessVerifier(auth.network),
       chain: {
-        manifest: deploymentConfig(process.env),
+        manifest,
+        submissionEnabled,
         reader: new NearReader(),
       },
     },
