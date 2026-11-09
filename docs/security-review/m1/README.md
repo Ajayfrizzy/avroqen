@@ -8,10 +8,10 @@ or high-severity blocking defect was identified in the reviewed M1 paths at
 This supersedes older draft-only/unpushed/independent-review-as-integration-gate
 language below. Independent review remains NOT PERFORMED and this package remains
 its handoff, not an audit. Residual risks and manual gaps remain open; iOS is
-deferred. See M1_REPORT.md for the current scoped acceptance and merge boundary.
+deferred. See ../../archive/milestones/M1_REPORT.md for the current scoped acceptance and merge boundary.
 
 
-**Purpose:** independent-review handoff for draft PR #5, not an independent audit.
+**Historical purpose (November 1, 2026):** independent-review handoff for then-draft PR #5, not an independent audit or a claim about current PR status.
 Prepared by the same coding assistant that implemented/reviewed M1. No independent
 reviewer has approved these controls. Passing automated tests is bounded evidence,
 not proof that all attacks are impossible or that M1 is finally accepted.
@@ -24,8 +24,8 @@ results. Review this branch against that baseline; prior hosted CI does not atte
 to the new review candidate until it is pushed and checked.
 
 Contents: this scope/evidence map, [findings and disposition](FINDINGS.md), current
-[verification report](../../M1_REPORT.md), [manual result ledger](../../M1_WALLET_ACCEPTANCE.md),
-[private Android HTTPS instructions](../../M1_ANDROID_HTTPS.md), and
+[verification report](../../archive/milestones/M1_REPORT.md), [manual result ledger](../../runbooks/security/WALLET_ACCEPTANCE.md),
+[private Android HTTPS instructions](../../runbooks/security/ANDROID_HTTPS.md), and
 [negative-case procedures/evidence](NEGATIVE_AUTH_CASES.md).
 No credential archive, database dump, HAR, signature/nonce capture or wallet secrets
 are included. Review the repository source directly; do not bundle `.env`, `.local`,
@@ -35,7 +35,7 @@ node_modules, build outputs or raw logs into an evidence archive.
 
 Read AGENTS.md, PRD F01/F02 and N03/N06, ARCHITECTURE trust tiers, THREAT_MODEL,
 CONTRACT_SPEC custody/roles, ATTESTATION_PROTOCOL evidence boundaries, TEST_PLAN,
-MILESTONES M1, API_DATA_MODEL, DECISIONS D012 and M1_DESIGN before review.
+[current release status](../../RELEASE_STATUS.md), API_DATA_MODEL, DECISIONS D012 and [current identity contracts](../../IMPLEMENTATION_SPEC.md#identity) before review. The [milestone plan](../../archive/milestones/MILESTONES.md) and [M1 design](../../archive/milestones/M1_DESIGN.md) preserve historical context.
 The approved login policy is NEP-413 plus an active finalized **FullAccess Ed25519**
 key on the server-selected network. Restricted keys are rejected. A login session,
 application owner role, registered agent or DB row cannot authorize an onchain
@@ -83,7 +83,7 @@ chain without bypass flags, and remove their temporary directory afterward.
 For the real local TLS/app check follow M1_ANDROID_HTTPS.md then run `pnpm test:https`.
 Do not mistake its synthetic challenge for an authenticated human wallet session.
 
-Current exact command outcomes and failed attempts/corrections are in M1_REPORT.
+Current exact command outcomes and failed attempts/corrections are in [the historical M1 report](../../archive/milestones/M1_REPORT.md).
 Baseline hosted run https://github.com/Ajayfrizzy/avroqen/actions/runs/41305809838
 passed foundation/rust on `64cad66`; it does not certify this supplement. The current M1 report records the new complete local rerun, including 8 browser
 tests and Rust/Wasm; those local results do not constitute hosted CI. Testnet/sandbox transaction receipts are not applicable to these

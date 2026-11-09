@@ -29,7 +29,7 @@ cases. Raw HAR/console exports and “Copy as cURL” are not acceptance artifac
 ## Human wallet compatibility procedures still pending
 
 Use `https://127.0.0.1:8443/workspace` on the private USB setup in
-[M1_ANDROID_HTTPS.md](../../M1_ANDROID_HTTPS.md). Start signed out, use a fresh
+[M1_ANDROID_HTTPS.md](../../runbooks/security/ANDROID_HTTPS.md). Start signed out, use a fresh
 challenge for each attempt, and record only case ID, browser/wallet versions,
 public account alias, UTC time, visible result, request path/status/error code.
 No credentials or proof contents are needed. Do not repeat already confirmed

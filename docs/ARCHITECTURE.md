@@ -54,7 +54,7 @@ for ordinary UPDATE/DELETE. Verification rechecks permissions/state after finali
 RPC, then consumes challenge, changes consent and appends event in one transaction.
 SQL locks order session -> membership -> consent -> agent; no RPC under SQL locks.
 No record is an onchain mandate or portable signature certificate. M3 must obtain
-new wallet-signed onchain authorization. See D013 and M2_DESIGN.md.
+new wallet-signed onchain authorization. See D013 and [current mandate contracts](IMPLEMENTATION_SPEC.md#mandates); the [M2 design](archive/milestones/M2_DESIGN.md) is historical provenance.
 
 ## M3 native NEAR vault
 
@@ -83,7 +83,7 @@ The local deterministic runtime is a fixed tool union; task prose and evidence
 digests remain untrusted. Offchain proposal persistence is not registration or
 financial authorization. The M3 adapter builds arguments only; M5 verification and
 M6 chain submission/indexing/reconciliation remain separate, unimplemented work.
-See M4_DESIGN.md, M4_PROPOSAL_API.md and M4_AGENT_RUNBOOK.md.
+See [current agent capability contracts](IMPLEMENTATION_SPEC.md#agent-capabilities), [agent API](runbooks/financial/AGENT_API.md) and [agent operations](runbooks/financial/AGENT_OPERATIONS.md). The [M4 design](archive/milestones/M4_DESIGN.md) is historical provenance.
 
 ## M5 independent human verifier
 
@@ -96,12 +96,12 @@ immutable policy; agent self-verification is rejected. Application disputes are
 terminal locally and do not claim onchain effects. Migration004 stores immutable
 metadata/reviews and append-only events with atomic challenge consumption.
 No provider credential, file upload, URL fetch, signer or transaction sender exists.
-See M5_DESIGN, M5_VERIFIER_RUNBOOK and M5_MAP1_INTEGRATION for trust boundaries,
+See [current human-evidence contracts](IMPLEMENTATION_SPEC.md#human-evidence), [verifier acceptance](runbooks/financial/VERIFIER_ACCEPTANCE.md) and [MAP-1](ATTESTATION_PROTOCOL.md#application-review-and-onchain-attestation-boundary) for current trust boundaries,
 exact-byte hashing and the separately authorized deployment/receipt path.
 
 ## M6 chain boundary
 
-`services/chain` is a read-only NEAR RPC, receipt verification and reconciliation service. The API prepares typed wallet intents from immutable M2/M4/M5 records; the independent worker processes durable PostgreSQL intents without custody or broadcast capabilities. The settlement workspace requests explicit wallet transactions with function-call-key execution disabled. `docs/M6_DESIGN.md`, `docs/M6_RECONCILIATION.md` and the separately gated `docs/M6_TESTNET_RUNBOOK.md` define lifecycle, trusted-RPC assumptions, deployment governance and unknown-outcome quarantine. Application state never overrides contract funds or callback obligations.
+`services/chain` is a read-only NEAR RPC, receipt verification and reconciliation service. The API prepares typed wallet intents from immutable M2/M4/M5 records; the independent worker processes durable PostgreSQL intents without custody or broadcast capabilities. The settlement workspace requests explicit wallet transactions with function-call-key execution disabled. [Reconciliation](runbooks/financial/RECONCILIATION.md), [governance](VAULT_GOVERNANCE.md) and the separately gated [current M8 runbook](runbooks/financial/TESTNET_ACCEPTANCE.md) define lifecycle, trusted-RPC assumptions, deployment governance and unknown-outcome quarantine. The [M6 design](archive/milestones/M6_DESIGN.md) and [earlier Testnet package](archive/milestones/M6_TESTNET_RUNBOOK.md) are historical context. Application state never overrides contract funds or callback obligations.
 
 ## Vault governance boundary (M6 final review)
 
@@ -111,8 +111,8 @@ The hackathon uses a dedicated, owner-controlled Testnet demonstration vault wit
 
 services/security projects internal audit/reconciliation sources into durable redacted tenant-scoped incidents. Detection is deterministic/advisory: no LLM or caller event authorizes blockchain state. A separate monitoring loop and PostgreSQL pool share the existing non-root worker service without gating M6 reconciliation. Source identities provide durable replay checkpoints; SQL guards preserve history and scoped incident versions.
 
-/workspace/security exposes incidents and links to explicit M6 wallet review for owner/verified-guardian controls. App disabling and capability revocation stay offchain. The worker is read-only toward NEAR, including code/key/domain and gas/backing observations. No signer, broadcast client or financial scheduler was added. See M7_DESIGN.md and M7_INCIDENT_RUNBOOK.md.
+/workspace/security exposes incidents and links to explicit M6 wallet review for owner/verified-guardian controls. App disabling and capability revocation stay offchain. The worker is read-only toward NEAR, including code/key/domain and gas/backing observations. No signer, broadcast client or financial scheduler was added. See [current monitoring contracts](IMPLEMENTATION_SPEC.md#monitoring) and [incident response](runbooks/security/INCIDENT_RESPONSE.md).
 
 ## M8 integrated observation boundary
 
-`/workspace/journey` uses existing assignment/tenant endpoints to connect M1–M7; it cannot grant roles or financial authority. Settlement hides stale financial observations and gates wallet actions after refresh failure, retaining unresolved-history warnings. Proposal and verifier forms convert decimal NEAR exactly and locally hash bounded evidence bytes without upload/source inference. Browser transaction reconstruction and all server/contract checks remain mandatory. See M8_DESIGN and M8_TEST_MATRIX; public Testnet, authentic-source and physical-device evidence are distinct from automated fixtures and local sandbox.
+`/workspace/journey` uses existing assignment/tenant endpoints to connect M1–M7; it cannot grant roles or financial authority. Settlement hides stale financial observations and gates wallet actions after refresh failure, retaining unresolved-history warnings. Proposal and verifier forms convert decimal NEAR exactly and locally hash bounded evidence bytes without upload/source inference. Browser transaction reconstruction and all server/contract checks remain mandatory. Current requirements are in [UI observation/file integrity](UI_DESIGN_SYSTEM.md#financial-observation-and-local-file-integrity) and [M8_TEST_MATRIX](evidence/FINANCIAL_ACCEPTANCE_MATRIX.md); the [M8 implementation design](archive/milestones/M8_DESIGN.md) is historical. Public Testnet, authentic-source and physical-device evidence are distinct from automated fixtures and local sandbox.

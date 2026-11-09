@@ -37,4 +37,24 @@ Sign-out fetches a fresh session and submits the CSRF-protected server logout; f
 
 ## Verification and maintenance
 
-See [redesign report](M8_UX_REDESIGN_REPORT.md) for screenshots, test counts and limitations. Test-only pinned `@axe-core/playwright@4.14.0` adds axe-core 4.14.0; neither is imported into production code. Lockfile review found no unrelated dependency upgrades. Automated axe checks supplement keyboard and visual inspection; they are not a full accessibility certification.
+See [redesign report](archive/milestones/M8_UX_REDESIGN_REPORT.md) for screenshots, test counts and limitations. Test-only pinned `@axe-core/playwright@4.14.0` adds axe-core 4.14.0; neither is imported into production code. Lockfile review found no unrelated dependency upgrades. Automated axe checks supplement keyboard and visual inspection; they are not a full accessibility certification.
+
+## Financial observation and local-file integrity
+
+Starting a chain-status or mandate-detail refresh invalidates the prior financial
+observation and blocks preparation/signing until matching successful responses
+restore it. A failed refresh hides stale balances/attestations; unresolved history
+remains visible with an explicit stale/unknown label. Never delete a prepared
+operation or retry it automatically. Late responses or failures from a previous
+mandate/organization cannot replace the current review or restore its availability.
+The journey is advisory, uses bounded history and links only server-verified
+transactions; it is not a complete financial ledger or an authorization engine.
+
+NEAR inputs use checked string/BigInt decimal-to-atomic conversion, with no floating
+point, rounding or exponent notation. Exact atomic values remain inspectable.
+Local hashing accepts bounded PDF/plain text/JSON/PNG/JPEG bytes (maximum 5 MiB),
+clears the previous digest when a replacement is selected, and hashes exact bytes
+without parsing/normalizing, upload or URL fetch. The verifier must independently
+obtain authenticated source bytes and affirm issuer/reference/recipient/amount and
+independence. Selecting an agent file or calculating a hash cannot supply that
+affirmation or a signed approval. Manual exact-digest entry remains available.

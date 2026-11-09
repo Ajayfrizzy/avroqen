@@ -39,7 +39,7 @@ The old and new protected deployment directories are preserved without accessing
 - POST_REVOCATION expects only Primary and is a separate account/key-state check, not deployment or receipt approval. The same exact identity, permission, finality and freshness checks apply. It cannot be used as a deployment candidate phase.
 - Domain validation now checks observation age and finalized block age (120 seconds, at most five seconds future skew). Previously the network observer checked freshness but a stale object supplied directly to the domain inspector could pass. Historical previews remain explicitly marked and are checked against their recorded observation time; they never claim live readiness.
 - The actual pinned Meteor serializer round-trip now explicitly checks the serialized public key and exact reserialization, in addition to action/hash/argument invariants. This is offline compatibility evidence, not a wallet invocation.
-- Historical one-key docs are labeled and superseded by NEAR_CLI_DEPLOYMENT.md. Existing M6 adapter and financial authorization are unchanged.
+- Historical one-key docs are labeled and superseded by archive/deployment/NEAR_CLI_DEPLOYMENT.md. Existing M6 adapter and financial authorization are unchanged.
 - Official CLI v0.31.0 online Keychain selection can choose another accessible FullAccess key. Offline mode selects the exact requested item but cannot directly send. The documented alternative uses a protected signed file followed by exact-file submission, requiring a separate owner decision accepting that executable authorization artifact. No such file was created. A Keychain dialog alone is not transaction approval.
 
 ## Fresh public evidence and budgets

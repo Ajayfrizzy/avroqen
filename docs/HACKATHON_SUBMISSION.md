@@ -32,7 +32,7 @@ revalidation before preparing a payload.
 
 ## Evidence-aware asset checklist
 
-- [ ] README and [canonical judge walkthrough](M9_JUDGE_DEMO.md) contain exact
+- [ ] README and [canonical judge walkthrough](JUDGE_DEMO.md) contain exact
   do-X-see-Y steps and distinguish SAMPLE, automated, sandbox and owner-verified
   public deployment evidence.
 - [ ] Every screenshot/video frame keeps SAMPLE labels visible and is entered in

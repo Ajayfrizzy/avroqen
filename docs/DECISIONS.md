@@ -3,8 +3,8 @@
 ## M0 preparation — October 31, 2026
 
 Foundation implementation remains blocked until November 1 at 00:00 UTC by
-AGENTS.md and CODEX_BOOTSTRAP.md. The preparation plan and verification status
-are recorded in [M0_FOUNDATION.md](M0_FOUNDATION.md). This entry changes no
+AGENTS.md and [CODEX_BOOTSTRAP.md](archive/milestones/CODEX_BOOTSTRAP.md). The preparation plan and verification status
+are recorded in [M0_FOUNDATION.md](archive/milestones/M0_FOUNDATION.md). This entry changes no
 financial authority, resolves no open security decision, and does not establish
 M0 completion or passing CI.
 
@@ -53,7 +53,7 @@ report disabled capability. No O02–O07 security decision is silently resolved.
 The PostgreSQL bootstrap account is local-development-only; its credential is
 passed only to database/API services and is not an owner or verifier key.
 
-CI gates are implemented, with hosted results recorded in M0_REPORT.md. The owner
+CI gates are implemented, with hosted results recorded in [M0_REPORT.md](archive/milestones/M0_REPORT.md). The owner
 has authorized a feature-branch commit/push and PR against staging for review.
 Merge, deployment and repository visibility changes remain unauthorized. Required
 branch-check configuration is outstanding; staging was unprotected at review.
@@ -179,11 +179,11 @@ Revocation is terminal offchain and remains possible after expiry or agent disab
 Onchain status stays NOT_SUBMITTED, with no invented receipt or transfer. Reserved+
 successful execution accounting, per-claim attestations, dispute blocking, actual
 revocation inclusion and owner authorization remain obligations for M3/M5, not M2
-claims. No financial/security invariant is waived. See M2_DESIGN and M2_REPORT.
+claims. No financial/security invariant is waived. See [M2_DESIGN](archive/milestones/M2_DESIGN.md) and [M2_REPORT](archive/milestones/M2_REPORT.md).
 
 ## D014 — M3 financial protocol (owner-approved, 2026-11-01)
 
-M3_DESIGN.md records recommended custody/storage, caller/domain/guardian and
+[M3_DESIGN.md](archive/milestones/M3_DESIGN.md) records recommended custody/storage, caller/domain/guardian and
 failure/recovery packages with alternatives. These settle substantive ambiguities
 left by CONTRACT_SPEC; none are inferred from M2 offchain-consent approval.
 Financial implementation began only after those decisions. No deployment,
@@ -210,14 +210,14 @@ limits, not permissions to spend or claims of maximum-load certification.
 
 ## D015 — M4 scoped application capabilities (owner-approved, 2026-11-02)
 
-Owner explicitly selected option A in M4_DESIGN.md: independently authenticated
+Owner explicitly selected option A in [M4_DESIGN.md](archive/milestones/M4_DESIGN.md): independently authenticated
 256-bit bearer capabilities, hash-only persistence, exact agent/org/network/mandate/
 policy/vault scope, 24-hour maximum (15-minute demo), bounded by mandate expiry.
 Original owner issuance requires active owner membership, session, Origin and CSRF.
 Live permission checks, atomic rotation and explicit revocation are mandatory.
 This grants offchain proposal access only, never custody, verifier or chain signing.
 The in-memory demo transport holds the token outside task inputs and runtime tools.
-See M4_DESIGN.md for alternatives, risk boundaries and implementation verification.
+See [M4_DESIGN.md](archive/milestones/M4_DESIGN.md) for alternatives, risk boundaries and implementation verification.
 
 
 ## D016 — M5 human provenance and signed reviews (owner-approved 2026-11-02)
@@ -229,7 +229,7 @@ proof with finalized active FullAccess Ed25519 validation and one-use five-minut
 challenge. Signed provenance/MAP-1 preparation never substitutes for an onchain
 verifier transaction. Human source observations are attributed assertions, not
 automated provider authentication. Synthetic exercises never count for live readiness.
-No provider/wallet secrets are created or stored. See M5_DESIGN.md for scope,
+No provider/wallet secrets are created or stored. See [M5_DESIGN.md](archive/milestones/M5_DESIGN.md) for scope,
 independence limitations, per-claim quorum, owner separation and dispute boundaries.
 
 ## D017 — Integrated product acceptance sequencing (owner-directed, 2026-11-02)
@@ -263,7 +263,7 @@ is granted by this sequencing decision.
 
 ## D018 — M6 intended deployment account and retained-key governance
 
-Owner decision (November 2, 2026): target `avroqen-vault.testnet`; retain an owner-controlled deployment full-access key for the small hackathon demo, accepting contract replacement and direct-transfer risk. No deployment/account creation/key mutation/transaction is authorized by this selection. At the initial observation, finalized public testnet RPC reported `UNKNOWN_ACCOUNT` (superseded by D019); account control, public keys, balance, deployed artifact and initialized domain must be verified before live authorization. See M6_DESIGN.md. Backend, worker and AI never receive wallet keys; all M3 financial invariants remain mandatory.
+Owner decision (November 2, 2026): target `avroqen-vault.testnet`; retain an owner-controlled deployment full-access key for the small hackathon demo, accepting contract replacement and direct-transfer risk. No deployment/account creation/key mutation/transaction is authorized by this selection. At the initial observation, finalized public testnet RPC reported `UNKNOWN_ACCOUNT` (superseded by D019); account control, public keys, balance, deployed artifact and initialized domain must be verified before live authorization. See [M6_DESIGN.md](archive/milestones/M6_DESIGN.md). Backend, worker and AI never receive wallet keys; all M3 financial invariants remain mandatory.
 
 ## D019 — Demonstration governance disclosure and future vault direction
 
@@ -275,7 +275,7 @@ Proposed production direction is a versioned verified factory and separate user/
 
 M7 projects server-owned audit/reconciliation records into redacted events, deterministic five-minute detection windows and tenant-scoped incidents. Existing active owner/admin application roles may respond, without wallet/onchain authority. All active members retain scoped read access. Assignment is self-assignment by an authorized responder, with versioned transitions and append-only history.
 
-A guardian with active organization access may prepare PAUSE through M6 after finalized exact mandate/guardian verification, repeated before prompting. Only the original owner may resume/revoke. M3 code/custody/accounting and guardian stop-only authority are unchanged. Dashboard notification does not mean external delivery. Monitoring never automatically pauses, signs, broadcasts, settles or releases funds. See M7_DESIGN.md. No deployment, key mutation or transaction authorization is granted.
+A guardian with active organization access may prepare PAUSE through M6 after finalized exact mandate/guardian verification, repeated before prompting. Only the original owner may resume/revoke. M3 code/custody/accounting and guardian stop-only authority are unchanged. Dashboard notification does not mean external delivery. Monitoring never automatically pauses, signs, broadcasts, settles or releases funds. See [M7_DESIGN.md](archive/milestones/M7_DESIGN.md). No deployment, key mutation or transaction authorization is granted.
 
 ## D021 — M8 integrated observation and acceptance boundary
 
@@ -283,45 +283,45 @@ M8 connects the existing role-specific workspaces with an assignment-scoped jour
 
 ## D022 — M8 design system and advisory overview
 
-Owner-requested redesign retains existing routes and security handlers behind a shared light-theme shell, accessible native controls and guided mandate/evidence forms. Overview uses scoped authorized observations and never infers settlement from offchain consent or evidence. Its next-action recommendation is advisory; exact wallet reconstruction, backend checks and contract enforcement remain mandatory. Sign-out requires server invalidation and CSRF. No financial, custody, identity or evidence authority changes. Test-only axe tooling and explicitly synthetic screenshots support accessibility/visual verification, not genuine wallet or independent-source acceptance. See UI_DESIGN_SYSTEM.md and M8_UX_REDESIGN_REPORT.md.
+Owner-requested redesign retains existing routes and security handlers behind a shared light-theme shell, accessible native controls and guided mandate/evidence forms. Overview uses scoped authorized observations and never infers settlement from offchain consent or evidence. Its next-action recommendation is advisory; exact wallet reconstruction, backend checks and contract enforcement remain mandatory. Sign-out requires server invalidation and CSRF. No financial, custody, identity or evidence authority changes. Test-only axe tooling and explicitly synthetic screenshots support accessibility/visual verification, not genuine wallet or independent-source acceptance. See UI_DESIGN_SYSTEM.md and [M8_UX_REDESIGN_REPORT.md](archive/milestones/M8_UX_REDESIGN_REPORT.md).
 
 ## D023 — Isolated deployment preview and Meteor compatibility boundary
 
 Owner-requested preparation, 2026-11-05: retain Meteor-only custody and the approved366735-byte artifact. A loopback-only, no-script reviewer validates the exact deploy/init proposal and offline historical or fresh finalized read-only account observations. No wallet invocation/signing/broadcast route, app/API integration, credential import, new key or M6 enablement is added. Actual pinned SDK serialization is exercised separately offline with deterministic placeholders, never a prepared public signature.
 
-Meteor wallet payload acceptance and transparent human review remain unverified; SDK serialization and browser MessageChannel success are not wallet compatibility. Its legacy web response listener requires source/origin trust review before a future deployment connector; a transaction prompt is signing-capable and cannot be called a guaranteed review-only mode. A separate explicit review-and-cancel authorization and then separate live deployment authorization remain required. No existing financial or custody boundary changes. See METEOR_DEPLOYMENT_COMPATIBILITY.md and METEOR_DEPLOYMENT_REVIEWER.md.
+Meteor wallet payload acceptance and transparent human review remain unverified; SDK serialization and browser MessageChannel success are not wallet compatibility. Its legacy web response listener requires source/origin trust review before a future deployment connector; a transaction prompt is signing-capable and cannot be called a guaranteed review-only mode. A separate explicit review-and-cancel authorization and then separate live deployment authorization remain required. No existing financial or custody boundary changes. See [METEOR_DEPLOYMENT_COMPATIBILITY.md](archive/investigations/METEOR_DEPLOYMENT_COMPATIBILITY.md) and [METEOR_DEPLOYMENT_REVIEWER.md](archive/investigations/METEOR_DEPLOYMENT_REVIEWER.md).
 
 ## D024 — Owner-operated official CLI deployment preparation
 
 Owner direction, 2026-11-05: pursue official near-cli-rs rather than another Meteor deployment connector. Preserve the approved archived Wasm and exact atomic deploy/init batch. This supersedes the proposed Meteor transport direction, not any contract/custody invariant or approval gate. CLI/macOS Keychain cannot directly reuse a browser-held secret; any additional local Keychain copy of the existing authorized key requires separate owner approval and owner-only handling. No key export/import, new onchain key, signing or deployment is authorized by this preparation.
 
-Version0.30.1 source exposes both plaintext fallback and secret-bearing reconstructed-command logging risks. Do not use CLI private-key/seed import commands or web-wallet login that creates a key. The proposed owner-only generic-password item and disabled legacy credential root require actual setup validation before signing. No production/financial adapter change. See NEAR_CLI_DEPLOYMENT.md for source provenance, unsigned inspection, setup limitations and final authorization/postchecks.
+Version0.30.1 source exposes both plaintext fallback and secret-bearing reconstructed-command logging risks. Do not use CLI private-key/seed import commands or web-wallet login that creates a key. The proposed owner-only generic-password item and disabled legacy credential root require actual setup validation before signing. No production/financial adapter change. See [NEAR_CLI_DEPLOYMENT.md](archive/deployment/NEAR_CLI_DEPLOYMENT.md) for source provenance, unsigned inspection, setup limitations and final authorization/postchecks.
 
 
 ### Deployment key phases and explicit CLI selection — 2026-11-06
 
 Owner confirmed exactly Primary and temporary Testing FullAccess keys on avroqen-vault.testnet. DEPLOYMENT validation requires both and selects only Testing; POST_REVOCATION requires Primary only and does not authorize deployment. Fresh finalized checks reject extra/missing/duplicate/restricted keys and stale account observations. Archived evidence is labeled historical. Artifact and atomic deploy/init terms remain unchanged; no financial adapter changes or automatic M6 enablement.
 
-CLI v0.31.0 online Keychain selection is not pinned by the public-key option. Offline mode pins the Keychain item but refuses direct send. The proposed owner-only procedure therefore signs offline to a protected file and submits that exact file separately. This signed-authorization artifact is a new operational tradeoff requiring explicit owner approval before use; it was not created here. Plaintext credential fallback remains isolated with /dev/null/avroqen-no-legacy (code is not disabled). No signing, Keychain access, key removal or deployment is authorized by this decision. See NEAR_CLI_DEPLOYMENT.md.
+CLI v0.31.0 online Keychain selection is not pinned by the public-key option. Offline mode pins the Keychain item but refuses direct send. The proposed owner-only procedure therefore signs offline to a protected file and submits that exact file separately. This signed-authorization artifact is a new operational tradeoff requiring explicit owner approval before use; it was not created here. Plaintext credential fallback remains isolated with /dev/null/avroqen-no-legacy (code is not disabled). No signing, Keychain access, key removal or deployment is authorized by this decision. See [NEAR_CLI_DEPLOYMENT.md](archive/deployment/NEAR_CLI_DEPLOYMENT.md).
 
 
 ## D025 — Isolated offchain Primary-key control preparation
 
 Owner-directed preparation, November 7, 2026: use a separate fixed-policy, single-process in-memory challenge verifier for avroqen-vault.testnet/Testnet and the exact approved Primary key. Reuse NEP-413 crypto, never the application login/session route. Five-minute CSPRNG challenges are immutable, claimed atomically before RPC and closed on success/failure/cancellation; verify exact signed purpose/recipient/key and fresh finalized, pinned account/two-FullAccess-key state. No signing, transaction, contract call, financial activation or custody/configuration change is introduced.
 
-The inspected Meteor SDK popup listener lacks source/origin validation; injected extension callbacks are a different transport with no MessageEvent provenance. An unwired, fixture-tested popup guard uses exact source/UID plus explicitly reviewed origin/status routes, allowing review of multiple actual response origins rather than assuming one universal origin. No global SDK patch or wallet entrypoint is enabled. Owner review of full diff, rendered challenge and transport approach remains required before any real signing entrypoint. Single-process state, RPC/provider trust, actual hosted/extension provenance and exclusive-custody limitations are explicit in [the existing wallet acceptance runbook](M1_WALLET_ACCEPTANCE.md#implemented-isolated-preparation--november-7-2026). This is self-review, not independent audit or live Primary proof.
+The inspected Meteor SDK popup listener lacks source/origin validation; injected extension callbacks are a different transport with no MessageEvent provenance. An unwired, fixture-tested popup guard uses exact source/UID plus explicitly reviewed origin/status routes, allowing review of multiple actual response origins rather than assuming one universal origin. No global SDK patch or wallet entrypoint is enabled. Owner review of full diff, rendered challenge and transport approach remains required before any real signing entrypoint. Single-process state, RPC/provider trust, actual hosted/extension provenance and exclusive-custody limitations are explicit in [the existing wallet acceptance runbook](runbooks/security/WALLET_ACCEPTANCE.md#implemented-isolated-preparation--november-7-2026). This is self-review, not independent audit or live Primary proof.
 
 
 ### Step 108F — popup-only source preparation, no live activation
 
 Use a source-hash-pinned private SDK preparation factory with the legacy messenger/listener removed, one injected per-proof messenger, explicit `v1_web`, fixed hosted base and no extension/fallback path. Combined action uses wire `login`. Terminal-first success follows inspected SDK behavior while native source/origin/UID, exact signed challenge and fresh finalized Primary FullAccess verification remain mandatory. The isolated public facade's reviewed response-origin list stays empty. No installed SDK, app auth, live config or signing entrypoint changes.
 
-Actual transformed SDK tests use mock popup/transport/RPC and fixture signatures; UI registration is explicitly mocked. A separate document/realm, reviewed browser loader/native ports/local-verifier boundary and actual hosted response-origin review remain blockers before any live prompt. Unknown redirects are rejected on response or timeout; exhaustive cross-origin navigation detection is not claimed. See [the existing acceptance runbook](M1_WALLET_ACCEPTANCE.md#step-108f--isolated-popup-only-adapter-preparation).
+Actual transformed SDK tests use mock popup/transport/RPC and fixture signatures; UI registration is explicitly mocked. A separate document/realm, reviewed browser loader/native ports/local-verifier boundary and actual hosted response-origin review remain blockers before any live prompt. Unknown redirects are rejected on response or timeout; exhaustive cross-origin navigation detection is not claimed. See [the existing acceptance runbook](runbooks/security/WALLET_ACCEPTANCE.md#step-108f--isolated-popup-only-adapter-preparation).
 
 
 ### Step 108H — challenge lookup contract audit
 
-Actual working-tree core already includes issued/unexpired, same-instance read-only `getChallenge`; retain its memory-only state and atomic verify transition unchanged. Derive the popup-required verifier type from the real factory, and require the original frozen issued challenge object as well as exact values before any popup/SDK work. Exact caller-created copies are now rejected. Add lookup lifecycle/type/cross-instance and popup ownership regressions. Root TypeScript includes these scripts; its Node globals and the fixture VM's supplied Buffer are not proof of browser compatibility. Browser/CJS/Buffer/realm/IPC integration and actual response-origin approval remain blocked. See [the existing acceptance report](M1_WALLET_ACCEPTANCE.md#step-108h--actual-lookup-contract-and-challenge-ownership). No core state-machine, auth, installed SDK, configuration or signing activation change.
+Actual working-tree core already includes issued/unexpired, same-instance read-only `getChallenge`; retain its memory-only state and atomic verify transition unchanged. Derive the popup-required verifier type from the real factory, and require the original frozen issued challenge object as well as exact values before any popup/SDK work. Exact caller-created copies are now rejected. Add lookup lifecycle/type/cross-instance and popup ownership regressions. Root TypeScript includes these scripts; its Node globals and the fixture VM's supplied Buffer are not proof of browser compatibility. Browser/CJS/Buffer/realm/IPC integration and actual response-origin approval remain blocked. See [the existing acceptance report](runbooks/security/WALLET_ACCEPTANCE.md#step-108h--actual-lookup-contract-and-challenge-ownership). No core state-machine, auth, installed SDK, configuration or signing activation change.
 
 
 ## D026 — Primary proof blocked; private browser integration stopped
@@ -332,7 +332,7 @@ Unresolved concerns include browser bundling failures on Node dependencies (`uti
 
 If a future proof is required, prefer investigating Meteor's supported public off-chain message-signing interface. That approach also remains **unverified** and is **not authorization to sign** or a workaround for provenance/build gates. Any future method requires separate review and explicit authorization. Its safe boundary must keep original immutable challenge state and exact Primary-key signature/fresh finalized permission verification in the Node-only isolated verifier; browser data is untrusted, raw signatures stay transient and unlogged/unpersisted, and no `/api/auth/verify`, application session issuance or blockchain transaction is involved.
 
-Current status for `avroqen-vault.testnet`: **Primary-key proof BLOCKED; temporary Testing key RETAINED** pending a separately reviewed and authorized verification method. This is a retention decision, not a fresh on-chain observation. Live Primary control, independent security audit and Testing-key retirement readiness are not established or claimed. **Financial operations remain disabled.** No signing, key revocation, configuration change or financial activation is authorized. See [the wallet runbook's current status](M1_WALLET_ACCEPTANCE.md#current-status--step-108j).
+Current status for `avroqen-vault.testnet`: **Primary-key proof BLOCKED; temporary Testing key RETAINED** pending a separately reviewed and authorized verification method. This is a retention decision, not a fresh on-chain observation. Live Primary control, independent security audit and Testing-key retirement readiness are not established or claimed. **Financial operations remain disabled.** No signing, key revocation, configuration change or financial activation is authorized. See [the wallet runbook's current status](runbooks/security/WALLET_ACCEPTANCE.md#current-status--step-108j).
 
 ## D027 — Public SAMPLE display contract, not financial authority
 
@@ -348,7 +348,7 @@ not separate-origin isolation or a JavaScript security sandbox.
 Eligibility, illustrative review and narrative identifiers grant no authorization,
 source authenticity, funded balance or settlement. Synthetic cards and every page
 must retain visible SAMPLE disclosure. Browser/request/accessibility gates remain
-pending until pages exist. See [M9_SAMPLE_CONTRACT](M9_SAMPLE_CONTRACT.md) for exact
+pending until pages exist. See [M9_SAMPLE_CONTRACT](SAMPLE_CONTRACT.md) for exact
 routes, amounts, boundaries and acceptance. M8 live gates and M9 hosting/submission
 remain separate; no paid service, publication or financial activation is approved.
 D026 is unchanged: Primary proof BLOCKED, Testing key RETAINED, financial operations
@@ -370,6 +370,6 @@ Keep the existing ordinary-link shell and immutable dataset. Use container-aware
 summary stacking, readable labels derived from exact disclosed status codes,
 distinct route titles, bounded prose, tighter card spacing and a 44px brand-link
 target. No drawer, identity read, request or financial action is introduced.
-Offline and Chromium evidence is recorded in [M9_SAMPLE_CONTRACT](M9_SAMPLE_CONTRACT.md);
+Offline and Chromium evidence is recorded in [M9_SAMPLE_CONTRACT](SAMPLE_CONTRACT.md);
 physical-device, assistive-technology and genuine browser-zoom acceptance remains
 pending. D026 and all live security gates remain unchanged.

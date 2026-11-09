@@ -1,5 +1,12 @@
 # Backend API and data-model contract
 
+**Reading guide:** the logical entities and `/v1` interface sketches below are
+historical design candidates, not a current schema or route inventory. The
+explicitly implemented M1–M7 sections later in this document describe the recorded
+application contracts; consult the corresponding source and migrations for exact
+current behavior. `/v1` sketches are not aliases for `/api` routes. This distinction
+does not grant financial authority or claim that candidate uploads are implemented.
+
 ## Principle
 PostgreSQL is a searchable index and UX read model, **never the authoritative custody ledger**. Financial constraints are validated again onchain. API authentication doesn't substitute for wallet authorization.
 
@@ -16,6 +23,11 @@ PostgreSQL is a searchable index and UX read model, **never the authoritative cu
 `security_alerts(id, severity, rule, affected_mandate, status)`
 
 ## API sketches (not yet implemented)
+
+Historical candidates retained for design context; the implemented sections below
+take precedence where the sketches differ. Health/readiness overlap does not
+establish implementation of the proposed `/v1` financial interfaces.
+
 - `POST /v1/proposals` validated agent identity, bounded payload, idempotency key; creates proposal **not a payment**.
 - `GET /v1/mandates/:id` read model with chain-lag indicators.
 - `GET /v1/proposals/:id`, `GET /v1/executions/:id`, `GET /v1/audit?mandate_id=` scoped to org access.
@@ -80,7 +92,7 @@ wallet owner issues/rotates/revokes narrow capabilities; active members can read
 mandate proposal history. POST `/api/agent/tools` independently authenticates an
 agent and dispatches a strict fixed union for summary/status/prepare/submit/denials.
 `/v1` sketches remain unimplemented, not alternate financial routes. See
-[M4_PROPOSAL_API.md](M4_PROPOSAL_API.md) for exact schemas, pagination, denial codes,
+[M4_PROPOSAL_API.md](runbooks/financial/AGENT_API.md) for exact schemas, pagination, denial codes,
 limits, idempotency and authority boundaries.
 
 ## M5 implemented evidence and review API
@@ -114,7 +126,7 @@ binding guards and immutable row triggers. It adds no secret/provider/file stora
 - `POST /api/chain/intents/:intentId/begin`: rechecks original actor, live role/session/consent/agent bindings and deployment manifest before marking the prompt attempted.
 - `POST /api/chain/intents/:intentId/report`: `{hash: string|null}` is an untrusted wallet report, not settlement evidence. Missing hash means UNKNOWN; subsequent blind retry is prohibited.
 
-Migration 005 adds immutable intent bindings and append-only chain events, per-wallet/vault unresolved-operation uniqueness, idempotency and monotonic finalized observation protections. Worker leases and finalized scan cursors survive restarts. Intent transitions and audit evidence commit atomically. Existing migrations and financial contract state are not rewritten. See M6_RECONCILIATION.md for receipt and withdrawal verification.
+Migration 005 adds immutable intent bindings and append-only chain events, per-wallet/vault unresolved-operation uniqueness, idempotency and monotonic finalized observation protections. Worker leases and finalized scan cursors survive restarts. Intent transitions and audit evidence commit atomically. Existing migrations and financial contract state are not rewritten. See runbooks/financial/RECONCILIATION.md for receipt and withdrawal verification.
 
 ## M7 monitoring and incidents
 

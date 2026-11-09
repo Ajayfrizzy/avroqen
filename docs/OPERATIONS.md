@@ -18,4 +18,15 @@ No customer money before independent professional security review; demo funds mu
 
 ## Implemented M7 response clarification
 
-Use M7_INCIDENT_RUNBOOK.md. Earlier generic runbook wording does not authorize automatic key revocation, freezing already-dispatched transfers, or verifier-list editing. Current M3 policies are immutable, guardians pause only, and actual onchain controls require the permitted wallet and separate Testnet authorization. Revoke app bearers/disable agents through existing scoped APIs; contain verifier compromise through owner pause/revoke and fresh policies/proofs, never a verifier-admin override. Alert dismissal never releases reserves.
+Use runbooks/security/INCIDENT_RESPONSE.md. Earlier generic runbook wording does not authorize automatic key revocation, freezing already-dispatched transfers, or verifier-list editing. Current M3 policies are immutable, guardians pause only, and actual onchain controls require the permitted wallet and separate Testnet authorization. Revoke app bearers/disable agents through existing scoped APIs; contain verifier compromise through owner pause/revoke and fresh policies/proofs, never a verifier-admin override. Alert dismissal never releases reserves.
+
+## Monitoring lock-namespace upgrade
+
+The M8 correction changed a database-wide advisory lock to a namespaced key based
+on the resolved `security_events` relation OID. Workers resolving the same table
+serialize; isolated schemas do not unnecessarily contend. When adopting that
+change in a running multi-worker environment, restart monitoring workers together:
+old and new versions use different lock keys. Do not treat a skipped monitoring
+cycle as settlement failure or release an obligation. Reconciliation remains
+independent. This is upgrade guidance, not an instruction to restart services now.
+See the [historical correction and database regression evidence](archive/milestones/M8_REPORT.md#monitoring-contention-correction--2026-11-04).
