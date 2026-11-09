@@ -20,8 +20,16 @@ export const manifestSchema = z.strictObject({
   authorization: z.string().min(8).max(160),
 });
 export type Manifest = z.infer<typeof manifestSchema>;
-export function deploymentConfig(env: NodeJS.ProcessEnv): Manifest | null {
-  if (env.M6_TRANSACTIONS_ENABLED !== "true") return null;
+const manifestValues = (env: NodeJS.ProcessEnv) => [
+  env.M6_VAULT_ACCOUNT,
+  env.M6_WASM_SHA256,
+  env.M6_KEY_FINGERPRINTS,
+  env.M6_AUTHORIZATION_REFERENCE,
+];
+export function readOnlyDeploymentConfig(
+  env: NodeJS.ProcessEnv,
+): Manifest | null {
+  if (!manifestValues(env).some(Boolean)) return null;
   return manifestSchema.parse({
     account: env.M6_VAULT_ACCOUNT,
     network: env.NEAR_NETWORK,
@@ -30,42 +38,226 @@ export function deploymentConfig(env: NodeJS.ProcessEnv): Manifest | null {
     authorization: env.M6_AUTHORIZATION_REFERENCE,
   });
 }
+export function financialSubmissionEnabled(env: NodeJS.ProcessEnv): boolean {
+  const value = env.M6_TRANSACTIONS_ENABLED;
+  if (value === undefined || value === "false") return false;
+  if (value === "true") return true;
+  throw new Error("INVALID_SUBMISSION_GATE");
+}
+export function deploymentConfig(env: NodeJS.ProcessEnv): Manifest | null {
+  if (!financialSubmissionEnabled(env)) return null;
+  const manifest = readOnlyDeploymentConfig(env);
+  if (!manifest) throw new Error("DEPLOYMENT_MANIFEST_REQUIRED");
+  return manifest;
+}
 export const fingerprint = (v: string) =>
   createHash("sha256").update(v).digest("hex");
 const endpoints = [
   "https://rpc.testnet.near.org",
   "https://archival-rpc.testnet.near.org",
 ] as const;
+export const FINALIZED_BLOCK_MAX_AGE_MS = 120_000;
+export const FINALIZED_BLOCK_MAX_FUTURE_SKEW_MS = 30_000;
+const RPC_RESPONSE_LIMIT = 4 * 1024 * 1024;
+const RPC_JSON_MAX_DEPTH = 64;
+const RPC_JSON_MAX_NUMBER_LENGTH = 128;
+const TIMESTAMP_NANOSECONDS_MAX_DIGITS = 20;
+const U64_MAX = 18_446_744_073_709_551_615n;
+const rpcMethods = new Set([
+  "status",
+  "gas_price",
+  "query",
+  "block",
+  "chunk",
+  "EXPERIMENTAL_tx_status",
+  "EXPERIMENTAL_receipt",
+]);
+const rpcError = (code: string): Error => new Error(code);
+const transportError = (error: unknown) =>
+  rpcError(
+    error instanceof Error &&
+      (error.name === "TimeoutError" || error.name === "AbortError")
+      ? "RPC_TIMEOUT"
+      : "RPC_UNAVAILABLE",
+  );
+
+/**
+ * JSON.parse keeps the last duplicate object member. Critical RPC fields must
+ * instead be unambiguous, so scan the bounded response before parsing it.
+ */
+function rejectDuplicateJsonKeys(source: string) {
+  let offset = 0;
+  const whitespace = () => {
+    while (/\s/u.test(source[offset] ?? "")) offset++;
+  };
+  const fail = (): never => {
+    throw rpcError("RPC_MALFORMED_RESPONSE");
+  };
+  const string = (): string => {
+    if (source[offset] !== '"') return fail();
+    const start = offset++;
+    while (offset < source.length) {
+      const char = source[offset++];
+      if (char === '"') {
+        try {
+          return JSON.parse(source.slice(start, offset)) as string;
+        } catch {
+          return fail();
+        }
+      }
+      if (char === "\\") {
+        const escaped = source[offset++];
+        if (escaped === "u") {
+          const hex = source.slice(offset, offset + 4);
+          if (!/^[0-9a-fA-F]{4}$/u.test(hex)) return fail();
+          offset += 4;
+        } else if (!escaped || !'"\\/bfnrt'.includes(escaped)) return fail();
+      } else if (!char || char.charCodeAt(0) < 0x20) return fail();
+    }
+    return fail();
+  };
+  const value = (depth: number): void => {
+    if (depth > RPC_JSON_MAX_DEPTH) fail();
+    whitespace();
+    const char = source[offset];
+    if (char === "{") {
+      offset++;
+      whitespace();
+      const keys = new Set<string>();
+      if (source[offset] === "}") {
+        offset++;
+        return;
+      }
+      while (true) {
+        whitespace();
+        const key = string();
+        if (keys.has(key)) throw rpcError("RPC_DUPLICATE_KEY");
+        keys.add(key);
+        whitespace();
+        if (source[offset++] !== ":") fail();
+        value(depth + 1);
+        whitespace();
+        const delimiter = source[offset++];
+        if (delimiter === "}") return;
+        if (delimiter !== ",") fail();
+      }
+    }
+    if (char === "[") {
+      offset++;
+      whitespace();
+      if (source[offset] === "]") {
+        offset++;
+        return;
+      }
+      while (true) {
+        value(depth + 1);
+        whitespace();
+        const delimiter = source[offset++];
+        if (delimiter === "]") return;
+        if (delimiter !== ",") fail();
+      }
+    }
+    if (char === '"') {
+      string();
+      return;
+    }
+    for (const literal of ["true", "false", "null"])
+      if (source.startsWith(literal, offset)) {
+        offset += literal.length;
+        return;
+      }
+    const start = offset;
+    const digit = (value: string | undefined) =>
+      value !== undefined && value >= "0" && value <= "9";
+    const consume = () => {
+      offset++;
+      if (offset - start > RPC_JSON_MAX_NUMBER_LENGTH) fail();
+    };
+    if (source[offset] === "-") consume();
+    if (source[offset] === "0") {
+      consume();
+      if (digit(source[offset])) fail();
+    } else {
+      const first = source[offset];
+      if (first === undefined || first < "1" || first > "9") fail();
+      do consume();
+      while (digit(source[offset]));
+    }
+    if (source[offset] === ".") {
+      consume();
+      if (!digit(source[offset])) fail();
+      do consume();
+      while (digit(source[offset]));
+    }
+    if (source[offset] === "e" || source[offset] === "E") {
+      consume();
+      if (source[offset] === "+" || source[offset] === "-") consume();
+      if (!digit(source[offset])) fail();
+      do consume();
+      while (digit(source[offset]));
+    }
+  };
+  value(0);
+  whitespace();
+  if (offset !== source.length) fail();
+}
+
+function parseRpcResponse(source: string, expectedId: string) {
+  rejectDuplicateJsonKeys(source);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    throw rpcError("RPC_MALFORMED_RESPONSE");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    throw rpcError("RPC_INVALID_ENVELOPE");
+  const body = parsed as Record<string, unknown>;
+  if (body.jsonrpc !== "2.0") throw rpcError("RPC_PROTOCOL_VERSION");
+  if (body.id !== expectedId) throw rpcError("RPC_ID_MISMATCH");
+  const result = Object.hasOwn(body, "result");
+  const error = Object.hasOwn(body, "error");
+  if (result === error) throw rpcError("RPC_AMBIGUOUS_ENVELOPE");
+  const allowed = new Set(["jsonrpc", "id", result ? "result" : "error"]);
+  if (Object.keys(body).some((key) => !allowed.has(key)))
+    throw rpcError("RPC_INVALID_ENVELOPE");
+  if (result) return { result: body.result } as const;
+  const rpcFailure = z
+    .object({ code: z.number().int(), message: z.string() })
+    .passthrough()
+    .safeParse(body.error);
+  if (!rpcFailure.success) throw rpcError("RPC_INVALID_ENVELOPE");
+  return { error: rpcFailure.data } as const;
+}
+
 export class UnknownBlock extends Error {}
 export class NearReader {
+  private requestId = 0n;
   constructor(
     private endpoint: string = endpoints[0],
     private transport: typeof fetch = fetch,
+    private now: () => number = Date.now,
   ) {
     if (!(endpoints as readonly string[]).includes(endpoint))
       throw new Error("RPC_ENDPOINT_NOT_ALLOWED");
   }
   async rpc(method: string, params: unknown): Promise<unknown> {
-    if (
-      ![
-        "status",
-        "gas_price",
-        "query",
-        "block",
-        "chunk",
-        "EXPERIMENTAL_tx_status",
-        "EXPERIMENTAL_receipt",
-      ].includes(method)
-    )
-      throw new Error("READ_ONLY_RPC");
-    const response = await this.transport(this.endpoint, {
-      method: "POST",
-      redirect: "error",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: "m6", method, params }),
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!response.ok || !response.body) throw new Error("RPC_UNAVAILABLE");
+    if (!rpcMethods.has(method)) throw new Error("READ_ONLY_RPC");
+    const id = `m6-${++this.requestId}`;
+    let response: Response;
+    try {
+      response = await this.transport(this.endpoint, {
+        method: "POST",
+        redirect: "error",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+        signal: AbortSignal.timeout(6000),
+      });
+    } catch (error) {
+      throw transportError(error);
+    }
+    if (!response.ok) throw rpcError("RPC_HTTP_STATUS");
+    if (!response.body) throw rpcError("RPC_EMPTY_RESPONSE");
     const reader = response.body.getReader();
     let bytes = 0;
     const parts: Uint8Array[] = [];
@@ -74,32 +266,40 @@ export class NearReader {
         const r = await reader.read();
         if (r.done) break;
         bytes += r.value.length;
-        if (bytes > 4 * 1024 * 1024) throw new Error("RPC_RESPONSE_LIMIT");
+        if (bytes > RPC_RESPONSE_LIMIT) throw rpcError("RPC_RESPONSE_LIMIT");
         parts.push(r.value);
       }
+    } catch (error) {
+      if (error instanceof Error && error.message === "RPC_RESPONSE_LIMIT")
+        throw error;
+      throw transportError(error);
     } finally {
-      await reader.cancel();
+      try {
+        await reader.cancel();
+      } catch {
+        // A failed cleanup cannot turn an accepted response into trusted data.
+      }
     }
-    const body = z
-      .object({ result: z.unknown().optional(), error: z.unknown().optional() })
-      .parse(JSON.parse(Buffer.concat(parts).toString("utf8")));
-    if (body.error || body.result === undefined) {
+    const body = parseRpcResponse(Buffer.concat(parts).toString("utf8"), id);
+    if ("error" in body) {
       const missing = z
         .object({ cause: z.object({ name: z.literal("UNKNOWN_BLOCK") }) })
         .safeParse(body.error);
       if (method === "block" && missing.success)
         throw new UnknownBlock("UNKNOWN_BLOCK");
-      throw new Error("RPC_UNAVAILABLE");
+      throw rpcError("RPC_PROVIDER_ERROR");
     }
     return body.result;
   }
   async block(id?: string | number) {
-    return blockSchema.parse(
+    const block = blockSchema.safeParse(
       await this.rpc(
         "block",
         id === undefined ? { finality: "final" } : { block_id: id },
       ),
     );
+    if (!block.success) throw rpcError("RPC_BLOCK_INVALID");
+    return block.data;
   }
   async query(
     type: string,
@@ -152,6 +352,8 @@ export class NearReader {
     if (status.chain_id !== manifest.network)
       throw new Error("NETWORK_MISMATCH");
     const b = await this.block(at);
+    if (at === undefined)
+      this.assertFreshFinalizedBlock(b.header.timestamp_nanosec);
     const [code, account, keys, domain] = await Promise.all([
       this.query("view_code", manifest.account, b.header.hash),
       this.query("view_account", manifest.account, b.header.hash),
@@ -218,15 +420,47 @@ export class NearReader {
       .parse(domain);
     if (d.vault !== manifest.account)
       throw new Error("DEPLOYMENT_DOMAIN_MISMATCH");
+    if (at === undefined)
+      this.assertFreshFinalizedBlock(b.header.timestamp_nanosec);
     return { block: b.header, account: a, accounting: d };
   }
+  private assertFreshFinalizedBlock(timestamp: string) {
+    let observed: bigint;
+    try {
+      observed = BigInt(timestamp);
+    } catch {
+      throw rpcError("RPC_TIMESTAMP_INVALID");
+    }
+    const now = this.now();
+    if (!Number.isSafeInteger(now) || now < 0)
+      throw rpcError("RPC_TIMESTAMP_INVALID");
+    const current = BigInt(now) * 1_000_000n;
+    if (
+      observed >
+      current + BigInt(FINALIZED_BLOCK_MAX_FUTURE_SKEW_MS) * 1_000_000n
+    )
+      throw rpcError("RPC_CLOCK_SKEW");
+    if (observed < current - BigInt(FINALIZED_BLOCK_MAX_AGE_MS) * 1_000_000n)
+      throw rpcError("STALE_RPC");
+  }
 }
+const timestampNanoseconds = z.string().superRefine((value, context) => {
+  if (
+    value.length > TIMESTAMP_NANOSECONDS_MAX_DIGITS ||
+    !/^(?:0|[1-9]\d*)$/u.test(value)
+  ) {
+    context.addIssue({ code: "custom", message: "invalid timestamp" });
+    return;
+  }
+  if (BigInt(value) > U64_MAX)
+    context.addIssue({ code: "custom", message: "timestamp exceeds u64" });
+});
 export const blockSchema = z.object({
   header: z.object({
     hash: chainHash,
     prev_hash: chainHash,
     height: z.number().int().nonnegative().safe(),
-    timestamp_nanosec: z.string().regex(/^\d+$/),
+    timestamp_nanosec: timestampNanoseconds,
   }),
   chunks: z.array(z.object({ chunk_hash: chainHash })),
 });

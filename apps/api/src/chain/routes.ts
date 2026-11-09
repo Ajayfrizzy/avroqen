@@ -33,17 +33,26 @@ import { hash } from "../identity/crypto.js";
 import type { Context } from "../mandates/routes.js";
 export interface ChainConfig {
   manifest: Manifest | null;
+  submissionEnabled: boolean;
   reader: NearReader;
 }
 export function chainRoutes(
   app: FastifyInstance,
   ctx: Context,
-  chain: ChainConfig = { manifest: null, reader: new NearReader() },
+  chain: ChainConfig = {
+    manifest: null,
+    submissionEnabled: false,
+    reader: new NearReader(),
+  },
 ) {
   const { session, transaction, deny, config } = ctx;
   const base = "/api/organizations/:orgId/mandates/:mandateId/chain";
   const enabled = () => {
-    if (!chain.manifest || config.network !== "testnet")
+    if (
+      !chain.submissionEnabled ||
+      !chain.manifest ||
+      config.network !== "testnet"
+    )
       return deny(503, "DEPLOYMENT_NOT_AUTHORIZED");
     return chain.manifest;
   };
@@ -214,8 +223,10 @@ export function chainRoutes(
     await session(request, ctx.pool);
     if (!chain.manifest)
       return {
-        status: "NOT_AUTHORIZED",
+        status: "NOT_CONFIGURED",
         network: "testnet",
+        deploymentConfigured: false,
+        deploymentVerified: false,
         submissionEnabled: false,
       };
     try {
@@ -224,7 +235,9 @@ export function chainRoutes(
         status: "VERIFIED",
         network: "testnet",
         account: chain.manifest.account,
-        submissionEnabled: true,
+        deploymentConfigured: true,
+        deploymentVerified: true,
+        submissionEnabled: chain.submissionEnabled,
         block: d.block,
         accounting: d.accounting,
       };
@@ -232,6 +245,8 @@ export function chainRoutes(
       return {
         status: "UNAVAILABLE",
         network: "testnet",
+        deploymentConfigured: true,
+        deploymentVerified: false,
         submissionEnabled: false,
       };
     }

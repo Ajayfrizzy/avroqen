@@ -111,9 +111,10 @@ class FixtureReader extends NearReader {
   }
 }
 const reader = new FixtureReader();
+const chainConfig = { manifest, submissionEnabled: true, reader };
 const app = buildApi(async () => {}, {
   pool,
-  chain: { manifest, reader },
+  chain: chainConfig,
   config: { origin, network: "testnet", secure: true },
   verifyKey: async () => {
     await hook?.();
@@ -408,6 +409,67 @@ it("RPC outage prevents preparation without fabricating deployment status", asyn
   expect((await prepare()).statusCode).toBe(503);
   const r = await app.inject({ url: "/api/chain/status", headers });
   expect(r.json().submissionEnabled).toBe(false);
+});
+it("verifies deployment read-only while disabled and rejects all preparation", async () => {
+  chainConfig.submissionEnabled = false;
+  try {
+    const status = await app.inject({ url: "/api/chain/status", headers });
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toMatchObject({
+      status: "VERIFIED",
+      deploymentConfigured: true,
+      deploymentVerified: true,
+      submissionEnabled: false,
+      account: manifest.account,
+    });
+    expect(JSON.stringify(status.json())).not.toContain(manifest.authorization);
+    expect(JSON.stringify(status.json())).not.toContain(
+      manifest.keyFingerprints[0],
+    );
+    expect((await prepare()).statusCode).toBe(503);
+    expect(
+      (await pool.query("SELECT count(*)::int AS n FROM chain_intents")).rows[0]
+        .n,
+    ).toBe(0);
+  } finally {
+    chainConfig.submissionEnabled = true;
+  }
+});
+it("cannot advance a prepared intent after financial submission is disabled", async () => {
+  const prepared = await prepare();
+  expect(prepared.statusCode).toBe(201);
+  const id = prepared.json().id as string;
+  chainConfig.submissionEnabled = false;
+  try {
+    const begin = await post(`/api/chain/intents/${id}/begin`, {});
+    expect(begin.statusCode).toBe(503);
+    expect(begin.json()).toMatchObject({
+      error: "DEPLOYMENT_NOT_AUTHORIZED",
+    });
+    expect(
+      (
+        await pool.query(
+          "SELECT state,reason,reported_hash,verified_hash FROM chain_intents WHERE id=$1",
+          [id],
+        )
+      ).rows[0],
+    ).toMatchObject({
+      state: "PREPARED",
+      reason: "UNSIGNED",
+      reported_hash: null,
+      verified_hash: null,
+    });
+    expect(
+      (
+        await pool.query(
+          "SELECT count(*)::int AS n FROM chain_events WHERE intent_id=$1 AND state='AWAITING_WALLET'",
+          [id],
+        )
+      ).rows[0].n,
+    ).toBe(0);
+  } finally {
+    chainConfig.submissionEnabled = true;
+  }
 });
 it("untrusted wallet hash is not an explorer link or success", async () => {
   const r = await prepare();

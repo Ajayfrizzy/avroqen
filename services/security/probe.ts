@@ -1,5 +1,9 @@
 import type pg from "pg";
-import { deploymentConfig, type Manifest, NearReader } from "../chain/rpc.js";
+import {
+  type Manifest,
+  NearReader,
+  readOnlyDeploymentConfig,
+} from "../chain/rpc.js";
 import { observeInternal } from "./monitor.js";
 import { reserveWarning, safeFailure } from "./rules.js";
 export async function probeDeployment(
@@ -53,5 +57,5 @@ export function monitoringManifest(env: NodeJS.ProcessEnv) {
     ].some(Boolean)
   )
     return null;
-  return deploymentConfig({ ...env, M6_TRANSACTIONS_ENABLED: "true" });
+  return readOnlyDeploymentConfig(env);
 }

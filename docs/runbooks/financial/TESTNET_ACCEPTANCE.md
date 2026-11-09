@@ -57,6 +57,17 @@ Current financial operations remain **DISABLED**; this documentation does not
 activate them. The worker receives no signing key and reconciles existing intents
 even while new submission is disabled.
 
+A complete approved manifest may first be configured with
+`M6_TRANSACTIONS_ENABLED=false` for authenticated read-only verification. That
+state must report a configured and verified deployment while keeping
+`submissionEnabled=false`; manifest presence is never transaction authorization.
+Current-head verification rejects finalized blocks older than 120 seconds or more
+than 30 seconds in the future and pins code, account, complete key-set and contract
+domain/accounting reads to that block. JSON-RPC responses require version 2.0,
+the exact issued request ID, one result-or-error member and no duplicate/extra
+envelope fields. Failure or mismatch stops the run. These checks reduce trusted-RPC
+risk but are not light-client consensus or an independent chain observation.
+
 Unexpected code/key/state/receipt changes halt new submission and require
 investigation. FullAccess replacement is not rollback and cannot reverse transfers.
 There is no administrative reserve release, forced settlement or unreviewed recovery

@@ -554,3 +554,28 @@ Legacy access-denial rows remain collected as OTHER to avoid duplicate unscoped 
 Limitations: DB superusers bypass triggers; immutable logs need a separately reviewed retention/archive plan; fixed windows permit threshold splitting; backlogs delay detection; trusted RPC may lie/prune; retained keys can replace code between observations. Notification is dashboard-only. External availability checks remain necessary. No new custody/financial authority decision is pending.
 
 Read-only deployment monitoring remains enabled for a complete approved manifest even when new transaction submissions are disabled. Partial/malformed monitor configuration is caught inside its independent loop, never at reconciliation startup. No configuration creates a signer.
+
+## Nonfinancial M8 deployment-readiness boundary
+
+A complete deployment manifest and the financial submission switch are separate
+configuration facts. The API may use the former for authenticated read-only
+deployment/status views while the latter remains false. All intent preparation and
+prompt-opening routes require the explicit submission switch as well as the complete
+matching manifest and Testnet application network. A manifest alone grants no
+transaction authority and creates no signer, wallet request or onchain pause.
+
+Trusted RPC responses are accepted only as bounded JSON-RPC 2.0 envelopes with the
+exact per-request ID and exactly one of result or error. Duplicate decoded JSON keys,
+unknown outer members, malformed/truncated/oversized bodies and provider error details
+fail closed under fixed, non-secret diagnostic codes. A latest finalized deployment
+block is current only within a 120-second maximum age and 30-second future-clock-skew
+allowance. All deployment identity observations are pinned to that hash. Historical
+receipt-block identity checks remain exact-hash checks after a fresh current-head
+verification; they are not rejected merely for being historical.
+
+Process health exposes only whether a complete manifest is configured, whether the
+read-only verification path is configured and whether financial submission is
+explicitly enabled. It does not perform or claim a fresh chain verification, expose
+manifest values or replace database readiness. UNKNOWN/hashless intent clearance
+remains a separate unresolved review gate: this hardening adds no retry, timeout
+release, manual-success or terminal-clearance policy.

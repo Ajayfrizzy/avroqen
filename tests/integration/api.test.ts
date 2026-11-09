@@ -21,6 +21,35 @@ it("separates liveness from database readiness, including recovery", async () =>
   }
 });
 
+it.each([
+  [false, false],
+  [true, false],
+  [true, true],
+] as const)(
+  "reports manifest=%s and submission=%s without configuration secrets",
+  async (deploymentManifestConfigured, financialSubmissionEnabled) => {
+    const api = buildApi(async () => {}, undefined, {
+      deploymentManifestConfigured,
+      financialSubmissionEnabled,
+    });
+    try {
+      const response = await api.inject("/health");
+      expect(response.statusCode).toBe(200);
+      expect(response.json().financial).toEqual({
+        configurationReady: deploymentManifestConfigured,
+        readOnlyVerificationConfigured: deploymentManifestConfigured,
+        submissionEnabled:
+          deploymentManifestConfigured && financialSubmissionEnabled,
+      });
+      expect(response.body).not.toMatch(
+        /authorization|fingerprint|wasm|account|credential|secret|token/i,
+      );
+    } finally {
+      await api.close();
+    }
+  },
+);
+
 it("exposes no payment or authorization endpoints", async () => {
   const api = buildApi(async () => {});
   try {
