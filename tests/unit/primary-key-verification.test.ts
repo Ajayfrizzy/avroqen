@@ -172,7 +172,10 @@ it("matches the exact fully rendered challenge specimen reviewed in the runbook"
   const { render } = await import(
     "../../scripts/primary-key-verification/core.js"
   );
-  const doc = await readFile("docs/M1_WALLET_ACCEPTANCE.md", "utf8");
+  const doc = await readFile(
+    "docs/runbooks/security/WALLET_ACCEPTANCE.md",
+    "utf8",
+  );
   const section = doc.split(
     "### Fully rendered review specimen — not an issued challenge",
   )[1];

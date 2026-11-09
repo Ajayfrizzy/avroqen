@@ -1,5 +1,7 @@
 # Vault governance: demonstration and proposed production design
 
+**Current evidence boundary:** [owner-verified November 7 deployment and initialization](DEPLOYMENT_KEY_GATE_REPORT.md#owner-verified-testnet-deployment--november-7-2026) supersede the historical no-code/one-key observation below. Both Primary and Testing FullAccess keys remain retained; Primary proof is BLOCKED and financial operations are DISABLED. Public payment acceptance remains pending. Replacement deployment, key changes and financial activation each require separate explicit owner authorization. The retained FullAccess risks below still apply.
+
 ## Current hackathon architecture
 
 The dedicated demonstration account is `avroqen-vault.testnet`. The owner reports creating it through their own wallet and accepts retaining an owner-controlled FullAccess deployment key for a controlled, low-value Testnet demonstration (D018). This is not an immutable deployment or a fully noncustodial service. A FullAccess key can replace code, transfer account funds outside MandateVault restrictions, delete the account, and change keys. Contract-level authorization cannot constrain those account-level powers.

@@ -2,17 +2,22 @@
 
 **Current status — November 8, 2026:** The merged six-page
 [SAMPLE judge demo](http://127.0.0.1:3000/demo) is implemented and documented in
-the [canonical judge walkthrough and evidence ledger](docs/M9_JUDGE_DEMO.md).
+the [canonical judge walkthrough and evidence ledger](docs/JUDGE_DEMO.md).
 Owner-verified Testnet evidence records MandateVault deployment and initialization;
 it is not payment evidence. M8 live financial acceptance remains pending, and
 public hosting and full M9 readiness are incomplete. Financial operations remain
 disabled.
 
+Nine local SAMPLE screenshots have been captured, inspected and hash-verified in
+the [evidence manifest](docs/evidence/m9/README.md). Start with the
+[active documentation index](docs/README.md) for judge, engineering, security and
+operator guidance. These captures do not establish physical-device acceptance.
+
 **Historical foundation status:** Avroqen is the owner-confirmed product name.
 **Prior working name:** MandateFlow. **Prepared:** 2026-10-29. M0 was implemented
 locally after the official start, 2026-11-01 00:00 UTC. Its local and hosted CI
 checks passed; human review and required branch-check enforcement were pending.
-See [the M0 verification report](docs/M0_REPORT.md).
+See [the M0 verification report](docs/archive/milestones/M0_REPORT.md).
 
 **Proposed product line (draft, not approved marketing copy):** Task-bound financial authority for autonomous agents.
 
@@ -35,7 +40,7 @@ pnpm test:smoke
 
 Open **http://127.0.0.1:3000** to see the product entry page and its
 “Public transactions require separate authorization” disclosure. See the
-[design system](docs/UI_DESIGN_SYSTEM.md) and [redesign evidence](docs/M8_UX_REDESIGN_REPORT.md). **http://127.0.0.1:3001/health** reports process
+[design system](docs/UI_DESIGN_SYSTEM.md) and [redesign evidence](docs/archive/milestones/M8_UX_REDESIGN_REPORT.md). **http://127.0.0.1:3001/health** reports process
 liveness; **/ready** checks actual PostgreSQL connectivity, not financial readiness.
 The database binds to **127.0.0.1:55432**. These are development services only.
 `pnpm setup:env` creates an ignored, mode-0600 `.env` with a random local database
@@ -90,7 +95,7 @@ readiness returns after recovery. No transfer or retry is triggered.
 The workspace contains Next.js web, Fastify API, shared Zod domain and agent
 request schemas, disabled worker/verifier entrypoints and a Rust NEAR scaffold.
 M1 adds wallet-message authentication and organization/agent record APIs; see
-[the M1 report](docs/M1_REPORT.md) for local evidence and review blockers. The contract exposes a disabled-payment
+[the M1 report](docs/archive/milestones/M1_REPORT.md) for local evidence and review blockers. The contract exposes a disabled-payment
 view and SDK metadata; it has no custody, transfer, attestation or upgrade methods.
 Worker indexing and verifier signing are not implemented. Database connectivity
 and foundation checks are not evidence of S01–S20 financial safety or settlement.
@@ -99,7 +104,7 @@ GitHub Actions defines required `foundation` and `rust` jobs with pinned actions
 read-only repository permissions, frozen installs, secret scanning, browser tests,
 container outage tests, Rust checks and Wasm interface inspection. Configure those
 as required branch checks after review; no repository settings were changed.
-See M0_REPORT.md and the review PR for hosted CI evidence. Staging branch protection
+See docs/archive/milestones/M0_REPORT.md and the review PR for hosted CI evidence. Staging branch protection
 was absent at review; required checks still need configuring. No failures may be waived.
 
 ## Reading order
@@ -110,7 +115,7 @@ was absent at review; required checks still need configuring. No failures may be
 5. `docs/ATTESTATION_PROTOCOL.md` — evidence, identities and trust
 6. `docs/API_DATA_MODEL.md` — backend interface and records
 7. `docs/TEST_PLAN.md` — adversarial acceptance gates
-8. `docs/MILESTONES.md` — dependency-based implementation plan
+8. [Current release and acceptance status](docs/RELEASE_STATUS.md) — unresolved M8/M9 gates; the [milestone plan](docs/archive/milestones/MILESTONES.md) is historical
 9. `docs/DECISIONS.md` — decisions and open questions
 10. `docs/OPERATIONS.md` — monitoring, incidents, deployment
 11. `docs/HACKATHON_SUBMISSION.md` — official rules and human approval gates
@@ -170,7 +175,7 @@ mandate. Revocation requires another owner wallet message and affects app consen
 only; no onchain mandate or payment is created. The vault identifier is unverified.
 
 Run `pnpm test:identity-db` for real SQL/crypto consent tests and `pnpm test:e2e` for
-browser fixtures. See docs/M2_REPORT.md for actual results and pending real-wallet
+browser fixtures. See docs/archive/milestones/M2_REPORT.md for actual results and pending real-wallet
 acceptance. M2 consent must never substitute for M3 wallet-signed onchain actions.
 
 
@@ -180,8 +185,8 @@ acceptance. M2 consent must never substitute for M3 wallet-signed onchain action
 
 M3 replaces the disabled Rust scaffold with a native NEAR MandateVault. **The application still cannot fund or execute payments.** Public Testnet
 deployment status is recorded in the linked deployment report.
-M2 wallet messages remain offchain consent. See [M3 evidence](docs/M3_REPORT.md)
-and [approved design](docs/M3_DESIGN.md). Earlier M0 scaffold descriptions above
+M2 wallet messages remain offchain consent. See [M3 evidence](docs/archive/milestones/M3_REPORT.md)
+and [current contract requirements](docs/CONTRACT_SPEC.md#detailed-v1-custody-and-execution-requirements), preserved from the [approved design history](docs/archive/milestones/M3_DESIGN.md). Earlier M0 scaffold descriptions above
 are historical foundation context, not the current contract interface.
 
 ```sh
@@ -209,8 +214,8 @@ No paid model or blockchain transaction is needed.
 
 The operational rules-based runtime treats prose as inert context. Evidence is
 not verified until M5; deployment and settlement remain unavailable. Follow the
-[M4 runbook](docs/M4_AGENT_RUNBOOK.md), [API contract](docs/M4_PROPOSAL_API.md) and
-[verification report](docs/M4_REPORT.md), including pending human-device testing.
+[M4 runbook](docs/runbooks/financial/AGENT_OPERATIONS.md), [API contract](docs/runbooks/financial/AGENT_API.md) and
+[verification report](docs/archive/milestones/M4_REPORT.md), including pending human-device testing.
 
 ### M5 human evidence review
 
@@ -218,20 +223,21 @@ From proposal history, open **Evidence review**; designated verifiers can use
 `/workspace/evidence` to load assignments. Agent evidence starts untrusted. A human
 independently obtains authenticated source records, reviews exact claims and signs
 a fresh offchain message. This is not automated provider confirmation or a payment.
-Local exercises never count toward live quorum. See [M5 report](docs/M5_REPORT.md),
-[manual runbook](docs/M5_VERIFIER_RUNBOOK.md) and
-[MAP-1 integration](docs/M5_MAP1_INTEGRATION.md). Public transaction transport,
+Local exercises never count toward live quorum. See [M5 report](docs/archive/milestones/M5_REPORT.md),
+[manual runbook](docs/runbooks/financial/VERIFIER_ACCEPTANCE.md) and
+[MAP-1 boundary](docs/ATTESTATION_PROTOCOL.md#application-review-and-onchain-attestation-boundary),
+with [historical integration preparation](docs/archive/milestones/M5_MAP1_INTEGRATION.md). Public transaction transport,
 deployment and actual testnet receipts remain separately gated; no send is enabled.
 
 ### M6 testnet settlement preparation
 
 The authenticated `/workspace/settlement` workspace prepares typed wallet operations and displays verified chain state. Submission is disabled until a separately approved deployment manifest is configured. The API and persistent worker never hold signing keys or broadcast transactions; uncertain results remain quarantined. Local HTTPS development continues to use `docker compose -f compose.yaml -f compose.https.yaml up --build -d --wait` and the existing private HTTPS proxy. Do not deploy or fund a vault merely to try this page.
 
-Read [M6 report](docs/M6_REPORT.md), [reconciliation design](docs/M6_RECONCILIATION.md), [controlled Testnet authorization package](docs/M6_TESTNET_RUNBOOK.md) and [managed-service preparation](docs/M6_RUMPTYCLOUD_PREPARATION.md). Live wallet and genuine evidence acceptance are integrated M8 work, separately authorized; local sandbox results are not live Testnet payments.
+Read [M6 report](docs/archive/milestones/M6_REPORT.md), [reconciliation design](docs/runbooks/financial/RECONCILIATION.md), [current coordinated Testnet acceptance](docs/runbooks/financial/TESTNET_ACCEPTANCE.md) and [managed-service preparation](docs/runbooks/deployment/RUMPTYCLOUD_PREPARATION.md). The [earlier authorization package](docs/archive/milestones/M6_TESTNET_RUNBOOK.md) is historical. Live wallet and genuine evidence acceptance are integrated M8 work, separately authorized; local sandbox results are not live Testnet payments.
 
 ## M7 security workspace
 
-Open `/workspace/security` at the configured origin to inspect organization-scoped alerts, incident history and safe emergency-action reviews. Monitoring is advisory and dashboard-only; incident resolution and application access removal never imply onchain pause/revocation. The worker still has no signing/broadcast capability. See docs/M7_DESIGN.md, docs/M7_REPORT.md and docs/M7_INCIDENT_RUNBOOK.md. Run `pnpm security:status` locally for redacted global operational indicators; no tenant-admin API exists.
+Open `/workspace/security` at the configured origin to inspect organization-scoped alerts, incident history and safe emergency-action reviews. Monitoring is advisory and dashboard-only; incident resolution and application access removal never imply onchain pause/revocation. The worker still has no signing/broadcast capability. See docs/archive/milestones/M7_DESIGN.md, docs/archive/milestones/M7_REPORT.md and docs/runbooks/security/INCIDENT_RESPONSE.md. Run `pnpm security:status` locally for redacted global operational indicators; no tenant-admin API exists.
 
 ## M8 integrated acceptance workspace
 
@@ -244,10 +250,10 @@ bytes without uploading them. A hash does not prove source truth.
 
 Earlier milestone descriptions above are historical. Current transaction
 orchestration exists but financial submission remains disabled pending separate
-manifest and financial-operation authorization. Use [M8 report](docs/M8_REPORT.md),
-[S01–S20 matrix](docs/M8_TEST_MATRIX.md),
-[deployment authorization package](docs/M8_DEPLOYMENT_AUTHORIZATION.md) and
-[coordinated live runbook](docs/M8_LIVE_TESTNET_RUNBOOK.md). Public Testnet payment,
+manifest and financial-operation authorization. Use [M8 report](docs/archive/milestones/M8_REPORT.md),
+[S01–S20 matrix](docs/evidence/FINANCIAL_ACCEPTANCE_MATRIX.md),
+[historical deployment proposal](docs/archive/deployment/M8_DEPLOYMENT_AUTHORIZATION.md) and
+[coordinated live runbook](docs/runbooks/financial/TESTNET_ACCEPTANCE.md). Public Testnet payment,
 genuine source and integrated physical-device results remain pending; no local
 fixture or sandbox result is a public financial demonstration.
 
@@ -256,8 +262,9 @@ fixture or sandbox result is a public financial demonstration.
 Open **http://127.0.0.1:3000/demo** after starting the web app to explore the six
 public, read-only SAMPLE pages without a wallet or login. The walkthrough uses
 fictional data and never calls application APIs, NEAR RPC or financial operations.
-Follow the [canonical judge walkthrough and evidence ledger](docs/M9_JUDGE_DEMO.md)
+Follow the [canonical judge walkthrough and evidence ledger](docs/JUDGE_DEMO.md)
 for do-X-see-Y instructions, provenance and limitations. The SAMPLE slice is
-implemented; hosting, screenshots, recording, submission and M8 live financial
-acceptance remain pending and separately authorized. Primary proof is blocked, the
+implemented, with [nine captured, inspected and hash-verified local SAMPLE screenshots](docs/evidence/m9/README.md).
+Hosting, recording, submission and M8 live financial acceptance remain pending and
+separately authorized. Primary proof is blocked, the
 temporary Testing FullAccess key is retained and financial operations are disabled.

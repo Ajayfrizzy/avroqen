@@ -52,7 +52,7 @@ All live preflight checks run again. The nonce must be unchanged, the saved bloc
 
 Only fixed error categories and public hash/status are printed. Never share `signed.json` or contents of CLI output/files. Numbered checkpoints contain public fields only. `00-attempt-started.json` permanently blocks rerunning this directory. `02-signing-started.json` without later evidence means signing may have happened; `04-submission-attempted.json` means submission may have happened even if the process crashed before returning. Preserve everything privately for investigation; never delete evidence to retry.
 
-A nonzero return, timeout, interrupt or missing response is **STOP/UNKNOWN**. A zero CLI return is also **not** an independently verified deployment: the script explicitly reports `CLI_RETURNED_ZERO_RECEIPT_REVIEW_REQUIRED`. Follow NEAR_CLI_DEPLOYMENT.md to investigate the public hash, verify final receipts, approved deployed code, Testnet initialization/accounting and solvency. Do not rerun, submit manually, or replace code. Key removal and M6 enablement remain outside this script and require their own authorization.
+A nonzero return, timeout, interrupt or missing response is **STOP/UNKNOWN**. A zero CLI return is also **not** an independently verified deployment: the script explicitly reports `CLI_RETURNED_ZERO_RECEIPT_REVIEW_REQUIRED`. Follow ../../docs/archive/deployment/NEAR_CLI_DEPLOYMENT.md to investigate the public hash, verify final receipts, approved deployed code, Testnet initialization/accounting and solvency. Do not rerun, submit manually, or replace code. Key removal and M6 enablement remain outside this script and require their own authorization.
 
 ## Verification and limitations
 

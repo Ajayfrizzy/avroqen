@@ -69,11 +69,12 @@ gate. Keep fixture regressions in CI and label them accurately.
 
 ## Hackathon integration gate
 
-PR #9 may integrate with green required foundation/rust on its exact head, resolved
-blocking review findings and no confirmed blocking defects. Pending M8 manual
-acceptance does not block that development merge under D017. Retain draft status
-until owner-directed review transition; final merge requires owner authorization.
-This is not full-product release acceptance or production security approval.
+Historical D017 sequencing allowed then-draft PR #9 to integrate with green
+required foundation/rust on its exact head, resolved blocking review findings and
+no confirmed blocking defects, after owner-directed review and merge approval.
+Pending M8 manual acceptance did not block that development integration. These
+are historical PR conditions, not instructions to reopen or prepare PR #9.
+Full-product release acceptance and production security approval remain separate.
 
 ## Full-product release gates
 All mandatory CI checks pass; sandbox tests demonstrate onchain behavior; network-specific testnet receipts recorded; threat-model assumptions documented; external secrets scan clean; independent manual review of critical code changes. Explicit owner approval before mainnet deployment or funding.
@@ -88,4 +89,4 @@ Require real PostgreSQL source replay, late commits, batch bounds, rollback/rest
 
 ## M8 integrated traceability
 
-[M8_TEST_MATRIX.md](M8_TEST_MATRIX.md) maps each S01–S20 case to concrete Rust/sandbox/API/SQL tests and protected-state assertions. [M8_REPORT.md](M8_REPORT.md) records actual local/hosted results, rather than treating this plan as evidence. [M8_LIVE_TESTNET_RUNBOOK.md](M8_LIVE_TESTNET_RUNBOOK.md) coordinates genuine human source, desktop/physical Android and public financial acceptance after separate authorization. iOS remains deferred. Automated fixture/viewport results never satisfy public-chain or independent-human requirements.
+[M8_TEST_MATRIX.md](evidence/FINANCIAL_ACCEPTANCE_MATRIX.md) maps each S01–S20 case to concrete Rust/sandbox/API/SQL tests and protected-state assertions. [M8_REPORT.md](archive/milestones/M8_REPORT.md) records actual local/hosted results, rather than treating this plan as evidence. [M8_LIVE_TESTNET_RUNBOOK.md](runbooks/financial/TESTNET_ACCEPTANCE.md) coordinates genuine human source, desktop/physical Android and public financial acceptance after separate authorization. iOS remains deferred. Automated fixture/viewport results never satisfy public-chain or independent-human requirements.

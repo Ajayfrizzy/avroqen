@@ -8,7 +8,7 @@ or high-severity blocking defect was identified in the reviewed M1 paths at
 This supersedes older draft-only/unpushed/independent-review-as-integration-gate
 language below. Independent review remains NOT PERFORMED and this package remains
 its handoff, not an audit. Residual risks and manual gaps remain open; iOS is
-deferred. See M1_REPORT.md for the current scoped acceptance and merge boundary.
+deferred. See ../../archive/milestones/M1_REPORT.md for the current scoped acceptance and merge boundary.
 
 
 This is an implementation-team review inventory, not independent audit findings.
