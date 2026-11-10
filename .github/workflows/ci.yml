@@ -32,7 +32,8 @@ jobs:
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
-      - run: pnpm setup:env
+      - id: setup-env
+        run: pnpm setup:env
       - run: docker compose config --quiet
       - run: docker compose up --build -d --wait
       - run: pnpm test:containers
@@ -47,7 +48,7 @@ jobs:
           docker compose start database
           docker compose up -d --wait
           pnpm test:smoke
-      - if: always()
+      - if: ${{ always() && steps.setup-env.outcome == 'success' }}
         run: docker compose down
   rust:
     runs-on: ubuntu-24.04
