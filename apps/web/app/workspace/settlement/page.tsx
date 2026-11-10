@@ -2,6 +2,7 @@
 import {
   atomicToNear,
   canonicalPolicy,
+  independentVerifierPolicy,
   type MandatePolicy,
   nearToAtomic,
 } from "@avroqen/domain";
@@ -43,6 +44,12 @@ type Detail = {
   >;
   reviews: { id: string; payload: Map1 }[];
 };
+const expiryRecoveryOperations: readonly OperationInput["kind"][] = [
+  "WITHDRAW",
+  "WITHDRAW_STORAGE",
+  "PAUSE",
+  "REVOKE",
+];
 async function api<T>(
   path: string,
   session?: Session,
@@ -99,6 +106,15 @@ export default function Settlement() {
   const [guardian, setGuardian] = useState("");
   const [prepared, setPrepared] = useState<Intent>();
   const policy = assignments.find((p) => p.mandateId === selected);
+  const verifierPolicyStatus = policy
+      ? independentVerifierPolicy(policy)
+      : null,
+    unsafePolicy = verifierPolicyStatus?.eligible === false,
+    expired = policy
+      ? BigInt(policy.expiresAtNs) <= BigInt(Date.now()) * 1000000n
+      : false,
+    operationAllowed =
+      !unsafePolicy && (!expired || expiryRecoveryOperations.includes(kind));
   const refreshVersion = useRef(0);
   const refresh = useCallback(async () => {
     if (!session) return;
@@ -205,7 +221,8 @@ export default function Settlement() {
     return () => clearInterval(timer);
   }, [detail, refresh]);
   async function prepare() {
-    if (!session || !policy || !enabled || !currentState) return;
+    if (!session || !policy || !enabled || !currentState || !operationAllowed)
+      return;
     setBusy(true);
     setMessage("");
     try {
@@ -274,7 +291,15 @@ export default function Settlement() {
     }
   }
   async function sign() {
-    if (!session || !prepared || !enabled || !currentState) return;
+    if (
+      !session ||
+      !prepared ||
+      !enabled ||
+      !currentState ||
+      unsafePolicy ||
+      (expired && !expiryRecoveryOperations.includes(prepared.operation.kind))
+    )
+      return;
     setBusy(true);
     setMessage("");
     let began = false;
@@ -418,10 +443,92 @@ export default function Settlement() {
               <Link href="/workspace/mandates">mandate workspace</Link>.
             </p>
           )}
+          {policy && !detail && (
+            <section>
+              <h2>{policy.taskReference}</h2>
+              {(expired || unsafePolicy) && (
+                <aside
+                  className="mandate-safety-alert"
+                  role="alert"
+                  aria-label="Mandate safety status"
+                >
+                  <strong>New authorization is restricted</strong>
+                  {expired && (
+                    <p>
+                      This mandate expired at{" "}
+                      {new Date(
+                        Number(BigInt(policy.expiresAtNs) / 1000000n),
+                      ).toISOString()}
+                      . New registration, funding, proposals, attestations,
+                      execution and resume are blocked. Historical records
+                      remain readable; recovery actions retain their separate
+                      authorization rules.
+                    </p>
+                  )}
+                  {unsafePolicy && (
+                    <p>
+                      Unsafe historical verifier policy: a designated verifier
+                      overlaps the {verifierPolicyStatus.conflict.toLowerCase()}{" "}
+                      role. The immutable policy remains readable, but no new
+                      wallet operation or financial authorization can be
+                      prepared from it.
+                    </p>
+                  )}
+                </aside>
+              )}
+              <p>
+                Owner: {policy.ownerAccount} · Agent: {policy.agentAccount} ·
+                Recipient: {policy.recipient}
+              </p>
+              <p>
+                No verified onchain mandate state available. This does not mean
+                a zero balance.
+              </p>
+              <details>
+                <summary>Exact policy and atomic units</summary>
+                <pre
+                  style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+                >
+                  {JSON.stringify(policy, null, 2)}
+                </pre>
+              </details>
+            </section>
+          )}
           {policy && detail && (
             <>
               <section>
                 <h2>{policy.taskReference}</h2>
+                {(expired || unsafePolicy) && (
+                  <aside
+                    className="mandate-safety-alert"
+                    role="alert"
+                    aria-label="Mandate safety status"
+                  >
+                    <strong>New authorization is restricted</strong>
+                    {expired && (
+                      <p>
+                        This mandate expired at{" "}
+                        {new Date(
+                          Number(BigInt(policy.expiresAtNs) / 1000000n),
+                        ).toISOString()}
+                        . New registration, funding, proposals, attestations,
+                        execution and resume are blocked. Historical records
+                        remain readable; recovery actions retain their separate
+                        authorization rules.
+                      </p>
+                    )}
+                    {unsafePolicy && (
+                      <p>
+                        Unsafe historical verifier policy: a designated verifier
+                        overlaps the{" "}
+                        {verifierPolicyStatus.conflict.toLowerCase()} role. The
+                        immutable policy, proposals and operation records remain
+                        readable, but no new wallet operation or financial
+                        authorization can be prepared from it.
+                      </p>
+                    )}
+                  </aside>
+                )}
                 <p>
                   Owner: {policy.ownerAccount} · Agent: {policy.agentAccount} ·
                   Recipient: {policy.recipient}
@@ -628,11 +735,22 @@ export default function Settlement() {
                 )}
                 <button
                   type="button"
-                  disabled={!enabled || busy || !!prepared}
+                  disabled={
+                    !enabled ||
+                    !currentState ||
+                    !operationAllowed ||
+                    busy ||
+                    !!prepared
+                  }
                   onClick={() => void prepare()}
                 >
                   {busy ? "Working…" : "Prepare exact operation"}
                 </button>
+                {expired && !expiryRecoveryOperations.includes(kind) && (
+                  <p role="status">
+                    This operation cannot be prepared after mandate expiry.
+                  </p>
+                )}
               </section>
               {prepared && (
                 <section
@@ -642,7 +760,10 @@ export default function Settlement() {
                   <h2>Review before signing</h2>
                   <TransactionSummary
                     entries={[
-                      { label: "Network", value: prepared.operation.network },
+                      {
+                        label: "Network",
+                        value: prepared.operation.network,
+                      },
                       {
                         label: "Wallet signer",
                         value: prepared.operation.signerId,
@@ -690,7 +811,15 @@ export default function Settlement() {
                   <button
                     type="button"
                     onClick={() => void sign()}
-                    disabled={busy || !enabled}
+                    disabled={
+                      busy ||
+                      !enabled ||
+                      unsafePolicy ||
+                      (expired &&
+                        !expiryRecoveryOperations.includes(
+                          prepared.operation.kind,
+                        ))
+                    }
                   >
                     Open wallet and authorize
                   </button>
@@ -747,7 +876,7 @@ export default function Settlement() {
                       i.operation.signerId === session.accountId && (
                         <button
                           type="button"
-                          disabled={busy}
+                          disabled={busy || unsafePolicy}
                           onClick={() => setPrepared(i)}
                         >
                           Review unsigned operation

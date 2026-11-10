@@ -1048,6 +1048,20 @@ pre,
   border: 1px solid #90c3ae;
   background: #f7fcf9;
 }
+.mandate-safety-alert {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #efcbc5;
+  border-radius: 10px;
+  background: var(--red-bg);
+  color: var(--red);
+  padding: 16px 20px;
+  margin: 16px 0;
+}
+.mandate-safety-alert p {
+  margin: 0;
+  max-width: 72ch;
+}
 .wallet-intro {
   display: grid;
   grid-template-columns: 1fr 1fr;

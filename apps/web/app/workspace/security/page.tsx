@@ -113,7 +113,12 @@ export default function Security() {
     [offset, setOffset] = useState(0),
     [reason, setReason] = useState("INVESTIGATION_COMPLETE");
   const [agents, setAgents] = useState<
-      { id: string; name: string; disabledAt: string | null }[]
+      {
+        id: string;
+        name: string;
+        accountId: string;
+        disabledAt: string | null;
+      }[]
     >([]),
     [credentials, setCredentials] = useState<
       {
@@ -121,14 +126,38 @@ export default function Security() {
         purpose: string;
         revokedAt: string | null;
         expiresAt: string;
+        agentId: string;
+        agentAccount: string;
       }[]
     >([]),
-    [confirm, setConfirm] = useState<{
-      kind: "disable" | "revoke";
-      id: string;
-    } | null>(null);
+    [confirm, setConfirm] = useState<
+      | {
+          kind: "disable";
+          id: string;
+          agentName: string;
+          agentAccount: string;
+        }
+      | {
+          kind: "revoke";
+          id: string;
+          capabilityName: string;
+          agentName: string | null;
+          agentAccount: string;
+        }
+      | null
+    >(null);
   const generation = useRef(0),
-    focus = useRef<HTMLHeadingElement>(null);
+    focus = useRef<HTMLHeadingElement>(null),
+    containmentTrigger = useRef<HTMLButtonElement | null>(null);
+  function closeContainment() {
+    if (busy) return;
+    const trigger = containmentTrigger.current;
+    containmentTrigger.current = null;
+    setConfirm(null);
+    requestAnimationFrame(() => {
+      if (trigger?.isConnected) trigger.focus();
+    });
+  }
   useEffect(() => {
     let live = true;
     void (async () => {
@@ -190,6 +219,7 @@ export default function Security() {
     setMessage("");
     setCredentials([]);
     setConfirm(null);
+    containmentTrigger.current = null;
     try {
       const d = await api<Detail>(
         `/organizations/${org}/security/${id}`,
@@ -256,6 +286,7 @@ export default function Security() {
           { credentialId: confirm.id },
         );
       setConfirm(null);
+      containmentTrigger.current = null;
       if (detail) await open(detail.alert.id);
       await refresh();
       setMessage(
@@ -293,6 +324,7 @@ export default function Security() {
               setCredentials([]);
               setAgents([]);
               setConfirm(null);
+              containmentTrigger.current = null;
               setOffset(0);
               setMessage("");
             }}
@@ -551,7 +583,15 @@ export default function Security() {
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => setConfirm({ kind: "disable", id: a.id })}
+                  onClick={(event) => {
+                    containmentTrigger.current = event.currentTarget;
+                    setConfirm({
+                      kind: "disable",
+                      id: a.id,
+                      agentName: a.name,
+                      agentAccount: a.accountId,
+                    });
+                  }}
                 >
                   Review disabling agent
                 </button>
@@ -565,7 +605,18 @@ export default function Security() {
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => setConfirm({ kind: "revoke", id: c.id })}
+                  onClick={(event) => {
+                    containmentTrigger.current = event.currentTarget;
+                    setConfirm({
+                      kind: "revoke",
+                      id: c.id,
+                      capabilityName: c.purpose,
+                      agentName:
+                        agents.find((agent) => agent.id === c.agentId)?.name ??
+                        null,
+                      agentAccount: c.agentAccount,
+                    });
+                  }}
                 >
                   Review capability revocation
                 </button>
@@ -575,14 +626,42 @@ export default function Security() {
           {confirm && (
             <Dialog
               open={!!confirm}
-              onClose={() => {
-                if (!busy) setConfirm(null);
-              }}
-              title="Confirm application containment"
+              onClose={closeContainment}
+              title={
+                confirm.kind === "disable"
+                  ? "Disable application agent"
+                  : "Revoke proposal capability"
+              }
             >
-              <fieldset aria-label="Confirm application containment">
+              <fieldset aria-label="Confirm exact application access removal">
+                {confirm.kind === "disable" ? (
+                  <>
+                    <p>
+                      <strong>Agent:</strong> {confirm.agentName}
+                    </p>
+                    <p>
+                      <strong>NEAR account:</strong> {confirm.agentAccount}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p>
+                      <strong>Capability:</strong> {confirm.capabilityName}
+                    </p>
+                    <p>
+                      <strong>Capability identifier:</strong> {confirm.id}
+                    </p>
+                    <p>
+                      <strong>Agent:</strong>{" "}
+                      {confirm.agentName
+                        ? `${confirm.agentName} (${confirm.agentAccount})`
+                        : confirm.agentAccount}
+                    </p>
+                  </>
+                )}
                 <p>
-                  Remove this application access? This cannot stop an
+                  This removes application access only. It does not revoke an
+                  onchain mandate or access key, and it cannot reverse an
                   already-dispatched transfer.
                 </p>
                 <button
@@ -590,12 +669,14 @@ export default function Security() {
                   disabled={busy}
                   onClick={() => void contain()}
                 >
-                  Confirm application access removal
+                  {confirm.kind === "disable"
+                    ? "Disable this application agent"
+                    : "Revoke this proposal capability"}
                 </button>
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => setConfirm(null)}
+                  onClick={closeContainment}
                 >
                   Cancel
                 </button>

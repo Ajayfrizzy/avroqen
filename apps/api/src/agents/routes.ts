@@ -242,7 +242,13 @@ export function agentRoutes(app: FastifyInstance, ctx: Context) {
         'SELECT id,purpose,expires_at AS "expiresAt",revoked_at AS "revokedAt" FROM agent_credentials WHERE mandate_id=$1 ORDER BY created_at DESC LIMIT 128',
         [data.row.id],
       );
-      return { credentials: result.rows };
+      return {
+        credentials: result.rows.map((credential) => ({
+          ...credential,
+          agentId: data.policy.agentId,
+          agentAccount: data.policy.agentAccount,
+        })),
+      };
     }),
   );
   app.get(`${base}/proposals`, async (req) =>

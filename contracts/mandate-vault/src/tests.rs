@@ -403,20 +403,63 @@ fn verifier_roles_must_be_independent_at_registration() {
     }
 }
 #[test]
-fn preexisting_unsafe_policy_cannot_attest_or_execute() {
+fn preexisting_unsafe_policy_cannot_propose_attest_or_execute() {
+    for (role, overlapping_account) in [
+        ("owner", "owner.testnet"),
+        ("agent", "agent.testnet"),
+        ("recipient", "recipient.testnet"),
+        ("vault", "vault.testnet"),
+    ] {
+        let mut v = setup();
+        let key = policy().mandate_id;
+        // Preserve an already-recorded proposal to exercise historical state
+        // after the stored policy is discovered to be unsafe.
+        proposal(&mut v, 1, 400);
+        let mut m = v.mandate(&key);
+        m.policy.verifier_policy.accounts = vec![account(overlapping_account)];
+        v.mandates.insert(&key, &m);
+
+        context("agent.testnet", 0);
+        rejects(|| {
+            v.submit_proposal(
+                key.clone(),
+                id(2),
+                account("recipient.testnet"),
+                U128(400),
+                "a".repeat(64),
+            )
+        });
+        assert!(v.get_proposal(key.clone(), id(2)).is_none(), "{role}");
+
+        let mut e = evidence(1, "SERVICE_CONFIRMED");
+        e.verifier_account = account(overlapping_account);
+        context(overlapping_account, 0);
+        rejects(|| v.attest_proposal(e));
+        assert!(
+            v.get_proposal(key.clone(), id(1))
+                .unwrap()
+                .attestations
+                .is_empty(),
+            "{role}"
+        );
+
+        context("owner.testnet", 1);
+        rejects(|| v.authorize_and_execute(key.clone(), id(1)));
+        let retained = v.get_proposal(key.clone(), id(1)).unwrap();
+        assert_eq!(retained.outcome, Outcome::Proposed, "{role}");
+        assert_eq!(v.mandate(&key).proposal_count, 1, "{role}");
+        assert_eq!(v.available, 1000, "{role}");
+        assert_eq!(v.reserved, 0, "{role}");
+    }
+}
+
+#[test]
+fn independent_policy_retains_proposal_path() {
     let mut v = setup();
-    let key = policy().mandate_id;
-    let mut m = v.mandate(&key);
-    m.policy.verifier_policy.accounts = vec![account("owner.testnet")];
-    v.mandates.insert(&key, &m);
     proposal(&mut v, 1, 400);
-    let mut e = evidence(1, "SERVICE_CONFIRMED");
-    e.verifier_account = account("owner.testnet");
-    context("owner.testnet", 0);
-    rejects(|| v.attest_proposal(e));
-    context("owner.testnet", 1);
-    rejects(|| v.authorize_and_execute(key, id(1)));
-    assert_eq!(v.reserved, 0);
+    let stored = v.get_proposal(policy().mandate_id, id(1)).unwrap();
+    assert_eq!(stored.outcome, Outcome::Proposed);
+    assert_eq!(v.mandate(&policy().mandate_id).proposal_count, 1);
 }
 #[test]
 fn generated_settlement_sequences_conserve_funds() {

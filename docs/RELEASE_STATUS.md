@@ -30,10 +30,11 @@ verification is implied by this restructuring.
   Primary control, authorize funding or pass any pending M8 live acceptance gate.
 - Source hardening rejects designated third-party verifiers that overlap the
   mandate owner, restricted agent, exact recipient or vault, and keeps historical
-  overlapping policies read-only. The deployed November 7 Wasm is unchanged and
-  does not inherit this source fix. Separate owner-authorized deployment/migration
-  review is required before claiming onchain enforcement; financial acceptance is
-  blocked in the meantime.
+  overlapping policies read-only. Current Rust source rejects new proposals as
+  well as attestations and execution for those historical policies. The deployed
+  November 7 Wasm is unchanged and does not inherit this source fix. Separate
+  owner-authorized deployment/migration review is required before claiming onchain
+  enforcement; financial acceptance is blocked in the meantime.
 
 ## Pending integrated financial and human acceptance
 
