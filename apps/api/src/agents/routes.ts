@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   canonicalPolicy,
+  independentVerifierPolicy,
   listInput,
   mandateParams,
   mandatePolicy,
@@ -65,6 +66,8 @@ export function agentRoutes(app: FastifyInstance, ctx: Context) {
     data: Awaited<ReturnType<typeof policyRow>>,
   ) {
     const { row, policy } = data;
+    if (!independentVerifierPolicy(policy).eligible)
+      deny(409, "UNSAFE_VERIFIER_POLICY");
     const consent = (
       await db.query(
         "SELECT status FROM mandate_consents WHERE mandate_id=$1 FOR UPDATE",

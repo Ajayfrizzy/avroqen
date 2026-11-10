@@ -30,6 +30,7 @@
     "db:migrate": "node --env-file=.env --import tsx scripts/migrate.ts",
     "test:identity-db": "node --env-file=.env node_modules/vitest/vitest.mjs run tests/database",
     "setup:https": "node --import tsx scripts/setup-local-https.ts",
+    "renew:https": "node --import tsx scripts/setup-local-https.ts --renew-leaf",
     "dev:https": "node --import tsx scripts/local-https-proxy.ts",
     "test:https": "node --import tsx scripts/check-local-https.ts",
     "test:sandbox": "cargo test -p mandate-vault --test sandbox --locked -- --nocapture",

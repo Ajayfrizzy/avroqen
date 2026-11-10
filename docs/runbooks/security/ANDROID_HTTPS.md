@@ -22,6 +22,25 @@ docker compose -f compose.yaml -f compose.https.yaml up --build -d --wait
 pnpm dev:https
 ```
 
+`setup:https` is a validation/create command and never silently renews an existing
+leaf. If it reports that the existing leaf is expired or near expiry, keep the
+proxy stopped and run the explicit leaf-only renewal command:
+
+```sh
+pnpm renew:https
+```
+
+Renewal requires the existing CA to be valid for at least eight more days, checks
+that its certificate and mode-0600 private key match, and preserves both CA files
+byte-for-byte. It generates a seven-day loopback leaf in a mode-0700 versioned
+directory, validates its chain, key pairing, `IP:127.0.0.1` SAN, `CA:FALSE`,
+critical key usage and TLS server-authentication usage, then atomically publishes
+a mode-0600 regular-file pointer. The proxy resolves only that validated complete
+pair; it must be stopped during renewal. A failure before pointer publication
+leaves the prior pair selected, and a caught failure afterward restores the prior
+selection. No OS or Android trust change is required because the CA is unchanged.
+Never run ad-hoc OpenSSL renewal commands or replace either CA file.
+
 Keep the last command running in its own terminal. If the assistant's proxy is
 already running, do not start another on port 8443. In a second terminal:
 
@@ -137,11 +156,15 @@ docker compose -f compose.yaml up -d --wait
 ```
 
 This changes the origin again and invalidates prior-origin app sessions. Do not
-add `--volumes` or delete the database. The TLS leaf lasts 7 days, CA 30 days;
-`setup:https` reuses a valid installation and refuses a near-expired/incomplete one.
-Before regenerating, stop the proxy, remove the old CA from the phone, and remove
-only `.local/https`; rerun setup and re-install the new public CA. Never upload or
-commit this directory. Existing `.local/https` is mode 0700 and keys mode 0600.
+add `--volumes` or delete the database. The TLS leaf lasts 7 days, CA 30 days.
+`setup:https` reuses a valid installation and refuses a near-expired/incomplete
+one; `renew:https` preserves a valid CA and explicitly rotates only the leaf. If
+the CA itself is invalid, mismatched, expired or has less than eight days remaining,
+renewal fails closed. Full CA regeneration is a separate trust-reset operation:
+stop the proxy, remove the old CA from the phone, obtain explicit approval to
+remove only `.local/https`, rerun setup and re-install the new public CA. Never
+upload or commit this directory. Existing `.local/https` and versioned leaf
+directories are mode 0700; private keys and the active pointer are mode 0600.
 
 ## Current evidence status
 

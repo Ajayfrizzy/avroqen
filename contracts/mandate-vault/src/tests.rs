@@ -382,6 +382,43 @@ fn policy_amount_and_domain_validation() {
     }
 }
 #[test]
+fn verifier_roles_must_be_independent_at_registration() {
+    for account_id in [
+        "owner.testnet",
+        "agent.testnet",
+        "recipient.testnet",
+        "vault.testnet",
+    ] {
+        let mut p = policy();
+        p.mandate_id = id(70 + account_id.len() as u32);
+        p.verifier_policy.accounts = vec![account(account_id)];
+        rejects(|| p.validate("testnet", &account("vault.testnet"), 100));
+
+        context("vault.testnet", 0);
+        let mut v = MandateVault::new("testnet".into());
+        context("owner.testnet", NearToken::from_near(1).as_yoctonear());
+        v.storage_deposit();
+        rejects(|| register(&mut v, &p));
+        assert!(v.get_mandate(p.mandate_id).is_none());
+    }
+}
+#[test]
+fn preexisting_unsafe_policy_cannot_attest_or_execute() {
+    let mut v = setup();
+    let key = policy().mandate_id;
+    let mut m = v.mandate(&key);
+    m.policy.verifier_policy.accounts = vec![account("owner.testnet")];
+    v.mandates.insert(&key, &m);
+    proposal(&mut v, 1, 400);
+    let mut e = evidence(1, "SERVICE_CONFIRMED");
+    e.verifier_account = account("owner.testnet");
+    context("owner.testnet", 0);
+    rejects(|| v.attest_proposal(e));
+    context("owner.testnet", 1);
+    rejects(|| v.authorize_and_execute(key, id(1)));
+    assert_eq!(v.reserved, 0);
+}
+#[test]
 fn generated_settlement_sequences_conserve_funds() {
     for mask in 0..16 {
         let mut v = setup();

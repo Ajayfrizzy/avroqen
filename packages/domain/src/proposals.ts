@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   atomicAmount,
   identityNetwork,
+  independentVerifierPolicy,
   type MandatePolicy,
   nearAccount,
 } from "./index";
@@ -59,6 +60,8 @@ export function preflight(
     return { accepted: false as const, code: "MANDATE_EXPIRED" };
   if (BigInt(p.amountAtomic) > BigInt(policy.maxPerPaymentAtomic))
     return { accepted: false as const, code: "PER_PAYMENT_LIMIT" };
+  if (!independentVerifierPolicy(policy).eligible)
+    return { accepted: false as const, code: "UNSAFE_VERIFIER_POLICY" };
   return {
     accepted: true as const,
     code: "PREFLIGHT_ACCEPTED",

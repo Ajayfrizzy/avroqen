@@ -3,12 +3,14 @@ import { type IncomingHttpHeaders, request } from "node:http";
 import { createServer } from "node:https";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveLeafPaths } from "./setup-local-https.js";
 
 export function createLocalProxy(directory: string, upstreamPort = 3000) {
+  const leaf = resolveLeafPaths(directory);
   const server = createServer(
     {
-      key: readFileSync(`${directory}/server.key`),
-      cert: readFileSync(`${directory}/server.crt`),
+      key: readFileSync(leaf.key),
+      cert: readFileSync(leaf.certificate),
       minVersion: "TLSv1.2",
       requestTimeout: 15000,
       headersTimeout: 10000,

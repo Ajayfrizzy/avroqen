@@ -33,6 +33,8 @@ export const denialReasons: Record<string, string> = {
   RECIPIENT_DENIED: "The recipient differs from the immutable mandate.",
   MANDATE_EXPIRED: "The mandate has expired.",
   PER_PAYMENT_LIMIT: "The amount exceeds the per-payment limit.",
+  UNSAFE_VERIFIER_POLICY:
+    "This historical mandate has a conflicting verifier role and cannot authorize new proposals.",
 };
 /** The task description is inert data, never instructions or independent evidence. */
 export function prepareProposal(

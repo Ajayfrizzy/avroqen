@@ -83,6 +83,32 @@ it("does not accept caller supplied transaction parameters", () => {
     }).success,
   ).toBe(false);
 });
+it.each([
+  ["owner", policy.ownerAccount],
+  ["agent", policy.agentAccount],
+  ["recipient", policy.recipient],
+  ["vault", policy.vaultAccount],
+] as const)(
+  "blocks new authorization operations for %s verifier overlap",
+  (_role, account) => {
+    const unsafe = {
+      ...policy,
+      verifierPolicy: { ...policy.verifierPolicy, accounts: [account] },
+    };
+    expect(() =>
+      buildOperation(
+        { kind: "REGISTER", storageLimit: "100" },
+        { ...context, policy: unsafe },
+      ),
+    ).toThrow("UNSAFE_VERIFIER_POLICY");
+    expect(() =>
+      buildOperation(
+        { kind: "WITHDRAW", amount: "1" },
+        { ...context, policy: unsafe },
+      ),
+    ).toThrow("UNSAFE_VERIFIER_POLICY");
+  },
+);
 it("binds agent proposal and owner execution to exact immutable M4 terms", () => {
   const proposal = {
     schemaVersion: 1 as const,

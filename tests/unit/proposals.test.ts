@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { expect, it } from "vitest";
 import { runtimeTool } from "../../packages/agent/src/runtime.js";
+import { mandatePolicy } from "../../packages/domain/src/index.js";
 import {
+  preflight,
   proposalInput,
   toVaultProposal,
 } from "../../packages/domain/src/proposals.js";
@@ -75,4 +77,42 @@ it("rejects caller-supplied authority, credentials and unbounded task text", () 
   expect(proposalInput.safeParse({ ...proposal, verified: true }).success).toBe(
     false,
   );
+});
+it("does not let an unsafe verifier policy mask a proposal binding failure", () => {
+  const policy = mandatePolicy.parse({
+    schemaVersion: 1,
+    policyVersion: 1,
+    mandateId: proposal.mandateId,
+    organizationId: proposal.organizationId,
+    ownerAccount: "alice.testnet",
+    network: "testnet",
+    agentId: proposal.agentId,
+    agentAccount: proposal.agentAccount,
+    vaultAccount: proposal.vaultAccount,
+    recipient: proposal.recipient,
+    asset: "NativeNear",
+    taskReference: "Fixture",
+    maxPerPaymentAtomic: "10",
+    totalBudgetAtomic: "10",
+    expiresAtNs: "2000000000000000000",
+    maxExecutions: 1,
+    verifierPolicy: {
+      version: 1,
+      accounts: ["alice.testnet"],
+      threshold: 1,
+      requiredClaims: ["SERVICE_CONFIRMED"],
+      requireOwnerApproval: true,
+    },
+  });
+  expect(preflight(proposal, policy, proposal.policyDigest, 0n).code).toBe(
+    "UNSAFE_VERIFIER_POLICY",
+  );
+  expect(
+    preflight(
+      { ...proposal, recipient: "attacker.testnet" },
+      policy,
+      proposal.policyDigest,
+      0n,
+    ).code,
+  ).toBe("RECIPIENT_DENIED");
 });

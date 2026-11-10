@@ -15,7 +15,19 @@ type Prepared = {
   preflight: { accepted: boolean; code: string };
   evidenceVerified: false;
 };
-type Entry = { proposal: ProposalInput; status: string };
+type Entry = {
+  proposal: ProposalInput;
+  status: string;
+  onchainStatus: string;
+  createdAt: string;
+};
+type HistoryRequestState = "idle" | "loading" | "loaded" | "error";
+function formatUtcTimestamp(value: string) {
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime())
+    ? "Invalid server timestamp"
+    : `${timestamp.toISOString().replace("T", " ").replace("Z", "")} UTC`;
+}
 const messages: Record<string, string> = {
   AGENT_CREDENTIAL_INVALID:
     "Demo access expired or was revoked. Enable a new demo credential.",
@@ -49,9 +61,12 @@ export default function Proposals() {
     [loaded, setLoaded] = useState(false);
   const [prepared, setPrepared] = useState<Prepared | null>(null),
     [history, setHistory] = useState<Entry[]>([]);
+  const [historyState, setHistoryState] = useState<HistoryRequestState>("idle"),
+    [historyError, setHistoryError] = useState("");
   const [orgNext, setOrgNext] = useState<number | null>(null),
     [mandateNext, setMandateNext] = useState<number | null>(null),
-    [historyNext, setHistoryNext] = useState<number | null>(null);
+    [historyNext, setHistoryNext] = useState<number | null>(null),
+    [historyRetryOffset, setHistoryRetryOffset] = useState(0);
   const [digest, setDigest] = useState("");
   const taskField = useRef<HTMLTextAreaElement>(null);
   const capability = useRef<{
@@ -60,7 +75,8 @@ export default function Proposals() {
       expiresAt: string;
     } | null>(null),
     review = useRef<HTMLElement>(null);
-  const operation = useRef(false);
+  const operation = useRef(false),
+    historyRequest = useRef(0);
   const current = mandates.find((m) => m.policy.mandateId === id);
   const clearCredential = useCallback(() => {
     capability.current = null;
@@ -163,6 +179,7 @@ export default function Proposals() {
     return () => {
       active = false;
       capability.current = null;
+      historyRequest.current += 1;
     };
   }, []);
   useEffect(() => {
@@ -221,14 +238,39 @@ export default function Proposals() {
     }
   }, [ready]);
   const base = `/organizations/${org}/mandates/${id}`;
+  function resetHistory() {
+    historyRequest.current += 1;
+    setHistory([]);
+    setHistoryNext(null);
+    setHistoryRetryOffset(0);
+    setHistoryError("");
+    setHistoryState("idle");
+  }
   async function loadHistory(offset = 0) {
-    const h = await request<{ proposals: Entry[]; nextOffset: number | null }>(
-      `${base}/proposals?offset=${offset}`,
-    );
-    setHistory((previous) =>
-      offset ? [...previous, ...h.proposals] : h.proposals,
-    );
-    setHistoryNext(h.nextOffset);
+    const requestId = ++historyRequest.current;
+    setHistoryRetryOffset(offset);
+    setHistoryError("");
+    setHistoryState("loading");
+    try {
+      const h = await request<{
+        proposals: Entry[];
+        nextOffset: number | null;
+      }>(`${base}/proposals?offset=${offset}`);
+      if (requestId !== historyRequest.current) return;
+      setHistory((previous) =>
+        offset ? [...previous, ...h.proposals] : h.proposals,
+      );
+      setHistoryNext(h.nextOffset);
+      setHistoryState("loaded");
+    } catch (requestError) {
+      if (requestId !== historyRequest.current) return;
+      setHistoryError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Request failed.",
+      );
+      setHistoryState("error");
+    }
   }
   useWorkspaceIdentity(
     session?.accountId,
@@ -263,8 +305,7 @@ export default function Proposals() {
               setId("");
               setMandates([]);
               setMandateNext(null);
-              setHistoryNext(null);
-              setHistory([]);
+              resetHistory();
               if (next)
                 void run(async () => {
                   const result = await request<{
@@ -311,8 +352,7 @@ export default function Proposals() {
                 onChange={(e) => {
                   clearCredential();
                   setId(e.target.value);
-                  setHistoryNext(null);
-                  setHistory([]);
+                  resetHistory();
                 }}
               >
                 <option value="">Choose a mandate</option>
@@ -552,7 +592,7 @@ export default function Proposals() {
               )}
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || historyState === "loading"}
                 onClick={() => void run(() => loadHistory())}
               >
                 Load proposal history
@@ -619,7 +659,30 @@ export default function Proposals() {
           {id && (
             <section aria-label="Proposal history">
               <h2>Proposal history</h2>
-              {historyNext !== null && (
+              {historyState === "idle" && (
+                <p>Load proposal history to view records for this mandate.</p>
+              )}
+              {historyState === "loading" && (
+                <p role="status">Loading proposal history…</p>
+              )}
+              {historyState === "error" && (
+                <div>
+                  <p role="alert">{historyError}</p>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(() => loadHistory(historyRetryOffset))
+                    }
+                  >
+                    Retry proposal history
+                  </button>
+                </div>
+              )}
+              {historyState === "loaded" && history.length === 0 && (
+                <p role="status">No proposals found for this mandate.</p>
+              )}
+              {historyState === "loaded" && historyNext !== null && (
                 <button
                   type="button"
                   disabled={busy}
@@ -628,34 +691,36 @@ export default function Proposals() {
                   Load more proposals
                 </button>
               )}
-              {history.length ? (
-                history.map((h) => (
-                  <article key={h.proposal.proposalId}>
-                    <Link
-                      href={`/workspace/evidence?proposal=${h.proposal.proposalId}`}
-                    >
-                      Evidence and verification
-                    </Link>
-                    <p>
-                      {h.proposal.recipient}:{" "}
-                      {atomicToNear(h.proposal.amountAtomic)} NEAR
-                    </p>
-                    <p>
-                      Recorded offchain; chain submission and payment are not
-                      verified here.
-                    </p>
-                    <Link
-                      href={`/workspace/settlement?mandate=${h.proposal.mandateId}`}
-                    >
-                      Check verified settlement
-                    </Link>
-                  </article>
-                ))
-              ) : (
-                <p>
-                  No proposals loaded. Use Load proposal history to refresh.
-                </p>
-              )}
+              {history.map((h) => (
+                <article key={h.proposal.proposalId}>
+                  <Link
+                    href={`/workspace/evidence?proposal=${h.proposal.proposalId}`}
+                  >
+                    Evidence and verification
+                  </Link>
+                  <p>
+                    {h.proposal.recipient}:{" "}
+                    {atomicToNear(h.proposal.amountAtomic)} NEAR
+                  </p>
+                  <p>Offchain proposal status: {h.status}</p>
+                  <p>Onchain submission status: {h.onchainStatus}</p>
+                  <p>
+                    Created:{" "}
+                    <time dateTime={h.createdAt}>
+                      {formatUtcTimestamp(h.createdAt)}
+                    </time>
+                  </p>
+                  <p>
+                    Recorded offchain; chain submission and payment are not
+                    verified here.
+                  </p>
+                  <Link
+                    href={`/workspace/settlement?mandate=${h.proposal.mandateId}`}
+                  >
+                    Check verified settlement
+                  </Link>
+                </article>
+              ))}
             </section>
           )}
         </>

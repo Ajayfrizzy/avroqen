@@ -380,6 +380,7 @@ impl MandateVault {
     pub fn attest_proposal(&mut self, evidence: Evidence) {
         let m = self.mandate(&evidence.mandate_id);
         m.active();
+        m.policy.assert_independent_verifiers();
         let who = env::predecessor_account_id();
         direct(&who);
         assert_eq!(who, evidence.verifier_account, "WRONG_SIGNER");
@@ -461,6 +462,7 @@ impl MandateVault {
         let mut m = self.mandate(&mandate_id);
         owner(&m.policy.owner_account);
         m.active();
+        m.policy.assert_independent_verifiers();
         Self::gas();
         let key = Self::key(&mandate_id, &proposal_id);
         let mut p = self.proposals.get(&key).expect("PROPOSAL_NOT_FOUND");

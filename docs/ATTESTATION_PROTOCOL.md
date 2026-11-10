@@ -3,7 +3,7 @@
 **Internal protocol design, NOT a NEAR standard.** The verifier's attestation communicates a scoped claim; it is not inherently proof that the physical-world claim is true.
 
 ## Trust roots
-Owner explicitly binds a verifier NEAR account (or quorum) to mandate + allowed claim types. Verifier independently fetches evidence from authenticated issuer/provider or a human authorized to approve. AI-supplied URLs, screenshots and text are suggestions only, never authoritative proof. No app administrator self-appointment of verifiers.
+Owner explicitly binds a verifier NEAR account (or quorum) to mandate + allowed claim types. Every designated third-party verifier must be distinct from the mandate owner, restricted agent, exact recipient and vault account. Verifier independently fetches evidence from authenticated issuer/provider or a human authorized to approve. AI-supplied URLs, screenshots and text are suggestions only, never authoritative proof. No app administrator self-appointment of verifiers.
 
 ## Canonical fields
 `protocol_version`, `network_id`, `vault_account`, `mandate_id`, `policy_version`, `proposal_id`, `asset_id`, `recipient`, `amount_atomic`, `claim_type`, `evidence_digest`, `verifier_account`, `nonce`, `issued_at_ns`, `expires_at_ns`.
@@ -24,7 +24,7 @@ One-time attestation nonces and proposal binding. Store minimal onchain digest; 
 Stolen verifier key can falsely attest within its delegation. Limit mandate spend, whitelist claims, enable revocation, optional independent quorum, require owner approval for high-risk conditions, flag anomaly. No truthful-evidence guarantee without source validation. Define disputes and emergency suspension.
 
 ## Required negative tests
-Wrong network/vault/mandate/proposal/version/asset/recipient/amount/claim; expired attestations; mismatched evidence digest; reused nonce; unregistered signer; attestation after verifier revocation; compromised verifier simulation. Each must fail without moving funds.
+Wrong network/vault/mandate/proposal/version/asset/recipient/amount/claim; owner/agent/recipient/vault designated as a third-party verifier; expired attestations; mismatched evidence digest; reused nonce; unregistered signer; attestation after verifier revocation; compromised verifier simulation. Each must fail without moving funds.
 
 ## Application review and onchain attestation boundary
 

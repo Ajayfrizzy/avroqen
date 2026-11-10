@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { Page } from "@playwright/test";
+import type { MandateView } from "../../packages/domain/src/index";
 export const policy = {
   ...JSON.parse(readFileSync("tests/fixtures/m3-policy.canonical.txt", "utf8")),
   taskReference: "Cloud infrastructure",
@@ -8,6 +9,7 @@ export const policy = {
 };
 export const orgId = policy.organizationId;
 export const proposalId = "44444444-4444-4444-8444-444444444444";
+const verifierPolicyStatus = { eligible: true, conflict: null } as const;
 export const mandate = {
   policy,
   policyDigest: "a".repeat(64),
@@ -15,7 +17,8 @@ export const mandate = {
   expired: false,
   agentDisabled: false,
   onchainStatus: "NOT_SUBMITTED",
-};
+  verifierPolicyStatus,
+} satisfies MandateView;
 const proposal = {
   schemaVersion: 1,
   proposalId,
@@ -130,6 +133,7 @@ export async function uiFixture(page: Page, mode: Mode = "populated") {
         json: {
           policy,
           proposal,
+          verifierPolicyStatus,
           evidence: {
             id: "77777777-7777-4777-8777-777777777777",
             metadata: {
@@ -143,6 +147,7 @@ export async function uiFixture(page: Page, mode: Mode = "populated") {
           reviews: [],
           allowedClaims: ["SERVICE_CONFIRMED", "OWNER_APPROVED"],
           readiness: {
+            independentVerifierPolicy: true,
             offchainReady: false,
             ownerApproved: false,
             ownerApprovalRequired: true,

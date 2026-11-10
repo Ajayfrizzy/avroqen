@@ -146,6 +146,45 @@ export const mandatePolicy = z
   })
   .refine(withinBudget);
 export type MandatePolicy = z.infer<typeof mandatePolicy>;
+export const verifierConflictRoles = [
+  "OWNER",
+  "AGENT",
+  "RECIPIENT",
+  "VAULT",
+] as const;
+export type VerifierConflictRole = (typeof verifierConflictRoles)[number];
+export type IndependentVerifierPolicy =
+  | { eligible: true; conflict: null }
+  | { eligible: false; conflict: VerifierConflictRole };
+export function independentVerifierPolicy(
+  policy: Pick<
+    MandatePolicy,
+    | "ownerAccount"
+    | "agentAccount"
+    | "recipient"
+    | "vaultAccount"
+    | "verifierPolicy"
+  >,
+): IndependentVerifierPolicy {
+  const roles: readonly [VerifierConflictRole, string][] = [
+    ["OWNER", policy.ownerAccount],
+    ["AGENT", policy.agentAccount],
+    ["RECIPIENT", policy.recipient],
+    ["VAULT", policy.vaultAccount],
+  ];
+  for (const [conflict, account] of roles)
+    if (policy.verifierPolicy.accounts.includes(account))
+      return { eligible: false, conflict };
+  return { eligible: true, conflict: null };
+}
+export function requireIndependentVerifierPolicy(
+  policy: Parameters<typeof independentVerifierPolicy>[0],
+) {
+  const status = independentVerifierPolicy(policy);
+  if (!status.eligible)
+    throw new Error(`VERIFIER_ROLE_CONFLICT_${status.conflict}`);
+  return policy;
+}
 export const mandateParams = organizationParams.extend({ mandateId: z.uuid() });
 export const consentAction = z.enum(["APPROVE_CONSENT", "REVOKE_CONSENT"]);
 export const consentChallengeInput = z.strictObject({ action: consentAction });
@@ -194,6 +233,7 @@ export type MandateView = {
   onchainStatus: "NOT_SUBMITTED";
   expired: boolean;
   agentDisabled: boolean;
+  verifierPolicyStatus: IndependentVerifierPolicy;
 };
 
 export * from "./vault";

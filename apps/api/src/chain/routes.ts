@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { canonicalPolicy, mandatePolicy } from "@avroqen/domain";
+import {
+  canonicalPolicy,
+  independentVerifierPolicy,
+  mandatePolicy,
+} from "@avroqen/domain";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type pg from "pg";
 import {
@@ -126,8 +130,10 @@ export function chainRoutes(
     input: OperationInput,
     guardian: string | null = null,
   ) {
-    const d = await load(db, request, org, id, true),
-      manifest = enabled();
+    const d = await load(db, request, org, id, true);
+    if (!independentVerifierPolicy(d.policy).eligible)
+      return deny(409, "UNSAFE_VERIFIER_POLICY");
+    const manifest = enabled();
     if (d.policy.vaultAccount !== manifest.account)
       return deny(409, "VAULT_MISMATCH");
     const ownerKind = !["PROPOSE", "ATTEST"].includes(input.kind);

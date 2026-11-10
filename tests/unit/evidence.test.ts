@@ -178,6 +178,92 @@ it("agent selected in policy still cannot self-verify through M5", () => {
     ),
   ).toBe(false);
 });
+it.each([
+  ["owner", policy.ownerAccount],
+  ["agent", policy.agentAccount],
+  ["recipient", policy.recipient],
+  ["vault", policy.vaultAccount],
+] as const)(
+  "%s cannot satisfy a third-party verifier claim",
+  (_role, account) => {
+    const unsafe = {
+      ...policy,
+      verifierPolicy: { ...policy.verifierPolicy, accounts: [account] },
+    };
+    expect(allowedReviewer(unsafe, account, "SERVICE_CONFIRMED")).toBe(false);
+    const payload = map1For(
+      proposal,
+      review,
+      account,
+      randomUUID(),
+      100n,
+      1000n,
+    );
+    expect(validateMap1(payload, proposal, unsafe, 200n)).toBe(false);
+    const summary = readiness(
+      unsafe,
+      [{ review, payload, status: "VERIFIED" }],
+      200n,
+    );
+    expect(summary).toMatchObject({
+      independentVerifierPolicy: false,
+      offchainReady: false,
+    });
+    expect(summary.claims.every((claim) => claim.count === 0)).toBe(true);
+  },
+);
+it("owner approval remains separate but cannot rescue an unsafe verifier policy", () => {
+  const unsafe = mandatePolicy.parse({
+    ...policy,
+    verifierPolicy: {
+      ...policy.verifierPolicy,
+      accounts: [policy.ownerAccount],
+      threshold: 1,
+      requiredClaims: ["SERVICE_CONFIRMED"],
+    },
+  });
+  const ownerReview = reviewInput.parse({
+    ...review,
+    claim: "OWNER_APPROVED",
+    observation: {
+      ...review.observation,
+      source: "OWNER_DECISION",
+      event: "OWNER_DECISION",
+      independentlyObtained: false,
+    },
+  });
+  const ownerPayload = map1For(
+    proposal,
+    ownerReview,
+    policy.ownerAccount,
+    randomUUID(),
+    100n,
+    1000n,
+  );
+  expect(allowedReviewer(unsafe, policy.ownerAccount, "OWNER_APPROVED")).toBe(
+    true,
+  );
+  expect(
+    readiness(
+      unsafe,
+      [{ review: ownerReview, payload: ownerPayload, status: "VERIFIED" }],
+      200n,
+    ).offchainReady,
+  ).toBe(false);
+});
+it("reject without an independence declaration remains a valid denial", () => {
+  expect(
+    assessment(
+      {
+        ...review,
+        decision: "REJECT",
+        observation: { ...review.observation, independentlyObtained: false },
+      },
+      proposal,
+      200n,
+    ),
+  ).toBe("REJECTED");
+});
 it("invoice cannot prove delivery and owner statement is not third-party evidence", () => {
   expect(
     assessment(

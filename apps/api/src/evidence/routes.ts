@@ -1,5 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { canonicalPolicy, listInput, mandatePolicy } from "@avroqen/domain";
+import {
+  canonicalPolicy,
+  independentVerifierPolicy,
+  listInput,
+  mandatePolicy,
+} from "@avroqen/domain";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type pg from "pg";
 import {
@@ -85,6 +90,7 @@ export function evidenceRoutes(app: FastifyInstance, ctx: Context) {
     if (!row) return deny(404, "EVIDENCE_NOT_FOUND");
     const policy = mandatePolicy.parse(JSON.parse(row.canonical_policy)),
       proposal = proposalInput.parse(JSON.parse(row.canonical_payload));
+    const proposalCheck = preflight(proposal, policy, row.policy_digest, 0n);
     if (
       policy.mandateId !== row.id ||
       policy.organizationId !== row.org_id ||
@@ -97,7 +103,8 @@ export function evidenceRoutes(app: FastifyInstance, ctx: Context) {
       proposal.policyDigest !== row.policy_digest ||
       proposal.mandateId !== policy.mandateId ||
       proposal.organizationId !== policy.organizationId ||
-      !preflight(proposal, policy, row.policy_digest, 0n).accepted
+      (!proposalCheck.accepted &&
+        proposalCheck.code !== "UNSAFE_VERIFIER_POLICY")
     )
       deny(503, "POLICY_INTEGRITY_FAILED");
     const assigned =
@@ -127,6 +134,8 @@ export function evidenceRoutes(app: FastifyInstance, ctx: Context) {
       agent.near_account === policy.agentAccount &&
       agent.network === config.network;
     if (write) {
+      if (!independentVerifierPolicy(policy).eligible)
+        deny(409, "UNSAFE_VERIFIER_POLICY");
       if (consent?.status !== "CONSENT_APPROVED_OFFCHAIN")
         deny(409, "CONSENT_UNAVAILABLE");
       if (!agentActive) deny(403, "AGENT_DISABLED");
@@ -182,7 +191,9 @@ export function evidenceRoutes(app: FastifyInstance, ctx: Context) {
   ) {
     const rs = data.evidence ? await records(db, data.evidence.id) : [];
     const summary = readiness(data.policy, rs, data.now);
+    const verifierPolicyStatus = independentVerifierPolicy(data.policy);
     const active =
+      verifierPolicyStatus.eligible &&
       data.agentActive &&
       data.consent === "CONSENT_APPROVED_OFFCHAIN" &&
       data.now < BigInt(data.policy.expiresAtNs);
@@ -190,6 +201,7 @@ export function evidenceRoutes(app: FastifyInstance, ctx: Context) {
     return {
       proposal: data.proposal,
       policy: data.policy,
+      verifierPolicyStatus,
       evidence: data.evidence
         ? {
             id: data.evidence.id,
@@ -227,18 +239,20 @@ export function evidenceRoutes(app: FastifyInstance, ctx: Context) {
       })),
       readiness: summary,
       deploymentStatus: "NOT_DEPLOYED",
-      allowedClaims: [
-        "INVOICE_ISSUED",
-        "SERVICE_CONFIRMED",
-        "OWNER_APPROVED",
-        "DELIVERY_DISPUTED",
-      ].filter((c) =>
-        allowedReviewer(
-          data.policy,
-          data.who.account_id,
-          c as ReviewRecord["payload"]["claim_type"],
-        ),
-      ),
+      allowedClaims: verifierPolicyStatus.eligible
+        ? [
+            "INVOICE_ISSUED",
+            "SERVICE_CONFIRMED",
+            "OWNER_APPROVED",
+            "DELIVERY_DISPUTED",
+          ].filter((c) =>
+            allowedReviewer(
+              data.policy,
+              data.who.account_id,
+              c as ReviewRecord["payload"]["claim_type"],
+            ),
+          )
+        : [],
     };
   }
   app.get("/api/verifier/proposals", async (req) =>

@@ -7,6 +7,8 @@ import { buildApi } from "../../apps/api/src/app.js";
 import { migrate } from "../../apps/api/src/db/migrate.js";
 import {
   type ConsentAction,
+  canonicalPolicy,
+  mandatePolicy,
   readApiConfig,
 } from "../../packages/domain/src/index.js";
 
@@ -116,6 +118,42 @@ async function draft(change = {}) {
   expect(r.statusCode).toBe(201);
   return r.json();
 }
+async function historicalUnsafe(verifier: string) {
+  const policy = mandatePolicy.parse({
+    ...terms(),
+    schemaVersion: 1,
+    policyVersion: 1,
+    mandateId: randomUUID(),
+    organizationId: org,
+    ownerAccount: "alice.testnet",
+    network: "testnet",
+    agentId,
+    agentAccount: "agent.testnet",
+    verifierPolicy: {
+      ...terms().verifierPolicy,
+      accounts: [verifier],
+    },
+  });
+  const bytes = canonicalPolicy(policy);
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  await pool.query(
+    "INSERT INTO mandate_policies(id,org_id,network,owner_account,agent_id,agent_account,canonical_policy,policy_digest,expires_at_ns) VALUES($1,$2,'testnet',$3,$4,$5,$6,$7,$8)",
+    [
+      policy.mandateId,
+      org,
+      policy.ownerAccount,
+      agentId,
+      policy.agentAccount,
+      bytes,
+      digest,
+      policy.expiresAtNs,
+    ],
+  );
+  await pool.query("INSERT INTO mandate_consents(mandate_id) VALUES($1)", [
+    policy.mandateId,
+  ]);
+  return policy;
+}
 async function proof(
   id: string,
   action: ConsentAction = "APPROVE_CONSENT",
@@ -184,6 +222,45 @@ it("creates immutable owner terms, approves and revokes offchain only, rejects r
     )
   ).rows.map((r) => r.event);
   expect(events).toEqual(["APPROVE_CONSENT", "REVOKE_CONSENT"]);
+});
+it.each([
+  ["OWNER", "alice.testnet"],
+  ["AGENT", "agent.testnet"],
+  ["RECIPIENT", "vendor.testnet"],
+  ["VAULT", "vault.testnet"],
+])(
+  "rejects direct API mandate creation with %s verifier overlap",
+  async (role, account) => {
+    const response = await post(path(), {
+      ...terms(),
+      verifierPolicy: { ...terms().verifierPolicy, accounts: [account] },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe(`VERIFIER_ROLE_CONFLICT_${role}`);
+    expect((await pool.query("SELECT * FROM mandate_policies")).rowCount).toBe(
+      0,
+    );
+  },
+);
+it("keeps an unsafe historical mandate readable while blocking new approval", async () => {
+  const policy = await historicalUnsafe("alice.testnet");
+  const detail = await app.inject({ url: path(policy.mandateId), headers });
+  expect(detail.statusCode).toBe(200);
+  expect(detail.json().policy).toEqual(policy);
+  expect(detail.json().verifierPolicyStatus).toEqual({
+    eligible: false,
+    conflict: "OWNER",
+  });
+  const approval = await post(`${path(policy.mandateId)}/challenge`, {
+    action: "APPROVE_CONSENT",
+  });
+  expect(approval.statusCode).toBe(409);
+  expect(approval.json().error).toBe("VERIFIER_ROLE_CONFLICT_OWNER");
+  const revocation = await post(`${path(policy.mandateId)}/challenge`, {
+    action: "REVOKE_CONSENT",
+  });
+  expect(revocation.statusCode).toBe(200);
+  expect((await pool.query("SELECT * FROM mandate_policies")).rowCount).toBe(1);
 });
 it.each([
   "accountId",

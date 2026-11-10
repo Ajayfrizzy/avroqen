@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   atomicToNear,
   canonicalPolicy,
+  independentVerifierPolicy,
   mandateDraftInput,
   mandatePolicy,
   nearToAtomic,
@@ -115,6 +116,32 @@ describe("M2 exact typed policies", () => {
         false,
       );
     }
+  });
+  it.each([
+    ["OWNER", policy.ownerAccount],
+    ["AGENT", policy.agentAccount],
+    ["RECIPIENT", policy.recipient],
+    ["VAULT", policy.vaultAccount],
+  ] as const)(
+    "identifies %s as an ineligible designated verifier",
+    (role, account) => {
+      const parsed = mandatePolicy.parse({
+        ...policy,
+        verifierPolicy: { ...policy.verifierPolicy, accounts: [account] },
+      });
+      expect(independentVerifierPolicy(parsed)).toEqual({
+        eligible: false,
+        conflict: role,
+      });
+      // Historical canonical policies remain parseable for read-only inspection.
+      expect(canonicalPolicy(parsed)).toContain(account);
+    },
+  );
+  it("accepts designated verifiers that are separate from protected roles", () => {
+    expect(independentVerifierPolicy(mandatePolicy.parse(policy))).toEqual({
+      eligible: true,
+      conflict: null,
+    });
   });
   it("converts exact decimal NEAR without floating point", () => {
     expect(nearToAtomic("1.000000000000000000000001")).toBe(

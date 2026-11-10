@@ -106,6 +106,7 @@ impl Policy {
             v.accounts.windows(2).all(|w| w[0] < w[1]),
             "UNSORTED_VERIFIERS"
         );
+        self.assert_independent_verifiers();
         assert!(
             !v.required_claims.is_empty()
                 && v.required_claims.len() <= 2
@@ -118,5 +119,13 @@ impl Policy {
     }
     pub fn expiry(&self) -> u64 {
         u64::try_from(decimal(&self.expires_at_ns)).expect("TIME_OVERFLOW")
+    }
+    pub fn assert_independent_verifiers(&self) {
+        for verifier in &self.verifier_policy.accounts {
+            assert_ne!(verifier, &self.owner_account, "VERIFIER_IS_OWNER");
+            assert_ne!(verifier, &self.agent_account, "VERIFIER_IS_AGENT");
+            assert_ne!(verifier, &self.recipient, "VERIFIER_IS_RECIPIENT");
+            assert_ne!(verifier, &self.vault_account, "VERIFIER_IS_VAULT");
+        }
     }
 }
