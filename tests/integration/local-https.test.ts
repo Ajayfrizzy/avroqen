@@ -6,7 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { createLocalProxy } from "../../scripts/local-https-proxy.js";
-import { setupCertificates } from "../../scripts/setup-local-https.js";
+import {
+  renewLeafCertificate,
+  setupCertificates,
+} from "../../scripts/setup-local-https.js";
 
 const root = mkdtempSync(join(tmpdir(), "avroqen-https-test-"));
 const directory = join(root, "certificates");
@@ -55,6 +58,7 @@ function get(trust: boolean, host = "127.0.0.1:8443", path = "/workspace") {
 }
 beforeAll(async () => {
   setupCertificates(directory);
+  await renewLeafCertificate(directory, { ensureProxyStopped: async () => {} });
   upstream = createServer((req, res) =>
     res.end(
       JSON.stringify({
