@@ -28,12 +28,40 @@ const policy = mandatePolicy.parse({
     requireOwnerApproval: true,
   },
 });
-async function setup(page: Page, mode = "normal") {
-  let proposals: unknown[] = [];
+const secondPolicy = mandatePolicy.parse({
+  ...policy,
+  mandateId: "00000000-0000-4000-8000-000000000005",
+  taskReference: "Second fixture mandate",
+});
+const recordedProposal = prepareProposal(
+  {
+    description: "Fixture proposal history record",
+    amountAtomic: "1",
+    evidenceDigest: "b".repeat(64),
+    proposalId: "00000000-0000-4000-8000-000000000006",
+    idempotencyKey: "00000000-0000-4000-8000-000000000007",
+  },
+  policy,
+  "a".repeat(64),
+  1_800_000_000_000_000_000n,
+).proposal;
+type SetupOptions = {
+  additionalMandate?: boolean;
+  historyFailures?: number;
+  historyGate?: Promise<void>;
+  initialProposals?: unknown[];
+  requests?: string[];
+};
+async function setup(page: Page, mode = "normal", options: SetupOptions = {}) {
+  let proposals: unknown[] = options.initialProposals ?? [];
   let signedIn = true;
+  let historyAttempts = 0;
   await page.route("**/api/**", async (route) => {
     const req = route.request(),
       path = new URL(req.url()).pathname;
+    options.requests?.push(
+      `${req.method()} ${path}${new URL(req.url()).search}`,
+    );
     if (path === "/api/auth/session")
       return route.fulfill(
         signedIn
@@ -72,6 +100,18 @@ async function setup(page: Page, mode = "normal") {
                     expired: false,
                     agentDisabled: mode === "disabled",
                   },
+                  ...(options.additionalMandate
+                    ? [
+                        {
+                          policy: secondPolicy,
+                          policyDigest: "c".repeat(64),
+                          consentStatus: "CONSENT_APPROVED_OFFCHAIN",
+                          onchainStatus: "NOT_SUBMITTED",
+                          expired: false,
+                          agentDisabled: false,
+                        },
+                      ]
+                    : []),
                 ],
           nextOffset: null,
         },
@@ -86,8 +126,17 @@ async function setup(page: Page, mode = "normal") {
       });
     if (path.endsWith("/credentials/revoke"))
       return route.fulfill({ json: { revoked: true } });
-    if (path.endsWith("/proposals"))
+    if (path.endsWith("/proposals")) {
+      historyAttempts += 1;
+      if (options.historyGate && path.includes(policy.mandateId))
+        await options.historyGate;
+      if (historyAttempts <= (options.historyFailures ?? 0))
+        return route.fulfill({
+          status: 503,
+          json: { error: "SERVICE_UNAVAILABLE" },
+        });
       return route.fulfill({ json: { proposals, nextOffset: null } });
+    }
     if (path === "/api/agent/tools") {
       expect(req.headers().authorization).toBe("Bearer synthetic-demo-only");
       expect(req.headers().cookie).toBeUndefined();
@@ -107,7 +156,14 @@ async function setup(page: Page, mode = "normal") {
             BigInt(Date.now()) * 1000000n,
           ),
         });
-      proposals = [{ proposal: body.proposal, status: "SUBMITTED_OFFCHAIN" }];
+      proposals = [
+        {
+          proposal: body.proposal,
+          status: "SUBMITTED_OFFCHAIN",
+          onchainStatus: "NOT_SUBMITTED",
+          createdAt: "2026-11-09T12:34:56.000Z",
+        },
+      ];
       return route.fulfill({
         json: { status: "SUBMITTED_OFFCHAIN", onchainStatus: "NOT_SUBMITTED" },
       });
@@ -153,6 +209,12 @@ for (const width of [1280, 390])
     ).toContainText(
       "Recorded offchain; chain submission and payment are not verified here.",
     );
+    const history = page.getByRole("region", { name: "Proposal history" });
+    await expect(history).toContainText("vendor.testnet");
+    await expect(history).toContainText("0.000000000000000000000001 NEAR");
+    await expect(history).toContainText("SUBMITTED_OFFCHAIN");
+    await expect(history).toContainText("NOT_SUBMITTED");
+    await expect(history).toContainText("2026-11-09 12:34:56.000 UTC");
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -168,6 +230,93 @@ for (const width of [1280, 390])
       page.getByRole("button", { name: "Prepare proposal", exact: true }),
     ).toHaveCount(0);
   });
+test("proposal history distinguishes idle from a successful empty result", async ({
+  page,
+}) => {
+  const requests: string[] = [];
+  await setup(page, "normal", { requests });
+  const history = page.getByRole("region", { name: "Proposal history" });
+  await expect(history).toContainText(
+    "Load proposal history to view records for this mandate.",
+  );
+  await expect(history).not.toContainText(
+    "No proposals found for this mandate.",
+  );
+  await page.getByRole("button", { name: "Load proposal history" }).click();
+  await expect(history.getByRole("status")).toHaveText(
+    "No proposals found for this mandate.",
+  );
+  const historyRequests = requests.filter((request) =>
+    request.includes("/proposals?offset="),
+  );
+  expect(historyRequests).toEqual([
+    `GET /api/organizations/${org}/mandates/${policy.mandateId}/proposals?offset=0`,
+  ]);
+  expect(requests.every((request) => request.startsWith("GET "))).toBe(true);
+  expect(
+    requests.some((request) => /agent\/tools|chain|intent|rpc/i.test(request)),
+  ).toBe(false);
+});
+test("proposal history reports failure locally and retries successfully", async ({
+  page,
+}) => {
+  await setup(page, "normal", { historyFailures: 1 });
+  const history = page.getByRole("region", { name: "Proposal history" });
+  await page.getByRole("button", { name: "Load proposal history" }).click();
+  await expect(history.getByRole("alert")).toContainText(
+    "service could not complete this request",
+  );
+  await expect(history).not.toContainText(
+    "No proposals found for this mandate.",
+  );
+  await history.getByRole("button", { name: "Retry proposal history" }).click();
+  await expect(history.getByRole("status")).toHaveText(
+    "No proposals found for this mandate.",
+  );
+  await expect(history.getByRole("alert")).toHaveCount(0);
+});
+test("a stale history response cannot populate a newly selected mandate", async ({
+  page,
+}) => {
+  let releaseHistory = () => {};
+  const historyGate = new Promise<void>((resolve) => {
+    releaseHistory = resolve;
+  });
+  await setup(page, "normal", {
+    additionalMandate: true,
+    historyGate,
+    initialProposals: [
+      {
+        proposal: recordedProposal,
+        status: "SUBMITTED_OFFCHAIN",
+        onchainStatus: "NOT_SUBMITTED",
+        createdAt: "2026-11-09T12:34:56.000Z",
+      },
+    ],
+  });
+  const history = page.getByRole("region", { name: "Proposal history" });
+  await page.getByRole("button", { name: "Load proposal history" }).click();
+  await expect(history.getByRole("status")).toHaveText(
+    "Loading proposal history…",
+  );
+  await page
+    .getByLabel("Mandate", { exact: true })
+    .evaluate((element, mandateId) => {
+      const select = element as HTMLSelectElement;
+      select.disabled = false;
+      select.value = mandateId as string;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }, secondPolicy.mandateId);
+  await expect(history).toContainText(
+    "Load proposal history to view records for this mandate.",
+  );
+  releaseHistory();
+  await expect(page.getByText("Working…")).toHaveCount(0);
+  await expect(history).toContainText(
+    "Load proposal history to view records for this mandate.",
+  );
+  await expect(history).not.toContainText("vendor.testnet");
+});
 test("above-limit preparation cannot be submitted", async ({ page }) => {
   await setup(page);
   await prepare(page, "0.000000000000000000000011");
