@@ -44,6 +44,7 @@ function record(): MandateView {
     onchainStatus: "NOT_SUBMITTED",
     expired: false,
     agentDisabled: false,
+    verifierPolicyStatus: { eligible: true, conflict: null },
   };
 }
 async function setup(
@@ -277,6 +278,29 @@ test("revoked and expired records never offer new approval", async ({
   ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Request revocation" }),
+  ).toHaveCount(0);
+});
+test("unsafe historical verifier overlap stays readable but cannot be approved", async ({
+  page,
+}) => {
+  await setup(page, {
+    value: {
+      ...record(),
+      policy: {
+        ...policy,
+        verifierPolicy: {
+          ...policy.verifierPolicy,
+          accounts: [policy.ownerAccount],
+        },
+      },
+      verifierPolicyStatus: { eligible: false, conflict: "OWNER" },
+    },
+  });
+  await page.getByRole("button", { name: "Review exact terms" }).click();
+  const review = page.getByRole("region", { name: "Policy review" });
+  await expect(review).toContainText("Unsafe historical verifier policy");
+  await expect(
+    review.getByRole("button", { name: "Sign offchain approval" }),
   ).toHaveCount(0);
 });
 test("server denies organization access without exposing privileged controls", async ({

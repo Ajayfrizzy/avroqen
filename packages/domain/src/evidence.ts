@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   atomicAmount,
   identityNetwork,
+  independentVerifierPolicy,
   type MandatePolicy,
   nanoseconds,
   nearAccount,
@@ -105,8 +106,8 @@ export function allowedReviewer(
     );
   if (claim === "DELIVERY_DISPUTED" && account === policy.ownerAccount)
     return true;
+  if (!independentVerifierPolicy(policy).eligible) return false;
   return (
-    account !== policy.agentAccount &&
     policy.verifierPolicy.accounts.includes(account) &&
     (claim === "DELIVERY_DISPUTED" ||
       policy.verifierPolicy.requiredClaims.includes(
@@ -219,6 +220,8 @@ export function validateMap1(
 }
 export function attestationIntent(e: Map1, policy: MandatePolicy) {
   const evidence = map1.parse(e);
+  if (!independentVerifierPolicy(policy).eligible)
+    throw new Error("UNSAFE_VERIFIER_POLICY");
   return {
     signerId: evidence.verifier_account,
     receiverId: evidence.vault_account,
@@ -245,9 +248,11 @@ export function readiness(
   records: ReviewRecord[],
   now: bigint,
 ) {
+  const independent = independentVerifierPolicy(policy).eligible;
   const disputed = records.some((r) => r.status === "DISPUTED");
   const valid = records.filter(
     (r) =>
+      independent &&
       r.status === "VERIFIED" &&
       BigInt(r.payload.expires_at_ns) > now &&
       allowedReviewer(policy, r.payload.verifier_account, r.payload.claim_type),
@@ -267,11 +272,13 @@ export function readiness(
       r.payload.verifier_account === policy.ownerAccount,
   );
   return {
+    independentVerifierPolicy: independent,
     disputed,
     claims,
     ownerApprovalRequired: policy.verifierPolicy.requireOwnerApproval,
     ownerApproved,
     offchainReady:
+      independent &&
       !disputed &&
       claims.every((c) => c.count >= c.required) &&
       (!policy.verifierPolicy.requireOwnerApproval || ownerApproved),

@@ -5,6 +5,7 @@ import {
   consentChallengeInput,
   consentMessage,
   consentProofInput,
+  independentVerifierPolicy,
   listInput,
   type MandateView,
   mandateDraftInput,
@@ -96,6 +97,7 @@ export function mandateRoutes(app: FastifyInstance, ctx: Context) {
     },
   ): Promise<MandateView> {
     const policy = mandatePolicy.parse(JSON.parse(row.canonical_policy));
+    const verifierPolicyStatus = independentVerifierPolicy(policy);
     return {
       policy,
       policyDigest: row.policy_digest,
@@ -104,6 +106,7 @@ export function mandateRoutes(app: FastifyInstance, ctx: Context) {
       expired: await expired(db, policy.expiresAtNs),
       agentDisabled: !!(await agent(db, policy.agentId, policy.organizationId))
         ?.disabled_at,
+      verifierPolicyStatus,
     };
   }
   async function event(
@@ -128,6 +131,9 @@ export function mandateRoutes(app: FastifyInstance, ctx: Context) {
     if (data.row.status === "CONSENT_REVOKED_OFFCHAIN")
       deny(409, "CONSENT_REVOKED");
     if (action === "APPROVE_CONSENT") {
+      const verifierPolicyStatus = independentVerifierPolicy(data.policy);
+      if (!verifierPolicyStatus.eligible)
+        deny(409, `VERIFIER_ROLE_CONFLICT_${verifierPolicyStatus.conflict}`);
       if (data.row.status !== "DRAFT") deny(409, "CONSENT_ALREADY_APPROVED");
       if (await expired(db, data.policy.expiresAtNs))
         deny(409, "MANDATE_EXPIRED");
@@ -166,6 +172,9 @@ export function mandateRoutes(app: FastifyInstance, ctx: Context) {
         agentAccount: selected.near_account,
         ...input,
       });
+      const verifierPolicyStatus = independentVerifierPolicy(policy);
+      if (!verifierPolicyStatus.eligible)
+        deny(400, `VERIFIER_ROLE_CONFLICT_${verifierPolicyStatus.conflict}`);
       const bytes = canonicalPolicy(policy),
         digest = hash(bytes);
       await db.query(
@@ -199,6 +208,7 @@ export function mandateRoutes(app: FastifyInstance, ctx: Context) {
         onchainStatus: "NOT_SUBMITTED",
         expired: false,
         agentDisabled: false,
+        verifierPolicyStatus,
       };
     });
     return reply.code(201).send(result);

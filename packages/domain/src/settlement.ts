@@ -3,6 +3,7 @@ import { type Map1, validateMap1 } from "./evidence";
 import {
   atomicAmount,
   canonicalPolicy,
+  independentVerifierPolicy,
   type MandatePolicy,
   mandatePolicy,
   nearAccount,
@@ -68,6 +69,8 @@ export function buildOperation(
     !/^[0-9a-f]{64}$/.test(c.policyDigest)
   )
     throw new Error("INVALID_BINDING");
+  if (!independentVerifierPolicy(p).eligible)
+    throw new Error("UNSAFE_VERIFIER_POLICY");
   const owner = c.actor === p.ownerAccount;
   const emergency = [
     "WITHDRAW",

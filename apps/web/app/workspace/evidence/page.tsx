@@ -30,6 +30,12 @@ type Session = {
 type View = {
   proposal: ProposalInput;
   policy: MandatePolicy;
+  verifierPolicyStatus:
+    | { eligible: true; conflict: null }
+    | {
+        eligible: false;
+        conflict: "OWNER" | "AGENT" | "RECIPIENT" | "VAULT";
+      };
   evidence: {
     id: string;
     metadata: {
@@ -44,6 +50,7 @@ type View = {
   reviews: (ReviewRecord & { attestationStatus: string })[];
   allowedClaims: Map1["claim_type"][];
   readiness: {
+    independentVerifierPolicy: boolean;
     disputed: boolean;
     offchainReady: boolean;
     ownerApproved: boolean;
@@ -104,6 +111,8 @@ const errors: Record<string, string> = {
   CONSENT_UNAVAILABLE: "Offchain mandate consent is unavailable.",
   AGENT_DISABLED: "The proposing agent is disabled.",
   MANDATE_EXPIRED: "The mandate has expired.",
+  UNSAFE_VERIFIER_POLICY:
+    "This historical mandate has a conflicting verifier role and is read-only.",
 };
 export default function Evidence() {
   const [session, setSession] = useState<Session | null>(null),
@@ -310,6 +319,16 @@ export default function Evidence() {
             <>
               <section aria-label="Evidence requirements">
                 <h2>Exact proposal and evidence requirements</h2>
+                {!view.verifierPolicyStatus.eligible && (
+                  <p role="alert" className="error">
+                    Unsafe historical verifier policy: a designated verifier
+                    conflicts with the{" "}
+                    {view.verifierPolicyStatus.conflict.toLowerCase()} role.
+                    Existing evidence remains visible for audit, but no new
+                    review, quorum, attestation or financial authorization is
+                    permitted.
+                  </p>
+                )}
                 <dl className="policy-grid">
                   <div>
                     <dt>Authorized task / service</dt>
@@ -379,66 +398,67 @@ export default function Evidence() {
                       No evidence metadata submitted yet. Only the owner or
                       scoped proposing agent may submit it.
                     </p>
-                    {session.accountId === view.policy.ownerAccount && (
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          const f = new FormData(e.currentTarget);
-                          void run(async () => {
-                            await api(`/evidence/${id}/intake`, {
-                              sourceType: "HUMAN_REVIEW",
-                              issuer: f.get("issuer"),
-                              reference: f.get("reference"),
-                              evidenceDigest: view.proposal.evidenceDigest,
-                              mediaType: f.get("mediaType"),
-                              byteLength: Number(f.get("byteLength")),
+                    {session.accountId === view.policy.ownerAccount &&
+                      view.verifierPolicyStatus.eligible && (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const f = new FormData(e.currentTarget);
+                            void run(async () => {
+                              await api(`/evidence/${id}/intake`, {
+                                sourceType: "HUMAN_REVIEW",
+                                issuer: f.get("issuer"),
+                                reference: f.get("reference"),
+                                evidenceDigest: view.proposal.evidenceDigest,
+                                mediaType: f.get("mediaType"),
+                                byteLength: Number(f.get("byteLength")),
+                              });
+                              await load();
                             });
-                            await load();
-                          });
-                        }}
-                      >
-                        <label htmlFor="issuer">
-                          Issuer identifier (no URL or private data)
-                        </label>
-                        <input
-                          id="issuer"
-                          name="issuer"
-                          maxLength={120}
-                          required
-                        />
-                        <label htmlFor="reference">
-                          Document reference (non-sensitive)
-                        </label>
-                        <input
-                          id="reference"
-                          name="reference"
-                          maxLength={120}
-                          required
-                        />
-                        <label htmlFor="mediaType">Document type</label>
-                        <select id="mediaType" name="mediaType">
-                          <option>application/pdf</option>
-                          <option>text/plain</option>
-                          <option>application/json</option>
-                          <option>image/png</option>
-                          <option>image/jpeg</option>
-                        </select>
-                        <label htmlFor="byteLength">
-                          Document size in bytes (metadata only)
-                        </label>
-                        <input
-                          id="byteLength"
-                          name="byteLength"
-                          type="number"
-                          min={1}
-                          max={5242880}
-                          required
-                        />
-                        <button type="submit" disabled={busy}>
-                          Submit untrusted metadata
-                        </button>
-                      </form>
-                    )}
+                          }}
+                        >
+                          <label htmlFor="issuer">
+                            Issuer identifier (no URL or private data)
+                          </label>
+                          <input
+                            id="issuer"
+                            name="issuer"
+                            maxLength={120}
+                            required
+                          />
+                          <label htmlFor="reference">
+                            Document reference (non-sensitive)
+                          </label>
+                          <input
+                            id="reference"
+                            name="reference"
+                            maxLength={120}
+                            required
+                          />
+                          <label htmlFor="mediaType">Document type</label>
+                          <select id="mediaType" name="mediaType">
+                            <option>application/pdf</option>
+                            <option>text/plain</option>
+                            <option>application/json</option>
+                            <option>image/png</option>
+                            <option>image/jpeg</option>
+                          </select>
+                          <label htmlFor="byteLength">
+                            Document size in bytes (metadata only)
+                          </label>
+                          <input
+                            id="byteLength"
+                            name="byteLength"
+                            type="number"
+                            min={1}
+                            max={5242880}
+                            required
+                          />
+                          <button type="submit" disabled={busy}>
+                            Submit untrusted metadata
+                          </button>
+                        </form>
+                      )}
                   </>
                 )}
               </section>
@@ -469,28 +489,37 @@ export default function Evidence() {
                         setDraft(null);
                         const f = new FormData(e.currentTarget);
                         void run(async () => {
-                          setDraft(
-                            reviewInput.parse({
-                              claim: f.get("claim"),
-                              decision: f.get("decision"),
-                              observation: {
-                                source: f.get("source"),
-                                issuer: f.get("observedIssuer"),
-                                reference: f.get("observedReference"),
-                                observedAtNs: (
-                                  BigInt(Date.now()) * 1000000n
-                                ).toString(),
-                                event: f.get("event"),
-                                recipient: f.get("recipient"),
-                                amountAtomic: nearToAtomic(
-                                  String(f.get("amount")),
-                                ),
-                                evidenceDigest: f.get("digest"),
-                                independentlyObtained:
-                                  f.get("independent") === "on",
-                              },
-                            }),
-                          );
+                          const candidate = reviewInput.parse({
+                            claim: f.get("claim"),
+                            decision: f.get("decision"),
+                            observation: {
+                              source: f.get("source"),
+                              issuer: f.get("observedIssuer"),
+                              reference: f.get("observedReference"),
+                              observedAtNs: (
+                                BigInt(Date.now()) * 1000000n
+                              ).toString(),
+                              event: f.get("event"),
+                              recipient: f.get("recipient"),
+                              amountAtomic: nearToAtomic(
+                                String(f.get("amount")),
+                              ),
+                              evidenceDigest: f.get("digest"),
+                              independentlyObtained:
+                                f.get("independent") === "on",
+                            },
+                          });
+                          if (
+                            candidate.decision === "APPROVE" &&
+                            candidate.claim !== "OWNER_APPROVED" &&
+                            !candidate.observation.independentlyObtained
+                          ) {
+                            setError(
+                              "Confirm that you independently obtained the evidence before approving this third-party claim.",
+                            );
+                            return;
+                          }
+                          setDraft(candidate);
                         });
                       }}
                     >
@@ -500,7 +529,14 @@ export default function Evidence() {
                           supported by your own assessment.
                         </p>{" "}
                         <label htmlFor="claim">Claim</label>
-                        <select id="claim" name="claim">
+                        <select
+                          id="claim"
+                          name="claim"
+                          onChange={() => {
+                            setDraft(null);
+                            setError("");
+                          }}
+                        >
                           {view.allowedClaims.map((c) => (
                             <option key={c} value={c}>
                               {labels[c]}
@@ -508,7 +544,14 @@ export default function Evidence() {
                           ))}
                         </select>
                         <label htmlFor="decision">Decision</label>
-                        <select id="decision" name="decision">
+                        <select
+                          id="decision"
+                          name="decision"
+                          onChange={() => {
+                            setDraft(null);
+                            setError("");
+                          }}
+                        >
                           <option value="APPROVE">
                             Approve supported claim
                           </option>
@@ -643,9 +686,17 @@ export default function Evidence() {
                           this declaration for agent-supplied material alone.
                         </p>{" "}
                         <label className="check-label">
-                          <input type="checkbox" name="independent" />I obtained
-                          this evidence independently of the proposing agent
-                          using my own authenticated source access.
+                          <input
+                            type="checkbox"
+                            name="independent"
+                            onChange={() => {
+                              setDraft(null);
+                              setError("");
+                            }}
+                          />
+                          I obtained this evidence independently of the
+                          proposing agent using my own authenticated source
+                          access.
                         </label>
                       </div>
                       <div>

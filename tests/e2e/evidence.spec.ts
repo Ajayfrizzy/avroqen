@@ -59,6 +59,16 @@ const metadata = {
 async function setup(page: Page, mode = "normal") {
   let challenges = 0,
     verifications = 0;
+  const responsePolicy =
+    mode === "unsafe"
+      ? mandatePolicy.parse({
+          ...policy,
+          verifierPolicy: {
+            ...policy.verifierPolicy,
+            accounts: [policy.ownerAccount],
+          },
+        })
+      : policy;
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/auth/session")
@@ -118,12 +128,19 @@ async function setup(page: Page, mode = "normal") {
     return route.fulfill({
       json: {
         proposal,
-        policy,
+        policy: responsePolicy,
+        verifierPolicyStatus:
+          mode === "unsafe"
+            ? { eligible: false, conflict: "OWNER" }
+            : { eligible: true, conflict: null },
         evidence: { id: uuid(6), metadata, status: "SUBMITTED" },
         reviews: [],
         allowedClaims:
-          mode === "readonly" ? [] : ["SERVICE_CONFIRMED", "DELIVERY_DISPUTED"],
+          mode === "readonly" || mode === "unsafe"
+            ? []
+            : ["SERVICE_CONFIRMED", "DELIVERY_DISPUTED"],
         readiness: {
+          independentVerifierPolicy: mode !== "unsafe",
           disputed: mode === "disputed",
           offchainReady: false,
           ownerApproved: false,
@@ -137,7 +154,12 @@ async function setup(page: Page, mode = "normal") {
   await page.getByRole("button", { name: "Open evidence" }).click();
   return { challenges: () => challenges, verifications: () => verifications };
 }
-async function review(page: Page) {
+async function review(
+  page: Page,
+  options: { independent?: boolean; decision?: "APPROVE" | "REJECT" } = {},
+) {
+  if (options.decision)
+    await page.getByLabel("Decision").selectOption(options.decision);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page
@@ -151,12 +173,50 @@ async function review(page: Page) {
     .getByLabel("Observed exact amount")
     .fill("0.000000000000000000000001");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await page.getByRole("checkbox").check();
+  if (options.independent !== false) await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page
     .getByRole("button", { name: "Review exact decision", exact: true })
     .click();
 }
+
+test("unchecked approval is blocked before challenge generation", async ({
+  page,
+}) => {
+  const count = await setup(page);
+  await review(page, { independent: false });
+  await expect(page.locator("main").getByRole("alert")).toContainText(
+    "independently obtained",
+  );
+  await expect(
+    page.getByRole("region", { name: "Review exact decision" }),
+  ).toHaveCount(0);
+  expect(count.challenges()).toBe(0);
+});
+test("unsafe historical verifier policy is read-only and visibly blocked", async ({
+  page,
+}) => {
+  const count = await setup(page, "unsafe");
+  await expect(page.locator("main").getByRole("alert")).toContainText(
+    "Unsafe historical verifier policy",
+  );
+  await expect(
+    page.getByRole("button", { name: "Review exact decision", exact: true }),
+  ).toHaveCount(0);
+  expect(count.challenges()).toBe(0);
+  expect(count.verifications()).toBe(0);
+});
+
+test("unchecked rejection remains reviewable without claiming independence", async ({
+  page,
+}) => {
+  const count = await setup(page);
+  await review(page, { independent: false, decision: "REJECT" });
+  const panel = page.getByRole("region", { name: "Review exact decision" });
+  await expect(panel).toContainText("Reject claim");
+  await expect(panel).toContainText("offchain human decision only");
+  expect(count.challenges()).toBe(0);
+});
 
 for (const width of [1280, 390])
   test(`readable human review, focus and no onchain action at ${width}px`, async ({

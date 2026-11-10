@@ -3,7 +3,7 @@
 **Status:** M3 is implemented and locally verified. [Owner-verified November 7, 2026 NEAR Testnet evidence](DEPLOYMENT_KEY_GATE_REPORT.md#owner-verified-testnet-deployment--november-7-2026) records deployment and initialization. Public payment acceptance and independent security audit remain incomplete; financial operations remain disabled. See archive/milestones/M3_REPORT.md for historical local evidence and archive/milestones/M3_DESIGN.md / D014 for approved v1 decisions.
 
 ## Custody and roles
-Owner-funded NEAR accounting, logical sub-ledger per owner+mandate. Owner wallet signs create/fund/revoke/withdraw. Agent registered for proposal calls only. Verifier registered by owner for narrow claims. Guardian stop-only. Platform admin cannot withdraw, reassign ownership or raise a budget. If deposit and allocation are split, specify and test custody of unallocated funds and storage/gas reserves.
+Owner-funded NEAR accounting, logical sub-ledger per owner+mandate. Owner wallet signs create/fund/revoke/withdraw. Agent registered for proposal calls only. A verifier registered by the owner for narrow third-party claims must be distinct from the mandate owner, restricted agent, exact recipient and vault account. Guardian stop-only. Platform admin cannot withdraw, reassign ownership or raise a budget. If deposit and allocation are split, specify and test custody of unallocated funds and storage/gas reserves.
 
 ## Types (illustrative, final Rust names may differ)
 ```

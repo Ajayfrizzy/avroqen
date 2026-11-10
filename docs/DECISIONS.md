@@ -399,3 +399,26 @@ contract, access-key, UNKNOWN/retry or financial-policy behavior changes. Hashle
 UNKNOWN terminal clearance remains separately blocked for review. D026/D027 remain
 unchanged: Primary proof BLOCKED, Testing FullAccess key RETAINED and financial
 operations DISABLED. No historical amount becomes an approved budget.
+
+## D029 — Third-party verifier roles are disjoint from mandate authority
+
+Security correction, November 9, 2026: every designated third-party verifier in a
+new immutable mandate must be distinct from its owner, restricted agent, exact
+recipient and vault account. Owner `OWNER_APPROVED` and the documented owner
+dispute path remain separate authorities; neither substitutes for third-party
+quorum. This decision adds no unrelated pairwise rule among owner, agent and
+recipient.
+
+Historical overlapping policies and their audit records remain readable and
+immutable, but cannot produce new consent approval, proposals, reviews, readiness,
+attestation preparation, registration, funding or execution. Safe revocation,
+incident inspection and reconciliation visibility remain available; no new chain
+intent, including pause, revoke or withdrawal, may be prepared from that policy.
+An unchecked independence declaration blocks third-party approval before any
+signing challenge; rejection without that declaration remains valid.
+
+The Rust source rejects overlap during registration and rechecks stored policy
+before attestation or execution. The already deployed November 7 Wasm is unchanged
+and does not inherit this correction. Any replacement deployment or migration is a
+separate owner-authorized action. Primary proof remains BLOCKED, the Testing
+FullAccess key remains RETAINED and financial operations remain DISABLED.

@@ -7,6 +7,8 @@ import { buildApi } from "../../apps/api/src/app.js";
 import { migrate } from "../../apps/api/src/db/migrate.js";
 import {
   type ConsentAction,
+  canonicalPolicy,
+  mandatePolicy,
   readApiConfig,
 } from "../../packages/domain/src/index.js";
 import { NearReader } from "../../services/chain/rpc.js";
@@ -288,6 +290,70 @@ it("persists exact immutable operation and atomically records preparation", asyn
     ),
   ).rejects.toThrow();
   await expect(pool.query("DELETE FROM chain_events")).rejects.toThrow();
+});
+it("blocks financial intent preparation for an unsafe historical verifier policy", async () => {
+  const unsafe = mandatePolicy.parse({
+    ...terms(),
+    schemaVersion: 1,
+    policyVersion: 1,
+    mandateId: randomUUID(),
+    organizationId: org,
+    ownerAccount: "alice.testnet",
+    network: "testnet",
+    agentAccount: "agent.testnet",
+    verifierPolicy: {
+      ...terms().verifierPolicy,
+      accounts: ["alice.testnet"],
+    },
+  });
+  const bytes = canonicalPolicy(unsafe);
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  await pool.query(
+    "INSERT INTO mandate_policies(id,org_id,network,owner_account,agent_id,agent_account,canonical_policy,policy_digest,expires_at_ns) VALUES($1,$2,'testnet',$3,$4,$5,$6,$7,$8)",
+    [
+      unsafe.mandateId,
+      org,
+      unsafe.ownerAccount,
+      unsafe.agentId,
+      unsafe.agentAccount,
+      bytes,
+      digest,
+      unsafe.expiresAtNs,
+    ],
+  );
+  await pool.query(
+    "INSERT INTO mandate_consents(mandate_id,status) VALUES($1,'CONSENT_APPROVED_OFFCHAIN')",
+    [unsafe.mandateId],
+  );
+  let deploymentReads = 0;
+  duringDeployment = async () => {
+    deploymentReads++;
+  };
+  const operations = [
+    { kind: "REGISTER", storageLimit: "100" },
+    { kind: "STORAGE_DEPOSIT", amount: "1" },
+    { kind: "FUND", amount: "1" },
+    { kind: "WITHDRAW", amount: "1" },
+    { kind: "WITHDRAW_STORAGE", amount: "1" },
+    { kind: "PAUSE" },
+    { kind: "RESUME" },
+    { kind: "REVOKE" },
+    { kind: "PROPOSE", proposalId: randomUUID() },
+    { kind: "ATTEST", reviewId: randomUUID() },
+    { kind: "EXECUTE", proposalId: randomUUID() },
+  ];
+  for (const operation of operations) {
+    const response = await post(`${path(unsafe.mandateId)}/chain/intents`, {
+      idempotencyKey: randomUUID(),
+      operation,
+    });
+    expect(response.statusCode, operation.kind).toBe(409);
+    expect(response.json().error, operation.kind).toBe(
+      "UNSAFE_VERIFIER_POLICY",
+    );
+  }
+  expect(deploymentReads).toBe(0);
+  expect((await pool.query("SELECT * FROM chain_intents")).rowCount).toBe(0);
 });
 it("serializes duplicate and concurrent preparations without duplicate financial intents", async () => {
   const key = randomUUID();

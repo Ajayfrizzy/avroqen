@@ -6,9 +6,20 @@ import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { buildApi } from "../../apps/api/src/app.js";
 import { migrate } from "../../apps/api/src/db/migrate.js";
 import {
+  canonicalReview,
+  map1For,
+  reviewInput,
+} from "../../packages/domain/src/evidence.js";
+import {
   type ConsentAction,
+  canonicalPolicy,
+  mandatePolicy,
   readApiConfig,
 } from "../../packages/domain/src/index.js";
+import {
+  canonicalProposal,
+  proposalInput,
+} from "../../packages/domain/src/proposals.js";
 import { monitorOnce } from "../../services/security/monitor.js";
 
 const schema = `m5_${randomUUID().replaceAll("-", "")}`;
@@ -261,6 +272,149 @@ const verifyReview = (p: object, h = verifier) =>
   post(`${evidencePath()}/verify`, p, h);
 const details = (h = verifier) =>
   app.inject({ url: evidencePath(), headers: h });
+async function insertHistoricalOwnerVerifierReview() {
+  const policy = mandatePolicy.parse({
+    schemaVersion: 1,
+    policyVersion: 1,
+    mandateId: randomUUID(),
+    organizationId: org,
+    ownerAccount: "alice.testnet",
+    network: "testnet",
+    agentId,
+    agentAccount: "agent.testnet",
+    vaultAccount: "vault.testnet",
+    recipient: "vendor.testnet",
+    asset: "NativeNear",
+    taskReference: "Historical unsafe fixture",
+    maxPerPaymentAtomic: "1",
+    totalBudgetAtomic: "10",
+    expiresAtNs: (BigInt(Date.now() + 3600000) * 1000000n).toString(),
+    maxExecutions: 10,
+    verifierPolicy: {
+      version: 1,
+      accounts: ["alice.testnet"],
+      threshold: 1,
+      requiredClaims: ["SERVICE_CONFIRMED"],
+      requireOwnerApproval: true,
+    },
+  });
+  const policyBytes = canonicalPolicy(policy);
+  const policyDigest = createHash("sha256").update(policyBytes).digest("hex");
+  await pool.query(
+    "INSERT INTO mandate_policies(id,org_id,network,owner_account,agent_id,agent_account,canonical_policy,policy_digest,expires_at_ns) VALUES($1,$2,'testnet',$3,$4,$5,$6,$7,$8)",
+    [
+      policy.mandateId,
+      org,
+      policy.ownerAccount,
+      agentId,
+      policy.agentAccount,
+      policyBytes,
+      policyDigest,
+      policy.expiresAtNs,
+    ],
+  );
+  await pool.query(
+    "INSERT INTO mandate_consents(mandate_id,status) VALUES($1,'CONSENT_APPROVED_OFFCHAIN')",
+    [policy.mandateId],
+  );
+  const unsafeProposal = proposalInput.parse({
+    schemaVersion: 1,
+    proposalId: randomUUID(),
+    idempotencyKey: randomUUID(),
+    organizationId: org,
+    agentId,
+    agentAccount: policy.agentAccount,
+    mandateId: policy.mandateId,
+    policyVersion: 1,
+    policyDigest,
+    network: "testnet",
+    vaultAccount: policy.vaultAccount,
+    recipient: policy.recipient,
+    asset: "NativeNear",
+    amountAtomic: "1",
+    evidenceDigest: "c".repeat(64),
+  });
+  await pool.query(
+    "INSERT INTO agent_proposals(id,mandate_id,idempotency_key,canonical_payload) VALUES($1,$2,$3,$4)",
+    [
+      unsafeProposal.proposalId,
+      policy.mandateId,
+      unsafeProposal.idempotencyKey,
+      canonicalProposal(unsafeProposal),
+    ],
+  );
+  const evidenceId = randomUUID();
+  const evidenceMetadata = {
+    sourceType: "HUMAN_REVIEW",
+    issuer: "Issuer",
+    reference: "HIST-1",
+    evidenceDigest: unsafeProposal.evidenceDigest,
+    mediaType: "application/pdf",
+    byteLength: 100,
+  };
+  await pool.query(
+    "INSERT INTO evidence_submissions(id,proposal_id,canonical_metadata) VALUES($1,$2,$3)",
+    [evidenceId, unsafeProposal.proposalId, JSON.stringify(evidenceMetadata)],
+  );
+  const historicalReview = reviewInput.parse({
+    claim: "SERVICE_CONFIRMED",
+    decision: "APPROVE",
+    observation: {
+      source: "AUTHENTICATED_PROVIDER_PORTAL",
+      issuer: "Issuer",
+      reference: "HIST-1",
+      observedAtNs: (BigInt(Date.now() - 60000) * 1000000n).toString(),
+      event: "SERVICE_ACTIVATED",
+      recipient: unsafeProposal.recipient,
+      amountAtomic: unsafeProposal.amountAtomic,
+      evidenceDigest: unsafeProposal.evidenceDigest,
+      independentlyObtained: true,
+    },
+  });
+  const now = BigInt(Date.now()) * 1000000n;
+  const payload = map1For(
+    unsafeProposal,
+    historicalReview,
+    policy.ownerAccount,
+    randomUUID(),
+    now,
+    now + 900000000000n,
+  );
+  const challengeId = randomUUID();
+  const sessionHash = (
+    await pool.query(
+      "SELECT token_hash FROM auth_sessions WHERE account_id='alice.testnet' AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1",
+    )
+  ).rows[0].token_hash;
+  await pool.query(
+    "INSERT INTO evidence_challenges(id,evidence_id,session_hash,actor_account,canonical_review,canonical_payload,nonce,message,origin,expires_at,consumed_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,clock_timestamp()+interval '5 minutes',clock_timestamp())",
+    [
+      challengeId,
+      evidenceId,
+      sessionHash,
+      policy.ownerAccount,
+      canonicalReview(historicalReview),
+      JSON.stringify(payload),
+      Buffer.alloc(32, 7),
+      "historical fixture",
+      origin,
+    ],
+  );
+  await pool.query(
+    "INSERT INTO evidence_reviews(id,evidence_id,challenge_id,actor_account,claim,status,canonical_review,canonical_payload,attestation_nonce) VALUES($1,$2,$3,$4,$5,'VERIFIED',$6,$7,$8)",
+    [
+      randomUUID(),
+      evidenceId,
+      challengeId,
+      policy.ownerAccount,
+      historicalReview.claim,
+      canonicalReview(historicalReview),
+      JSON.stringify(payload),
+      payload.nonce,
+    ],
+  );
+  return { policy, proposal: unsafeProposal };
+}
 it("human-signed source assessment prepares exact MAP-1 but never claims chain acceptance", async () => {
   const c = await reviewChallenge();
   expect(c.payload.amount_atomic).toBe("1");
@@ -290,6 +444,31 @@ it("human-signed source assessment prepares exact MAP-1 but never claims chain a
   expect(ownerResult.statusCode).toBe(200);
   expect(ownerResult.json().readiness.offchainReady).toBe(true);
   expect(ownerResult.json().reviews[1].intent.deposit).toBe("1");
+});
+it("keeps historical overlapping reviews visible but excludes them from authorization", async () => {
+  const historical = await insertHistoricalOwnerVerifierReview();
+  const response = await app.inject({
+    url: `/api/evidence/${historical.proposal.proposalId}`,
+    headers,
+  });
+  expect(response.statusCode).toBe(200);
+  expect(response.json().verifierPolicyStatus).toEqual({
+    eligible: false,
+    conflict: "OWNER",
+  });
+  expect(response.json().reviews).toHaveLength(1);
+  expect(response.json().reviews[0].intent).toBeNull();
+  expect(response.json().readiness.independentVerifierPolicy).toBe(false);
+  expect(response.json().readiness.offchainReady).toBe(false);
+  expect(response.json().readiness.claims[0].count).toBe(0);
+  expect(response.json().allowedClaims).toEqual([]);
+  const challenge = await post(
+    `/api/evidence/${historical.proposal.proposalId}/challenge`,
+    review(),
+    headers,
+  );
+  expect(challenge.statusCode).toBe(409);
+  expect(challenge.json().error).toBe("UNSAFE_VERIFIER_POLICY");
 });
 it("designated verifier reads assigned evidence without gaining organization access", async () => {
   expect((await details()).statusCode).toBe(200);
@@ -345,6 +524,16 @@ it.each([
     (await post(`${evidencePath()}/challenge`, r, verifier)).statusCode,
   ).toBe(400);
   expect((await pool.query("SELECT * FROM evidence_reviews")).rowCount).toBe(0);
+});
+it("permits an explicit rejection without an independence declaration", async () => {
+  const rejected = review({ decision: "REJECT" });
+  rejected.observation.independentlyObtained = false;
+  const challenge = await reviewChallenge(rejected);
+  const response = await verifyReview(reviewSignature(challenge));
+  expect(response.statusCode).toBe(200);
+  expect(response.json().reviews[0].status).toBe("REJECTED");
+  expect(response.json().reviews[0].intent).toBeNull();
+  expect(response.json().readiness.offchainReady).toBe(false);
 });
 it.each(["MISSING", "UNAVAILABLE"])(
   "missing source %s cannot approve",

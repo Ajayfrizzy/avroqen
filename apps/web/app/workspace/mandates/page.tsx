@@ -4,6 +4,7 @@ import {
   type ConsentAction,
   canonicalPolicy,
   consentMessage,
+  independentVerifierPolicy,
   type MandateView,
   mandateDraftInput,
   nearToAtomic,
@@ -71,6 +72,15 @@ function Terms({ value }: { value: MandateView }) {
         <span className="badge">{labels[value.consentStatus]}</span>
         <span>{value.expired ? "Expired" : "Within expiry window"}</span>
       </div>
+      {!value.verifierPolicyStatus.eligible && (
+        <p role="alert" className="error">
+          Unsafe historical verifier policy: a designated verifier conflicts
+          with the {value.verifierPolicyStatus.conflict.toLowerCase()} role.
+          Read-only inspection and signed offchain consent revocation remain
+          available, but this policy cannot authorize new operations or chain
+          intents.
+        </p>
+      )}
       <h3>{p.taskReference}</h3>
       <dl className="policy-grid">
         <div>
@@ -217,6 +227,16 @@ export default function Mandates() {
           "The agent is disabled or unavailable. New consent is not allowed.",
         INVALID_PROOF:
           "Wallet proof rejected or expired. Check the account and retry with a fresh challenge.",
+        VERIFIER_ROLE_CONFLICT_OWNER:
+          "A designated verifier cannot also be the mandate owner.",
+        VERIFIER_ROLE_CONFLICT_AGENT:
+          "A designated verifier cannot also be the restricted agent.",
+        VERIFIER_ROLE_CONFLICT_RECIPIENT:
+          "A designated verifier cannot also be the exact recipient.",
+        VERIFIER_ROLE_CONFLICT_VAULT:
+          "A designated verifier cannot also be the vault account.",
+        UNSAFE_VERIFIER_POLICY:
+          "This historical mandate has a conflicting verifier role and is read-only.",
       };
       setError(
         e.status === 401 && e.code === "SESSION_REQUIRED"
@@ -617,6 +637,23 @@ export default function Mandates() {
                           form.get("ownerApproval") === "on",
                       },
                     });
+                    const selectedAgent = agents.find(
+                      (candidate) => candidate.id === body.agentId,
+                    );
+                    if (!selectedAgent)
+                      throw new ApiFailure(400, "AGENT_DISABLED");
+                    const verifierPolicyStatus = independentVerifierPolicy({
+                      ownerAccount: session.accountId,
+                      agentAccount: selectedAgent.accountId,
+                      recipient: body.recipient,
+                      vaultAccount: body.vaultAccount,
+                      verifierPolicy: body.verifierPolicy,
+                    });
+                    if (!verifierPolicyStatus.eligible)
+                      throw new ApiFailure(
+                        400,
+                        `VERIFIER_ROLE_CONFLICT_${verifierPolicyStatus.conflict}`,
+                      );
                     const v = await api<MandateView>(
                       `/organizations/${selected}/mandates`,
                       session,
@@ -821,7 +858,8 @@ export default function Mandates() {
                 review.policy.ownerAccount === session.accountId &&
                 review.consentStatus !== "CONSENT_REVOKED_OFFCHAIN" &&
                 (action === "REVOKE_CONSENT" ||
-                  (review.consentStatus === "DRAFT" &&
+                  (review.verifierPolicyStatus.eligible &&
+                    review.consentStatus === "DRAFT" &&
                     !review.expired &&
                     !review.agentDisabled)) && (
                   <>
