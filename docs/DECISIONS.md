@@ -418,7 +418,9 @@ An unchecked independence declaration blocks third-party approval before any
 signing challenge; rejection without that declaration remains valid.
 
 The Rust source rejects overlap during registration and rechecks stored policy
-before attestation or execution. The already deployed November 7 Wasm is unchanged
-and does not inherit this correction. Any replacement deployment or migration is a
-separate owner-authorized action. Primary proof remains BLOCKED, the Testing
-FullAccess key remains RETAINED and financial operations remain DISABLED.
+before proposal submission, attestation or execution. The proposal-path recheck is
+defense in depth for historical stored policies and does not mutate or delete their
+records. The already deployed November 7 Wasm is unchanged and does not inherit
+this correction. Any replacement deployment or migration is a separate
+owner-authorized action. Primary proof remains BLOCKED, the Testing FullAccess key
+remains RETAINED and financial operations remain DISABLED.

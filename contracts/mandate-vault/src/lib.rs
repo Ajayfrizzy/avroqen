@@ -345,6 +345,7 @@ impl MandateVault {
         zero();
         let mut m = self.mandate(&mandate_id);
         m.active();
+        m.policy.assert_independent_verifiers();
         direct(&m.policy.agent_account);
         uuid(&proposal_id);
         digest(&evidence_digest);

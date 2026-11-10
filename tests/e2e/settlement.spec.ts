@@ -105,6 +105,157 @@ test("unknown operation warns against retry and has no unverified explorer link"
     page.getByRole("link", { name: "View verified transaction" }),
   ).toHaveCount(0);
 });
+test("expired and unsafe historical mandates stay readable but cannot authorize", async ({
+  page,
+}) => {
+  const expired = {
+      ...policy,
+      mandateId: "66666666-6666-4666-8666-666666666666",
+      taskReference: "Expired mandate",
+      expiresAtNs: (BigInt(Date.now() - 60_000) * 1000000n).toString(),
+    },
+    unsafe = {
+      ...policy,
+      mandateId: "77777777-7777-4777-8777-777777777777",
+      taskReference: "Unsafe historical mandate",
+      verifierPolicy: {
+        ...policy.verifierPolicy,
+        accounts: [policy.ownerAccount],
+      },
+    },
+    both = {
+      ...unsafe,
+      mandateId: "88888888-8888-4888-8888-888888888888",
+      taskReference: "Expired unsafe mandate",
+      expiresAtNs: expired.expiresAtNs,
+    },
+    policies = [policy, expired, unsafe, both];
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/session"))
+      return route.fulfill({
+        json: { accountId: policy.ownerAccount, csrfToken: "fixture" },
+      });
+    if (path.endsWith("/assignments"))
+      return route.fulfill({ json: { mandates: policies } });
+    if (path.endsWith("/status"))
+      return route.fulfill({
+        json: { status: "VERIFIED", submissionEnabled: true },
+      });
+    const selected = policies.find((candidate) =>
+      path.includes(candidate.mandateId),
+    );
+    if (!selected)
+      return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
+    return route.fulfill({
+      json: {
+        policy: selected,
+        onchain: null,
+        block: null,
+        proposals: [
+          {
+            proposalId: "99999999-9999-4999-8999-999999999999",
+            amountAtomic: "1",
+            recipient: selected.recipient,
+          },
+        ],
+        reviews: [],
+        intents: [
+          {
+            id: `history-${selected.mandateId}`,
+            state: "UNKNOWN",
+            reason: "HISTORICAL_RECORD",
+            operation: {
+              methodName: "submit_proposal",
+              signerId: selected.agentAccount,
+            },
+            explorerUrl: null,
+          },
+        ],
+      },
+    });
+  });
+  await page.goto("/workspace/settlement");
+  const selector = page.getByRole("combobox", {
+    name: "Mandate",
+    exact: true,
+  });
+  const warning = page.getByRole("alert", { name: "Mandate safety status" });
+  const prepare = page.getByRole("button", {
+    name: "Prepare exact operation",
+  });
+
+  await selector.selectOption(policy.mandateId);
+  await expect(warning).toHaveCount(0);
+  await expect(prepare).toBeEnabled();
+
+  await selector.selectOption(expired.mandateId);
+  await expect(warning).toContainText("This mandate expired at");
+  await expect(warning).not.toContainText("Unsafe historical verifier policy");
+  await expect(prepare).toBeDisabled();
+
+  await selector.selectOption(unsafe.mandateId);
+  await expect(warning).toContainText("Unsafe historical verifier policy");
+  await expect(warning).not.toContainText("This mandate expired at");
+  await expect(
+    page.getByText("submit_proposal", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Do not repeat this operation", { exact: false }),
+  ).toBeVisible();
+  await expect(prepare).toBeDisabled();
+
+  await selector.selectOption(both.mandateId);
+  await expect(warning).toContainText("This mandate expired at");
+  await expect(warning).toContainText("Unsafe historical verifier policy");
+  await expect(prepare).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Open wallet and authorize" }),
+  ).toHaveCount(0);
+});
+test("selected policy safety remains visible when chain state is unavailable", async ({
+  page,
+}) => {
+  const historical = {
+      ...policy,
+      mandateId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      taskReference: "Unavailable historical mandate",
+      expiresAtNs: (BigInt(Date.now() - 60_000) * 1000000n).toString(),
+      verifierPolicy: {
+        ...policy.verifierPolicy,
+        accounts: [policy.recipient],
+      },
+    },
+    methods: string[] = [];
+  await page.route("**/api/**", async (route) => {
+    methods.push(route.request().method());
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/session"))
+      return route.fulfill({
+        json: { accountId: policy.ownerAccount, csrfToken: "fixture" },
+      });
+    if (path.endsWith("/assignments"))
+      return route.fulfill({ json: { mandates: [historical] } });
+    if (path.endsWith("/status"))
+      return route.fulfill({ status: 503, json: { error: "UNAVAILABLE" } });
+    return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
+  });
+  await page.goto("/workspace/settlement");
+  await page
+    .getByRole("combobox", { name: "Mandate", exact: true })
+    .selectOption(historical.mandateId);
+
+  const warning = page.getByRole("alert", { name: "Mandate safety status" });
+  await expect(warning).toContainText("This mandate expired at");
+  await expect(warning).toContainText("Unsafe historical verifier policy");
+  await expect(warning).toContainText("recipient role");
+  await page.getByText("Exact policy and atomic units").click();
+  await expect(page.locator("pre")).toContainText(historical.mandateId);
+  await expect(
+    page.getByRole("button", { name: "Prepare exact operation" }),
+  ).toHaveCount(0);
+  expect(methods.every((method) => method === "GET")).toBe(true);
+});
 test("late chain state from a previous mandate cannot replace the current review", async ({
   page,
 }) => {

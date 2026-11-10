@@ -5,6 +5,12 @@
 ## Custody and roles
 Owner-funded NEAR accounting, logical sub-ledger per owner+mandate. Owner wallet signs create/fund/revoke/withdraw. Agent registered for proposal calls only. A verifier registered by the owner for narrow third-party claims must be distinct from the mandate owner, restricted agent, exact recipient and vault account. Guardian stop-only. Platform admin cannot withdraw, reassign ownership or raise a budget. If deposit and allocation are split, specify and test custody of unallocated funds and storage/gas reserves.
 
+The current Rust source rechecks that verifier-role separation before proposal
+submission, attestation and execution so an unsafe historical stored policy cannot
+gain new authority. Historical state and accounting remain readable and unchanged.
+The deployed November 7 Wasm predates this defense-in-depth check and remains
+unchanged; no onchain protection or upgrade is claimed from the source change.
+
 ## Types (illustrative, final Rust names may differ)
 ```
 Mandate { id, owner, agent, allowed_recipient, asset: NativeNear,

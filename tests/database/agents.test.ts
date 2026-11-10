@@ -228,6 +228,24 @@ it("uses independent credentials, hashes at rest, limits TTL and persists propos
   expect(audit.some((r) => r.event === "PROPOSAL_SUBMITTED")).toBe(true);
   expect(JSON.stringify(audit)).not.toContain(credential.token);
 });
+it("returns capability target metadata without exposing its bearer token", async () => {
+  const response = await app.inject({
+    method: "GET",
+    url: `${path(mandateId)}/credentials`,
+    headers,
+  });
+  expect(response.statusCode).toBe(200);
+  expect(response.json().credentials).toEqual([
+    expect.objectContaining({
+      id: credential.id,
+      purpose: "demo",
+      agentId,
+      agentAccount: "agent.testnet",
+      revokedAt: null,
+    }),
+  ]);
+  expect(response.body).not.toContain(credential.token);
+});
 it("concurrent replay creates exactly one proposal/event and altered retry conflicts", async () => {
   const results = await Promise.all([submit(), submit(), submit()]);
   expect(results.every((r) => r.statusCode === 200)).toBe(true);

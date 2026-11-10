@@ -47,12 +47,30 @@ async function fixture(
       return route.fulfill({
         json: {
           agents: [
-            { id: "agent-record", name: "Demo agent", disabledAt: null },
+            {
+              id: "agent-record",
+              name: "Demo agent",
+              accountId: "agent.testnet",
+              disabledAt: null,
+            },
           ],
         },
       });
     if (path.endsWith("/credentials"))
-      return route.fulfill({ json: { credentials: [] } });
+      return route.fulfill({
+        json: {
+          credentials: [
+            {
+              id: "55555555-5555-4555-8555-555555555555",
+              purpose: "demo",
+              revokedAt: null,
+              expiresAt: new Date(Date.now() + 60_000).toISOString(),
+              agentId: "agent-record",
+              agentAccount: "agent.testnet",
+            },
+          ],
+        },
+      });
     if (path.endsWith("/security")) {
       if (offline) return route.abort();
       return route.fulfill({
@@ -201,7 +219,7 @@ test("empty incidents do not claim guaranteed detection", async ({ page }) => {
     ),
   ).toBeVisible();
 });
-test("canceling application containment does not call a mutation", async ({
+test("containment dialogs identify exact targets and dismissal never mutates", async ({
   page,
 }) => {
   await fixture(page);
@@ -210,10 +228,44 @@ test("canceling application containment does not call a mutation", async ({
   page.on("request", (r) => {
     if (r.method() === "POST") mutations++;
   });
-  await page.getByRole("button", { name: "Review disabling agent" }).click();
-  await expect(
-    page.getByText("Remove this application access?", { exact: false }),
-  ).toBeVisible();
+  const disable = page.getByRole("button", { name: "Review disabling agent" });
+  await disable.click();
+  const agentDialog = page.getByRole("dialog", {
+    name: "Disable application agent",
+  });
+  await expect(agentDialog).toContainText("Agent: Demo agent");
+  await expect(agentDialog).toContainText("NEAR account: agent.testnet");
+  await expect(agentDialog).toContainText("application access only");
+  await expect(agentDialog).toContainText("does not revoke an onchain mandate");
+  await expect(agentDialog).toContainText(
+    "cannot reverse an already-dispatched transfer",
+  );
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   expect(mutations).toBe(0);
+  await expect(page.getByText("Demo agent — Active")).toBeVisible();
+
+  await disable.click();
+  await page.keyboard.press("Escape");
+  await expect(agentDialog).not.toBeVisible();
+  await expect(disable).toBeFocused();
+  expect(mutations).toBe(0);
+  await expect(page.getByText("Demo agent — Active")).toBeVisible();
+
+  const revoke = page.getByRole("button", {
+    name: "Review capability revocation",
+  });
+  await revoke.click();
+  const capabilityDialog = page.getByRole("dialog", {
+    name: "Revoke proposal capability",
+  });
+  await expect(capabilityDialog).toContainText("Capability: demo");
+  await expect(capabilityDialog).toContainText(
+    "Capability identifier: 55555555-5555-4555-8555-555555555555",
+  );
+  await expect(capabilityDialog).toContainText(
+    "Agent: Demo agent (agent.testnet)",
+  );
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(mutations).toBe(0);
+  await expect(page.getByText("demo capability — Not revoked")).toBeVisible();
 });
