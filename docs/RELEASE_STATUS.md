@@ -1,6 +1,6 @@
 # Release and acceptance status
 
-Documentation status as of November 9, 2026. This is the current acceptance entry
+Documentation status as of November 11, 2026. This is the current acceptance entry
 point; the [milestone plan](archive/milestones/MILESTONES.md) is preserved as historical planning.
 Specifications define required behavior, while dated reports and test results
 establish only their recorded scope. No fresh wallet, chain or organizer-rule
@@ -17,24 +17,16 @@ verification is implied by this restructuring.
 - [Nine local screenshots](evidence/m9/README.md) have actual source attribution,
   hashes and coding-agent visual inspection. Mobile viewports are Chromium
   emulation, not physical Android acceptance. Video remains outstanding.
-- [Owner-verified November 7 Testnet evidence](DEPLOYMENT_KEY_GATE_REPORT.md#owner-verified-testnet-deployment--november-7-2026)
-  records deployment/initialization only. It does not establish a funded mandate,
+- [Owner-reported November 11 finalized Testnet replacement and post-deployment checks](evidence/2026-11-11-VAULT-CODE-REPLACEMENT.md) confirm that the corrected 367353-byte Wasm is deployed, the original two FullAccess keys remain, and initialized accounting is readable at finalized block 277208022. The [November 7 initialization record](DEPLOYMENT_KEY_GATE_REPORT.md#owner-verified-testnet-deployment--november-7-2026) remains historical. These facts do not establish a funded mandate,
   genuine-source attestation, public payment, recipient delta or live financial
   acceptance. No independent security audit is claimed.
-- Primary proof is **BLOCKED** under D026. The temporary Testing FullAccess key is
-  **RETAINED**. Financial operations remain **DISABLED**. No documentation change
+- The narrow Primary proof is **BLOCKED** under D026, not a claim that the owner lacks custody of the account. The Testing FullAccess key is **RETAINED**, along with Primary. Financial operations remain **DISABLED**. No documentation change
   grants authority to sign, deploy, remove keys or enable financial submission.
 - Nonfinancial readiness hardening separates read-only manifest verification from
   submission authority and strengthens RPC envelope/finalized-head checks. This is
   implementation assurance only: it does not refresh deployment evidence, resolve
   Primary control, authorize funding or pass any pending M8 live acceptance gate.
-- Source hardening rejects designated third-party verifiers that overlap the
-  mandate owner, restricted agent, exact recipient or vault, and keeps historical
-  overlapping policies read-only. Current Rust source rejects new proposals as
-  well as attestations and execution for those historical policies. The deployed
-  November 7 Wasm is unchanged and does not inherit this source fix. Separate
-  owner-authorized deployment/migration review is required before claiming onchain
-  enforcement; financial acceptance is blocked in the meantime.
+- Source hardening rejects designated third-party verifiers that overlap the mandate owner, restricted agent, exact recipient or vault, and keeps historical overlapping policies read-only. The owner-reported November 11 finalized replacement now deploys the corrected Wasm digest; this **supersedes** the earlier statement that the November 7 Wasm lacked this correction. Actual live independent-source attestation, onchain payment and complete financial acceptance are still **pending**. No historical unsafe policy is silently migrated.
 
 ## Pending integrated financial and human acceptance
 
