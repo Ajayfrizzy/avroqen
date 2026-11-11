@@ -1,5 +1,6 @@
 import { createHash, createPublicKey, verify } from "node:crypto";
 import bs58 from "bs58";
+import { readOnlyRpcFetch } from "../../../../services/chain/rpc-rate-limit.js";
 
 export const hash = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
@@ -72,12 +73,8 @@ export function fullAccessVerifier(
   network: Network,
   fetcher: typeof fetch = fetch,
 ) {
-  const endpoint =
-    network === "testnet"
-      ? "https://rpc.testnet.near.org"
-      : "https://rpc.mainnet.near.org";
   return async (accountId: string, publicKey: string): Promise<boolean> => {
-    const response = await fetcher(endpoint, {
+    const request: RequestInit = {
       method: "POST",
       headers: { "content-type": "application/json" },
       redirect: "error",
@@ -93,7 +90,12 @@ export function fullAccessVerifier(
           public_key: publicKey,
         },
       }),
-    });
+    };
+    const response = fetcher === fetch
+      ? await readOnlyRpcFetch(network, request)
+      : await fetcher(network === "testnet"
+          ? "https://rpc.testnet.near.org"
+          : "https://rpc.mainnet.near.org", request);
     if (!response.ok) throw new Error("Identity provider unavailable");
     const data = (await response.json()) as {
       id?: unknown;
