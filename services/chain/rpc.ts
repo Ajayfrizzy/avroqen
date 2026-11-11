@@ -54,6 +54,7 @@ export function deploymentConfig(env: NodeJS.ProcessEnv): Manifest | null {
 export const fingerprint = (v: string) =>
   createHash("sha256").update(v).digest("hex");
 const endpoints = [
+  "https://rpc.testnet.fastnear.com",
   "https://rpc.testnet.near.org",
   "https://archival-rpc.testnet.near.org",
 ] as const;
