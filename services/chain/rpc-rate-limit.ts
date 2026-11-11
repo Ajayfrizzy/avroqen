@@ -43,7 +43,17 @@ export async function readOnlyRpcFetch(
     throw new Error("READ_ONLY_RPC_REQUIRED");
   }
   const body = request as { method?: string };
-  if (!["query", "block", "status", "gas_price", "chunk", "EXPERIMENTAL_tx_status", "EXPERIMENTAL_receipt"].includes(body?.method ?? ""))
+  if (
+    ![
+      "query",
+      "block",
+      "status",
+      "gas_price",
+      "chunk",
+      "EXPERIMENTAL_tx_status",
+      "EXPERIMENTAL_receipt",
+    ].includes(body?.method ?? "")
+  )
     throw new Error("READ_ONLY_RPC_REQUIRED");
 
   let last: Response | undefined;
@@ -51,7 +61,10 @@ export async function readOnlyRpcFetch(
     if ((cooldowns.get(endpoint) ?? 0) > now()) continue;
     const response = await transport(endpoint, init);
     if (response.status === 429) {
-      cooldowns.set(endpoint, now() + retryAfterMs(response.headers.get("retry-after"), now()));
+      cooldowns.set(
+        endpoint,
+        now() + retryAfterMs(response.headers.get("retry-after"), now()),
+      );
       last = response;
       continue;
     }
