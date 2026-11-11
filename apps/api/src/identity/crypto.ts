@@ -91,11 +91,15 @@ export function fullAccessVerifier(
         },
       }),
     };
-    const response = fetcher === fetch
-      ? await readOnlyRpcFetch(network, request)
-      : await fetcher(network === "testnet"
-          ? "https://rpc.testnet.near.org"
-          : "https://rpc.mainnet.near.org", request);
+    const response =
+      fetcher === fetch
+        ? await readOnlyRpcFetch(network, request)
+        : await fetcher(
+            network === "testnet"
+              ? "https://rpc.testnet.near.org"
+              : "https://rpc.mainnet.near.org",
+            request,
+          );
     if (!response.ok) throw new Error("Identity provider unavailable");
     const data = (await response.json()) as {
       id?: unknown;
