@@ -49,13 +49,13 @@ describe("read-only RPC 429 handling", () => {
     const first = await readOnlyRpcFetch("testnet", request, transport, now);
     expect(first.ok).toBe(true);
     expect(transport.mock.calls.map((call) => call[0])).toEqual([
+      "https://rpc.testnet.fastnear.com",
       "https://rpc.testnet.near.org",
-      "https://archival-rpc.testnet.near.org",
     ]);
     const second = await readOnlyRpcFetch("testnet", request, transport, now);
     expect(second.ok).toBe(true);
     expect(transport.mock.calls[2]?.[0]).toBe(
-      "https://archival-rpc.testnet.near.org",
+      "https://rpc.testnet.near.org",
     );
   });
 
@@ -68,11 +68,11 @@ describe("read-only RPC 429 handling", () => {
     const now = () => 1000;
     const response = await readOnlyRpcFetch("testnet", request, transport, now);
     expect(response.status).toBe(429);
-    expect(transport).toHaveBeenCalledTimes(2);
+    expect(transport).toHaveBeenCalledTimes(3);
     await expect(
       readOnlyRpcFetch("testnet", request, transport, now),
     ).rejects.toThrow("RPC_RATE_LIMITED");
-    expect(transport).toHaveBeenCalledTimes(2);
+    expect(transport).toHaveBeenCalledTimes(3);
   });
 
   it("rejects RPC mutations and malformed requests before any network I/O", async () => {
