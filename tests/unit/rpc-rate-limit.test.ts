@@ -11,8 +11,12 @@ const request: RequestInit = {
     jsonrpc: "2.0",
     id: "test",
     method: "query",
-    params: { request_type: "view_access_key", finality: "final",
-      account_id: "example.testnet", public_key: "example" },
+    params: {
+      request_type: "view_access_key",
+      finality: "final",
+      account_id: "example.testnet",
+      public_key: "example",
+    },
   }),
 };
 
@@ -23,14 +27,24 @@ afterEach(() => {
 
 describe("read-only RPC 429 handling", () => {
   it("uses the approved archival endpoint after 429, then cools down the primary", async () => {
-    const transport = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response("", {
-        status: 429,
-        headers: { "Retry-After": "72" },
-      }))
-      .mockResolvedValue(new Response(JSON.stringify({
-        jsonrpc: "2.0", id: "test", result: { permission: "FullAccess" },
-      }), { status: 200 }));
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response("", {
+          status: 429,
+          headers: { "Retry-After": "72" },
+        }),
+      )
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: "test",
+            result: { permission: "FullAccess" },
+          }),
+          { status: 200 },
+        ),
+      );
     const now = () => 1_000;
     const first = await readOnlyRpcFetch("testnet", request, transport, now);
     expect(first.ok).toBe(true);
@@ -46,15 +60,18 @@ describe("read-only RPC 429 handling", () => {
   });
 
   it("fails closed when every allowed provider returns 429", async () => {
-    const transport = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response("", { status: 429, headers: { "Retry-After": "72" } }),
-    );
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response("", { status: 429, headers: { "Retry-After": "72" } }),
+      );
     const now = () => 1000;
     const response = await readOnlyRpcFetch("testnet", request, transport, now);
     expect(response.status).toBe(429);
     expect(transport).toHaveBeenCalledTimes(2);
-    await expect(readOnlyRpcFetch("testnet", request, transport, now))
-      .rejects.toThrow("RPC_RATE_LIMITED");
+    await expect(
+      readOnlyRpcFetch("testnet", request, transport, now),
+    ).rejects.toThrow("RPC_RATE_LIMITED");
     expect(transport).toHaveBeenCalledTimes(2);
   });
 
@@ -65,8 +82,9 @@ describe("read-only RPC 429 handling", () => {
       JSON.stringify({ method: "send_transaction" }),
       "not-json",
     ]) {
-      await expect(readOnlyRpcFetch("testnet", { method: "POST", body }, transport))
-        .rejects.toThrow("READ_ONLY_RPC_REQUIRED");
+      await expect(
+        readOnlyRpcFetch("testnet", { method: "POST", body }, transport),
+      ).rejects.toThrow("READ_ONLY_RPC_REQUIRED");
     }
     expect(transport).not.toHaveBeenCalled();
   });
@@ -80,13 +98,16 @@ describe("read-only RPC 429 handling", () => {
   });
 
   it("does not treat an unauthorized key response as successful identity", async () => {
-    const transport = vi.fn<typeof fetch>().mockResolvedValue(new Response(
-      JSON.stringify({
-        jsonrpc: "2.0", id: "test",
-        error: { code: -32000, message: "UNKNOWN_ACCESS_KEY" },
-      }),
-      { status: 200 },
-    ));
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: "test",
+          error: { code: -32000, message: "UNKNOWN_ACCESS_KEY" },
+        }),
+        { status: 200 },
+      ),
+    );
     const response = await readOnlyRpcFetch("testnet", request, transport);
     expect(response.ok).toBe(true);
     const data = await response.json();
