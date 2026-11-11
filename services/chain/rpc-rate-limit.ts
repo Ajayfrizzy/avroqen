@@ -8,6 +8,7 @@ const DEFAULT_COOLDOWN_MS = 15_000;
 const MAX_COOLDOWN_MS = 120_000;
 const urls = {
   testnet: [
+    "https://rpc.testnet.fastnear.com",
     "https://rpc.testnet.near.org",
     "https://archival-rpc.testnet.near.org",
   ],
