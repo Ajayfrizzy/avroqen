@@ -54,9 +54,7 @@ describe("read-only RPC 429 handling", () => {
     ]);
     const second = await readOnlyRpcFetch("testnet", request, transport, now);
     expect(second.ok).toBe(true);
-    expect(transport.mock.calls[2]?.[0]).toBe(
-      "https://rpc.testnet.near.org",
-    );
+    expect(transport.mock.calls[2]?.[0]).toBe("https://rpc.testnet.near.org");
   });
 
   it("fails closed when every allowed provider returns 429", async () => {
