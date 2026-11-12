@@ -186,6 +186,7 @@ export function requireIndependentVerifierPolicy(
   return policy;
 }
 export const mandateParams = organizationParams.extend({ mandateId: z.uuid() });
+export const assignedMandateParams = z.strictObject({ mandateId: z.uuid() });
 export const consentAction = z.enum(["APPROVE_CONSENT", "REVOKE_CONSENT"]);
 export const consentChallengeInput = z.strictObject({ action: consentAction });
 export const consentProofInput = verifyInput.extend({ action: consentAction });

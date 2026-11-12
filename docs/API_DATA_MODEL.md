@@ -98,6 +98,14 @@ append-only agent_events. Scope derives from the immutable M2 policy. The origin
 wallet owner issues/rotates/revokes narrow capabilities; active members can read
 mandate proposal history. POST `/api/agent/tools` independently authenticates an
 agent and dispatches a strict fixed union for summary/status/prepare/submit/denials.
+Migration 008 adds an immutable optional credential holder. Authenticated wallets
+can list `GET /api/agent/assignments` only where the exact stored agent account
+matches, inspect those bounded terms/statuses, and issue/revoke only their own
+15-minute demo capability through `/api/agent/assignments/:mandateId/credentials`.
+Assigned proposal history is scoped through the same exact account/mandate lookup;
+it grants no owner-organization membership or management access. Revoked consent,
+expiry, disabled registration, lost owner access and all existing tool checks block
+new proposal submission.
 `/v1` sketches remain unimplemented, not alternate financial routes. See
 [M4_PROPOSAL_API.md](runbooks/financial/AGENT_API.md) for exact schemas, pagination, denial codes,
 limits, idempotency and authority boundaries.

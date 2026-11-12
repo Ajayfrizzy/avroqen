@@ -29,6 +29,29 @@ These are application bounds, not additional custody or financial limits.
 
 ## Independent agent endpoint
 
+### Assigned-wallet discovery
+
+An authenticated wallet may use `GET /api/agent/assignments?offset=0` to list at
+most 50 immutable mandates whose stored `agent_account` exactly equals that wallet.
+The response contains the policy/digest, owner-organization display name and only
+the consent/expiry/agent/verifier status needed to inspect proposal eligibility.
+This assignment does not create organization membership and does not authorize
+organization, agent-record, consent, credential-operator or owner functions.
+
+`POST /api/agent/assignments/:mandateId/credentials` accepts only
+`{purpose:"demo"}` with the wallet session, Origin and CSRF. It rechecks exact
+assignment, active owner membership, approved consent, matching active agent and
+mandate expiry before returning one existing-format capability for at most 15
+minutes. The immutable holder marker lets
+`POST .../credentials/revoke` revoke only that wallet's own capability; an assigned
+wallet cannot revoke owner-issued demo/operator credentials. `GET .../proposals`
+returns only that exact assigned mandate's bounded history. Unknown and unassigned
+IDs return `ASSIGNMENT_NOT_FOUND` without revealing another tenant's terms.
+
+The capability still uses the independent endpoint below. It conveys no wallet,
+verifier, owner, settlement or organization authority. Owner-issued operator
+credentials and their 24-hour maximum are unchanged.
+
 `POST /api/agent/tools` requires `Authorization: Bearer <opaque-token>` and exact
 configured Origin. Owner cookies alone never authenticate an agent. Trusted clients
 keep tokens outside task payloads and use no session cookie on this endpoint.

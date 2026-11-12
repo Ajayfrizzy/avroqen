@@ -3,6 +3,7 @@ import { prepareProposal } from "../../packages/agent/src/runtime.js";
 import { mandatePolicy } from "../../packages/domain/src/index.js";
 
 const org = "00000000-0000-4000-8000-000000000001";
+const agentOrg = "00000000-0000-4000-8000-000000000008";
 const policy = mandatePolicy.parse({
   schemaVersion: 1,
   policyVersion: 1,
@@ -46,6 +47,7 @@ const recordedProposal = prepareProposal(
   1_800_000_000_000_000_000n,
 ).proposal;
 type SetupOptions = {
+  assigned?: boolean;
   additionalMandate?: boolean;
   historyFailures?: number;
   historyGate?: Promise<void>;
@@ -67,7 +69,7 @@ async function setup(page: Page, mode = "normal", options: SetupOptions = {}) {
         signedIn
           ? {
               json: {
-                accountId: "alice.testnet",
+                accountId: options.assigned ? "agent.testnet" : "alice.testnet",
                 csrfToken: "synthetic-csrf",
                 expiresAt: new Date(Date.now() + 900000).toISOString(),
               },
@@ -81,7 +83,34 @@ async function setup(page: Page, mode = "normal", options: SetupOptions = {}) {
     if (path === "/api/organizations")
       return route.fulfill({
         json: {
-          organizations: [{ id: org, name: "Research", role: "owner" }],
+          organizations: [
+            options.assigned
+              ? { id: agentOrg, name: "Lapobaby", role: "owner" }
+              : { id: org, name: "Research", role: "owner" },
+          ],
+          nextOffset: null,
+        },
+      });
+    if (path === "/api/agent/assignments")
+      return route.fulfill({
+        json: {
+          assignments: options.assigned
+            ? [
+                {
+                  policy,
+                  policyDigest: "a".repeat(64),
+                  consentStatus:
+                    mode === "revoked"
+                      ? "CONSENT_REVOKED_OFFCHAIN"
+                      : "CONSENT_APPROVED_OFFCHAIN",
+                  onchainStatus: "NOT_SUBMITTED",
+                  expired: mode === "expired",
+                  agentDisabled: mode === "disabled",
+                  verifierPolicyStatus: { eligible: true, conflict: null },
+                  organizationName: "Demo-vault",
+                },
+              ]
+            : [],
           nextOffset: null,
         },
       });
@@ -99,6 +128,7 @@ async function setup(page: Page, mode = "normal", options: SetupOptions = {}) {
                     onchainStatus: "NOT_SUBMITTED",
                     expired: false,
                     agentDisabled: mode === "disabled",
+                    verifierPolicyStatus: { eligible: true, conflict: null },
                   },
                   ...(options.additionalMandate
                     ? [
@@ -109,6 +139,10 @@ async function setup(page: Page, mode = "normal", options: SetupOptions = {}) {
                           onchainStatus: "NOT_SUBMITTED",
                           expired: false,
                           agentDisabled: false,
+                          verifierPolicyStatus: {
+                            eligible: true,
+                            conflict: null,
+                          },
                         },
                       ]
                     : []),
@@ -171,11 +205,17 @@ async function setup(page: Page, mode = "normal", options: SetupOptions = {}) {
     return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
   });
   await page.goto("/workspace/proposals");
-  await page.getByLabel("Organization", { exact: true }).selectOption(org);
-  if (mode !== "empty")
+  if (options.assigned) {
     await page
-      .getByLabel("Mandate", { exact: true })
+      .getByLabel("Assigned mandate", { exact: true })
       .selectOption(policy.mandateId);
+  } else {
+    await page.getByLabel("Organization", { exact: true }).selectOption(org);
+    if (mode !== "empty")
+      await page
+        .getByLabel("Mandate", { exact: true })
+        .selectOption(policy.mandateId);
+  }
 }
 async function prepare(page: Page, amount = "0.000000000000000000000001") {
   await page.getByRole("button", { name: "Enable scoped demo" }).click();
@@ -345,6 +385,64 @@ test("disabled agent cannot enable demo", async ({ page }) => {
     page.getByRole("button", { name: "Enable scoped demo" }),
   ).toBeDisabled();
 });
+test("cross-organization agent discovers only its assigned mandate and submits with scoped access", async ({
+  page,
+}) => {
+  const requests: string[] = [];
+  await setup(page, "normal", { assigned: true, requests });
+  await expect(
+    page.getByRole("tab", { name: "Assigned to me (1)" }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByLabel("Organization", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("region", { name: "Mandate scope" }),
+  ).toContainText("agent.testnet");
+  await page
+    .getByRole("button", { name: "Enable scoped proposal access" })
+    .click();
+  await page.getByLabel("Task description").fill("Assigned purchase");
+  await page.getByLabel("Exact amount").fill("0.000000000000000000000001");
+  await page.getByLabel("Evidence SHA-256").fill("b".repeat(64));
+  await page
+    .getByRole("button", { name: "Prepare proposal", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Submit offchain proposal" }).click();
+  await expect(
+    page.getByRole("region", { name: "Proposal history" }),
+  ).toContainText("Recorded offchain");
+  expect(
+    requests.some((request) =>
+      request.includes(`/agent/assignments/${policy.mandateId}/credentials`),
+    ),
+  ).toBe(true);
+  expect(
+    requests.some((request) =>
+      request.includes(`/organizations/${org}/mandates`),
+    ),
+  ).toBe(false);
+});
+for (const state of ["revoked", "expired", "disabled"] as const)
+  test(`assigned ${state} mandate remains visible but cannot enable proposal access`, async ({
+    page,
+  }) => {
+    const requests: string[] = [];
+    await setup(page, state, { assigned: true, requests });
+    await expect(
+      page.getByRole("region", { name: "Mandate scope" }),
+    ).toContainText(
+      state === "revoked"
+        ? "owner consent is not active"
+        : state === "expired"
+          ? "mandate expired"
+          : "agent disabled",
+    );
+    await expect(
+      page.getByRole("button", { name: "Enable scoped proposal access" }),
+    ).toBeDisabled();
+    expect(requests.some((request) => request.includes("/credentials"))).toBe(
+      false,
+    );
+  });
 test("empty mandates guide the owner to creation", async ({ page }) => {
   await setup(page, "empty");
   await expect(page.getByText("No mandates found.")).toBeVisible();
