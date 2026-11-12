@@ -2,12 +2,12 @@
  * Public NEAR RPC read-only failover. Transport availability is never evidence
  * that a wallet key or deployment is valid; callers retain all response checks.
  */
-type Cooldown = { until: number; reason: "RATE_LIMITED" | "TRANSIENT" };
-const cooldowns = new Map<string, Cooldown>();
+const rateLimitCooldowns = new Map<string, number>();
 const DEFAULT_COOLDOWN_MS = 15_000;
 const MAX_COOLDOWN_MS = 120_000;
-const DEFAULT_PER_PROVIDER_TIMEOUT_MS = 2_000;
-const DEFAULT_OVERALL_TIMEOUT_MS = 6_000;
+export const READ_ONLY_RPC_PER_PROVIDER_TIMEOUT_MS = 3_500;
+export const READ_ONLY_RPC_OVERALL_TIMEOUT_MS = 9_000;
+export const READ_ONLY_RPC_RESPONSE_LIMIT = 4 * 1024 * 1024;
 const urls = {
   testnet: [
     "https://rpc.testnet.fastnear.com",
@@ -20,6 +20,31 @@ const urls = {
   ],
 } as const;
 
+export type RpcFailureCategory =
+  | "TIMEOUT"
+  | "TRANSPORT"
+  | "RESPONSE_BODY"
+  | "RATE_LIMITED"
+  | "TRANSIENT_HTTP"
+  | "DEADLINE"
+  | "PROVIDERS_EXHAUSTED";
+export interface RpcDiagnostic {
+  event: "RPC_ATTEMPT_FAILED" | "RPC_PROVIDER_SKIPPED" | "RPC_EXHAUSTED";
+  network: "testnet" | "mainnet";
+  method: string;
+  category: RpcFailureCategory;
+  provider?: string;
+  attempt?: number;
+  status?: number;
+  attemptedProviders?: number;
+  rateLimitedProviders?: number;
+}
+export interface RpcFailoverOptions {
+  perProviderTimeoutMs?: number;
+  overallTimeoutMs?: number;
+  diagnostic?: (event: RpcDiagnostic) => void;
+}
+
 export function retryAfterMs(header: string | null, now = Date.now()): number {
   if (header === null) return DEFAULT_COOLDOWN_MS;
   const seconds = /^\d+$/.test(header.trim())
@@ -28,11 +53,6 @@ export function retryAfterMs(header: string | null, now = Date.now()): number {
   return Number.isFinite(seconds)
     ? Math.min(MAX_COOLDOWN_MS, Math.max(1000, seconds))
     : DEFAULT_COOLDOWN_MS;
-}
-
-export interface RpcFailoverTiming {
-  perProviderTimeoutMs?: number;
-  overallTimeoutMs?: number;
 }
 
 function timeout(value: number | undefined, fallback: number): number {
@@ -54,28 +74,56 @@ function abortReason(signal: AbortSignal): unknown {
   return signal.reason ?? new DOMException("RPC request aborted", "AbortError");
 }
 
-function fetchAttempt(
-  transport: typeof fetch,
-  endpoint: string,
-  init: RequestInit,
+function withAbort<T>(
   signal: AbortSignal,
-): Promise<Response> {
+  operation: () => Promise<T>,
+): Promise<T> {
   return new Promise((resolve, reject) => {
     const aborted = () => reject(abortReason(signal));
     if (signal.aborted) return aborted();
     signal.addEventListener("abort", aborted, { once: true });
     Promise.resolve()
-      .then(() => transport(endpoint, { ...init, signal }))
+      .then(operation)
       .then(
-        (response) => {
+        (value) => {
           signal.removeEventListener("abort", aborted);
-          resolve(response);
+          resolve(value);
         },
         (error) => {
           signal.removeEventListener("abort", aborted);
           reject(error);
         },
       );
+  });
+}
+
+async function bufferedResponse(
+  response: Response,
+  signal: AbortSignal,
+): Promise<Response> {
+  if (!response.ok || !response.body) return response;
+  const reader = response.body.getReader();
+  let bytes = 0;
+  const parts: Uint8Array[] = [];
+  try {
+    while (true) {
+      const part = await withAbort(signal, () => reader.read());
+      if (part.done) break;
+      bytes += part.value.length;
+      parts.push(part.value);
+      if (bytes > READ_ONLY_RPC_RESPONSE_LIMIT) break;
+    }
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // Cleanup failure cannot turn a response into trusted evidence.
+    }
+  }
+  return new Response(Buffer.concat(parts), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
   });
 }
 
@@ -86,12 +134,27 @@ function transientStatus(status: number): boolean {
   );
 }
 
+function errorCategory(error: unknown): RpcFailureCategory {
+  return error instanceof Error &&
+    (error.name === "TimeoutError" || error.name === "AbortError")
+    ? "TIMEOUT"
+    : "TRANSPORT";
+}
+
+function publicProvider(endpoint: string): string {
+  return new URL(endpoint).hostname;
+}
+
+function defaultDiagnostic(event: RpcDiagnostic): void {
+  console.info("NEAR_RPC_READ", JSON.stringify(event));
+}
+
 export async function readOnlyRpcFetch(
   network: "testnet" | "mainnet",
   init: RequestInit,
   transport: typeof fetch = fetch,
   now: () => number = Date.now,
-  timing: RpcFailoverTiming = {},
+  options: RpcFailoverOptions = {},
 ): Promise<Response> {
   // Never use this helper to submit signed transactions or send RPC mutations.
   if (init.method !== "POST" || typeof init.body !== "string")
@@ -115,15 +178,19 @@ export async function readOnlyRpcFetch(
     ].includes(body?.method ?? "")
   )
     throw new Error("READ_ONLY_RPC_REQUIRED");
+  const method = String(body.method);
 
   const perProviderTimeoutMs = timeout(
-      timing.perProviderTimeoutMs,
-      DEFAULT_PER_PROVIDER_TIMEOUT_MS,
+      options.perProviderTimeoutMs,
+      READ_ONLY_RPC_PER_PROVIDER_TIMEOUT_MS,
     ),
     overallTimeoutMs = timeout(
-      timing.overallTimeoutMs,
-      DEFAULT_OVERALL_TIMEOUT_MS,
+      options.overallTimeoutMs,
+      READ_ONLY_RPC_OVERALL_TIMEOUT_MS,
     ),
+    diagnostic =
+      options.diagnostic ??
+      (transport === fetch ? defaultDiagnostic : () => {}),
     overall = new AbortController(),
     overallTimer = setTimeout(
       () => overall.abort(timeoutError()),
@@ -132,72 +199,128 @@ export async function readOnlyRpcFetch(
     overallSignal = init.signal
       ? AbortSignal.any([init.signal, overall.signal])
       : overall.signal;
-  let last: { response: Response } | { error: unknown } | undefined;
-  const skipped: Cooldown[] = [];
+  const failures: RpcFailureCategory[] = [];
+  let attemptedProviders = 0;
+  let rateLimitedProviders = 0;
   try {
     if (overallSignal.aborted) throw abortReason(overallSignal);
-    for (const endpoint of urls[network]) {
+    for (const [index, endpoint] of urls[network].entries()) {
       if (overallSignal.aborted) throw abortReason(overallSignal);
-      const cooldown = cooldowns.get(endpoint);
-      if (cooldown && cooldown.until > now()) {
-        skipped.push(cooldown);
+      const provider = publicProvider(endpoint),
+        attempt = index + 1,
+        cooldown = rateLimitCooldowns.get(endpoint);
+      if (cooldown && cooldown > now()) {
+        rateLimitedProviders++;
+        failures.push("RATE_LIMITED");
+        diagnostic({
+          event: "RPC_PROVIDER_SKIPPED",
+          network,
+          method,
+          category: "RATE_LIMITED",
+          provider,
+          attempt,
+        });
         continue;
       }
-      const attempt = new AbortController(),
+      attemptedProviders++;
+      const attemptController = new AbortController(),
         attemptTimer = setTimeout(
-          () => attempt.abort(timeoutError()),
+          () => attemptController.abort(timeoutError()),
           Math.min(perProviderTimeoutMs, overallTimeoutMs),
         ),
-        signal = AbortSignal.any([overallSignal, attempt.signal]);
-      let response: Response;
+        signal = AbortSignal.any([overallSignal, attemptController.signal]);
+      let stage: "FETCH" | "BODY" = "FETCH";
       try {
-        response = await fetchAttempt(transport, endpoint, init, signal);
+        let response = await withAbort(signal, () =>
+          transport(endpoint, { ...init, signal }),
+        );
+        if (response.status === 429) {
+          rateLimitCooldowns.set(
+            endpoint,
+            now() + retryAfterMs(response.headers.get("retry-after"), now()),
+          );
+          rateLimitedProviders++;
+          failures.push("RATE_LIMITED");
+          diagnostic({
+            event: "RPC_ATTEMPT_FAILED",
+            network,
+            method,
+            category: "RATE_LIMITED",
+            provider,
+            attempt,
+            status: response.status,
+          });
+          await response.body?.cancel().catch(() => {});
+          continue;
+        }
+        if (transientStatus(response.status)) {
+          failures.push("TRANSIENT_HTTP");
+          diagnostic({
+            event: "RPC_ATTEMPT_FAILED",
+            network,
+            method,
+            category: "TRANSIENT_HTTP",
+            provider,
+            attempt,
+            status: response.status,
+          });
+          await response.body?.cancel().catch(() => {});
+          continue;
+        }
+        stage = "BODY";
+        response = await bufferedResponse(response, signal);
+        return response;
       } catch (error) {
-        if (overallSignal.aborted) throw abortReason(overallSignal);
-        cooldowns.set(endpoint, {
-          until: now() + DEFAULT_COOLDOWN_MS,
-          reason: "TRANSIENT",
+        if (overallSignal.aborted) {
+          diagnostic({
+            event: "RPC_ATTEMPT_FAILED",
+            network,
+            method,
+            category: "DEADLINE",
+            provider,
+            attempt,
+          });
+          throw abortReason(overallSignal);
+        }
+        const category =
+          stage === "BODY" && errorCategory(error) === "TRANSPORT"
+            ? "RESPONSE_BODY"
+            : errorCategory(error);
+        failures.push(category);
+        diagnostic({
+          event: "RPC_ATTEMPT_FAILED",
+          network,
+          method,
+          category,
+          provider,
+          attempt,
         });
-        last = { error };
-        continue;
       } finally {
         clearTimeout(attemptTimer);
       }
-      if (response.status === 429 || transientStatus(response.status)) {
-        const reason = response.status === 429 ? "RATE_LIMITED" : "TRANSIENT";
-        cooldowns.set(endpoint, {
-          until:
-            now() + retryAfterMs(response.headers.get("retry-after"), now()),
-          reason,
-        });
-        try {
-          await response.body?.cancel();
-        } catch {
-          // Cleanup failure cannot turn an unavailable provider into evidence.
-        }
-        last = { response };
-        continue;
-      }
-      // Response validity, network identity and block consistency remain the
-      // caller's responsibility. JSON-RPC errors are never retried here.
-      return response;
     }
   } finally {
     clearTimeout(overallTimer);
   }
-  if (last) {
-    if ("response" in last) return last.response;
-    throw last.error;
-  }
-  if (
-    skipped.length &&
-    skipped.every((entry) => entry.reason === "RATE_LIMITED")
-  )
-    throw new Error("RPC_RATE_LIMITED");
-  throw new Error("RPC_PROVIDERS_UNAVAILABLE");
+  const rateLimited =
+      failures.length > 0 &&
+      failures.every((category) => category === "RATE_LIMITED"),
+    timedOut =
+      failures.length > 0 &&
+      failures.every((category) => category === "TIMEOUT");
+  diagnostic({
+    event: "RPC_EXHAUSTED",
+    network,
+    method,
+    category: rateLimited ? "RATE_LIMITED" : "PROVIDERS_EXHAUSTED",
+    attemptedProviders,
+    rateLimitedProviders,
+  });
+  if (timedOut) throw timeoutError();
+  throw new Error(rateLimited ? "RPC_RATE_LIMITED" : "RPC_PROVIDERS_EXHAUSTED");
 }
 
 /** Test-only reset for deterministic cooldown isolation. */
 export function clearRpcCooldownForTests(): void {
-  cooldowns.clear();
+  rateLimitCooldowns.clear();
 }

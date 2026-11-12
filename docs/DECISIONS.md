@@ -625,3 +625,34 @@ from `deploymentVerified`. An RPC outage leaves the former unchanged and the lat
 false. Payments labels that state as unavailable and keeps transaction controls
 disabled until fresh verification succeeds; it no longer claims configuration was
 disabled because evidence was temporarily unavailable.
+
+## D037 — Provider rate limits are shared; transient failures are request-local
+
+Post-PR #38 Testnet correction on November 12, 2026: three consecutive deployment
+checks produced `RPC_TIMEOUT`, `RPC_HTTP_STATUS`, then immediate `RPC_UNAVAILABLE`.
+The third call made no provider attempt because PR #38 put timeouts, network errors
+and retryable HTTP failures into the same global 15-second cooldown used for 429s.
+Its two-second provider limit also rejected plausible public Testnet latency, and a
+failure while streaming an HTTP 200 body occurred after failover had already ended.
+
+Only an explicit provider-imposed 429 now creates shared cooldown state, with the
+existing bounded `Retry-After`. Timeouts, transport failures, response-body failures
+and retryable 408/5xx responses remain local to one request. A later independent
+verification can therefore attempt every provider not explicitly rate-limited.
+All-rate-limited, all-timeout and mixed exhausted-provider outcomes remain distinct
+fixed categories; none is accepted as evidence.
+
+Each provider receives a fresh 3.5-second signal under a nine-second RPC deadline.
+Complete deployment verification has a separate 15-second deadline across status,
+finalized head and parallel pinned reads. Successful HTTP bodies are bounded and
+read inside the provider attempt, so a streaming failure can safely reach the next
+provider while oversized responses still reach the unchanged four-MiB rejection.
+Valid JSON-RPC error envelopes and nonretryable HTTP responses are not hidden by
+provider shopping.
+
+Production diagnostics record only method, network, public provider hostname,
+attempt index, fixed category and optional numeric status/counts. No parameters,
+request IDs, account/key data, credentials or response content are logged. Network,
+freshness, block pinning, contract hash, complete access-key and accounting checks
+remain unchanged. The read-only method allowlist still excludes signed-transaction
+broadcast, and unavailable evidence still disables every financial operation.
