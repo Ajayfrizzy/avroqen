@@ -9,6 +9,7 @@ import {
   type ReviewRecord,
   readiness,
   reviewInput,
+  reviewMessage,
   validateMap1,
 } from "../../packages/domain/src/evidence.js";
 import { mandatePolicy } from "../../packages/domain/src/index.js";
@@ -79,6 +80,26 @@ const proof = map1For(
   100n,
   1000n,
 );
+it("renders the exact review and MAP-1 payload as ASCII-stable signing bytes", () => {
+  const values = {
+    organizationId: policy.organizationId,
+    policyDigest: proposal.policyDigest,
+    evidenceId: "00000000-0000-4000-8000-000000000001",
+    submissionDigest: "c".repeat(64),
+    review,
+    payload: proof,
+    challengeId: "00000000-0000-4000-8000-000000000002",
+    origin: "https://app.example.test",
+    expiresAt: "2030-01-01T00:00:00.000Z",
+  };
+  const message = reviewMessage(values);
+  expect(message).toContain("Avroqen M5 human review v2 - OFFCHAIN ONLY.");
+  expect(message).not.toContain("\u2014");
+  expect(Buffer.byteLength(message)).toBe(message.length);
+  expect(JSON.parse(message.slice(message.lastIndexOf("\n") + 1))).toEqual(
+    values,
+  );
+});
 it.each([
   "network_id",
   "vault_account",

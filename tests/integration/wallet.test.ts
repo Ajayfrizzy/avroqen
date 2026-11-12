@@ -194,6 +194,64 @@ it("verifies a Meteor-shaped NEP-413 owner proof end to end", () => {
   ).toBe(true);
 });
 
+it("detects byte drift in the legacy Unicode-bearing review message", () => {
+  const pair = generateKeyPairSync("ed25519");
+  const publicKey = `ed25519:${bs58.encode(
+    pair.publicKey.export({ format: "der", type: "spki" }).subarray(-32),
+  )}`;
+  const serverMessage =
+    "Avroqen M5 human review — OFFCHAIN ONLY. No transaction or payment.";
+  const walletMessage = serverMessage.replace("—", "-");
+  const nonce = Buffer.alloc(32, 7);
+  const recipient = "https://app.example.test";
+  const serialized = serialize(
+    {
+      struct: {
+        tag: "u32",
+        message: "string",
+        nonce: { array: { type: "u8", len: 32 } },
+        recipient: "string",
+        callback: { option: "string" },
+      },
+    },
+    {
+      tag: 2147484061,
+      message: walletMessage,
+      nonce: [...nonce],
+      recipient,
+      callback: null,
+    },
+  );
+  const signature = sign(
+    null,
+    createHash("sha256").update(serialized).digest(),
+    pair.privateKey,
+  );
+  const normalized = normalizeWalletProof({
+    accountId: "ajayfrizzy.testnet",
+    publicKey: { toString: () => publicKey },
+    signature: new Uint8Array(signature),
+  });
+
+  expect(Buffer.byteLength(serverMessage)).toBeGreaterThan(
+    serverMessage.length,
+  );
+  expect(
+    verifyMessage(
+      { message: walletMessage, nonce, recipient, callback_url: "" },
+      normalized.publicKey,
+      normalized.signature,
+    ),
+  ).toBe(true);
+  expect(
+    verifyMessage(
+      { message: serverMessage, nonce, recipient, callback_url: "" },
+      normalized.publicKey,
+      normalized.signature,
+    ),
+  ).toBe(false);
+});
+
 it.each([
   ["POPUP_WINDOW_OPEN_FAILED", "popup"],
   ["POPUP_WINDOW_REFUSED", "popup"],

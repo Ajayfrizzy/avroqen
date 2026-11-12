@@ -544,3 +544,28 @@ demo/operator credential. Proposal preparation, submission, idempotency, evidenc
 financial and onchain checks remain unchanged and continue through the existing
 bearer-scoped agent tool. Revoked, expired or disabled assignments remain visible
 for an honest denial state but cannot issue a capability or submit a proposal.
+
+## D034 — Independent review messages use ASCII-stable NEP-413 bytes
+
+Meteor review investigation on November 12, 2026 found the same compatibility
+boundary addressed for consent in D032. The review challenge always began with a
+literal U+2014 em dash, making every M5 message multibyte even though the bounded
+review and MAP-1 fields are otherwise ASCII. Avroqen reconstructed and verified
+the original UTF-8/Borsh bytes, so any remote-wallet Unicode byte drift produced a
+valid-looking nonempty signature that failed local Ed25519 verification.
+
+Fresh review challenges now use message v2 with an ASCII header. The exact review,
+MAP-1 payload, organization, policy digest, evidence and submission digests,
+challenge, Origin and expiry remain in the signed JSON body. Any future non-ASCII
+structured value is rendered with reversible JSON `\\uXXXX` escapes, preserving
+the value without ambiguous transport bytes. Existing challenge rows and evidence
+records are not rewritten; a legacy or altered stored message fails reconstruction.
+
+Review verification returns fixed `REVIEW_PROOF_*` stage codes for account/network,
+challenge/session/actor/origin/expiry/consumption, MAP-1 payload, reconstructed
+message, Ed25519 signature, finalized FullAccess key and atomic consumption. Only
+the allowlisted code and existing scoped identifiers reach security observations;
+signatures, nonces, session tokens and complete messages remain excluded. The
+five-minute TTL, CSRF/session binding, designated verifier and claim checks, exact
+proposal/evidence/policy bindings, finalized key requirement and single-use commit
+are unchanged.

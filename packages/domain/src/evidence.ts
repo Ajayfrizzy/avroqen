@@ -191,7 +191,21 @@ export function reviewMessage(v: {
   origin: string;
   expiresAt: string;
 }) {
-  return `Avroqen M5 human review — OFFCHAIN ONLY. No transaction or payment.\nSource observations are human assertions, not automated provider verification.\n${JSON.stringify({ ...v, review: reviewInput.parse(v.review), payload: map1.parse(v.payload) })}`;
+  // Keep Meteor's NEP-413 input byte-stable while preserving every exact value.
+  // JSON escapes are reversible and avoid remote-wallet Unicode ambiguity.
+  const exact = JSON.stringify({
+    ...v,
+    review: reviewInput.parse(v.review),
+    payload: map1.parse(v.payload),
+  }).replace(/\P{ASCII}/gu, (character) => {
+    const point = character.codePointAt(0) as number;
+    if (point <= 0xffff) return `\\u${point.toString(16).padStart(4, "0")}`;
+    const offset = point - 0x10000;
+    return `\\u${(0xd800 + (offset >> 10)).toString(16)}\\u${(
+      0xdc00 + (offset & 0x3ff)
+    ).toString(16)}`;
+  });
+  return `Avroqen M5 human review v2 - OFFCHAIN ONLY. No transaction or payment.\nSource observations are human assertions, not automated provider verification.\n${exact}`;
 }
 export function validateMap1(
   e: Map1,

@@ -104,6 +104,34 @@ const errors: Record<string, string> = {
     "A signed dispute is terminal for this proposal. Prepare a new proposal if needed.",
   INVALID_PROOF:
     "Wallet proof expired or did not match. Start a fresh review signature.",
+  REVIEW_PROOF_ACCOUNT_MISMATCH:
+    "Meteor returned a different account. Select this review's verifier and retry with a fresh challenge.",
+  REVIEW_PROOF_NETWORK_MISMATCH:
+    "Meteor returned a proof for the wrong NEAR network. Select Testnet and retry.",
+  REVIEW_PROOF_EVIDENCE_UNAVAILABLE:
+    "The evidence is no longer available for this review.",
+  REVIEW_PROOF_CHALLENGE_UNAVAILABLE:
+    "This review challenge is unavailable. Start a fresh review signature.",
+  REVIEW_PROOF_SESSION_MISMATCH:
+    "This review challenge belongs to another sign-in session. Start a fresh review signature.",
+  REVIEW_PROOF_ACTOR_MISMATCH:
+    "This review challenge belongs to another verifier.",
+  REVIEW_PROOF_ORIGIN_MISMATCH:
+    "This review challenge was issued for another application origin.",
+  REVIEW_PROOF_CHALLENGE_CONSUMED:
+    "This review challenge was already used. Refresh the signed decisions.",
+  REVIEW_PROOF_CHALLENGE_EXPIRED:
+    "This review challenge expired. Start a fresh review signature.",
+  REVIEW_PROOF_PAYLOAD_MISMATCH:
+    "The stored review payload no longer matches the exact proposal and policy.",
+  REVIEW_PROOF_MESSAGE_MISMATCH:
+    "The review signing message failed its integrity check. Start a fresh review signature.",
+  REVIEW_PROOF_SIGNATURE_INVALID:
+    "Meteor returned a signature that does not verify for this exact review message and key.",
+  REVIEW_PROOF_KEY_NOT_AUTHORIZED:
+    "The signing key is not an active finalized FullAccess key for this verifier.",
+  REVIEW_PROOF_CONSUME_RACE:
+    "This review challenge was used concurrently. Refresh the signed decisions.",
   INVALID_REQUEST:
     "Check the fields. URLs, files and extra authority fields are not accepted.",
   SESSION_REQUIRED: "Sign in again to continue.",
