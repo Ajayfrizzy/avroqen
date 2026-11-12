@@ -128,7 +128,12 @@ binding guards and immutable row triggers. It adds no secret/provider/file stora
 - `GET /api/organizations/:orgId/mandates/:mandateId/chain`: scoped policy, exact onchain mandate/proposal snapshots and authorized intent history. Unavailable state is null, never a zero balance. Explorer links require an RPC-matched hash.
 - `POST .../chain/intents`: strict `{idempotencyKey, operation}`; allowlisted typed operations only. No arbitrary receiver, arguments, signer, method or raw transfer action.
 - `POST /api/chain/intents/:intentId/begin`: rechecks original actor, live role/session/consent/agent bindings and deployment manifest before marking the prompt attempted.
-- `POST /api/chain/intents/:intentId/report`: `{hash: string|null}` is an untrusted wallet report, not settlement evidence. Missing hash means UNKNOWN; subsequent blind retry is prohibited.
+- `POST /api/chain/intents/:intentId/report`: a strict wallet report is either
+  `{outcome:"BROADCAST",hash:string}` or a null-hash `CANCELED`,
+  `SUBMISSION_FAILED` or `UNKNOWN` outcome. It is untrusted transport evidence,
+  not settlement evidence. Every null-hash outcome remains UNKNOWN and prohibits
+  blind retry; only independent finalized-chain verification establishes success
+  or failure.
 
 Migration 005 adds immutable intent bindings and append-only chain events, per-wallet/vault unresolved-operation uniqueness, idempotency and monotonic finalized observation protections. Worker leases and finalized scan cursors survive restarts. Intent transitions and audit evidence commit atomically. Existing migrations and financial contract state are not rewritten. See runbooks/financial/RECONCILIATION.md for receipt and withdrawal verification.
 

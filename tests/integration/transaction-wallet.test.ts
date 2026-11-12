@@ -32,12 +32,24 @@ const operation: ChainOperation = {
   policyDigest: "a".repeat(64),
   kind: "FUND",
 };
+const hash = "1".repeat(32);
+const executionOutcome = {
+  final_execution_status: "FINAL",
+  status: { SuccessValue: "" },
+  transaction: {
+    hash,
+    signer_id: operation.signerId,
+    receiver_id: operation.receiverId,
+  },
+  transaction_outcome: { id: hash },
+  receipts_outcome: [],
+};
 beforeEach(() => {
   vi.clearAllMocks();
   f.signIn.mockResolvedValue({
     identifier: { accountId: "owner.testnet", network: "testnet" },
   });
-  f.sign.mockResolvedValue([{ transaction: { hash: "1".repeat(32) } }]);
+  f.sign.mockResolvedValue([executionOutcome]);
   f.createAction.mockImplementation(async (v) => ({
     promptForExecution: v.id === "near::sign_in" ? f.signIn : f.sign,
   }));
@@ -46,7 +58,10 @@ it("requires a wallet prompt and durable begin before every financial signature;
   const begin = vi.fn(async () => {
     expect(f.sign).not.toHaveBeenCalled();
   });
-  expect(await submitOperation(operation, begin)).toBe("1".repeat(32));
+  expect(await submitOperation(operation, begin)).toEqual({
+    outcome: "BROADCAST",
+    hash,
+  });
   expect(begin).toHaveBeenCalledOnce();
   expect(f.sign).toHaveBeenCalledOnce();
   expect(f.createAction.mock.calls[0]?.[0].input).toEqual({
@@ -80,18 +95,69 @@ it("does not sign after database begin fails", async () => {
   ).rejects.toThrow();
   expect(f.sign).not.toHaveBeenCalled();
 });
-it("never retries wallet cancellation or missing transaction hash", async () => {
+it("classifies wallet cancellation without retrying", async () => {
   f.sign.mockRejectedValue(new Error("Action was cancelled"));
   const begin = vi.fn(async () => {});
-  await expect(submitOperation(operation, begin)).rejects.toThrow();
+  await expect(submitOperation(operation, begin)).resolves.toEqual({
+    outcome: "CANCELED",
+    hash: null,
+  });
   expect(f.sign).toHaveBeenCalledOnce();
   expect(begin).toHaveBeenCalledOnce();
 });
-it("does not treat malformed wallet result as success", async () => {
+it("keeps a missing transaction hash unknown", async () => {
   f.sign.mockResolvedValue([]);
-  await expect(submitOperation(operation, async () => {})).rejects.toThrow(
-    "unknown",
-  );
+  await expect(submitOperation(operation, async () => {})).resolves.toEqual({
+    outcome: "UNKNOWN",
+    hash: null,
+  });
+});
+it("accepts Meteor's exported hash-only broadcast response", async () => {
+  f.sign.mockResolvedValue([{ hash, nonceString: "42" }]);
+  await expect(submitOperation(operation, async () => {})).resolves.toEqual({
+    outcome: "BROADCAST",
+    hash,
+  });
+});
+it("accepts a complete outcome identified by transaction_outcome", async () => {
+  f.sign.mockResolvedValue([
+    {
+      ...executionOutcome,
+      transaction: { ...executionOutcome.transaction, hash: undefined },
+    },
+  ]);
+  await expect(submitOperation(operation, async () => {})).resolves.toEqual({
+    outcome: "BROADCAST",
+    hash,
+  });
+});
+it("quarantines conflicting hashes instead of choosing one", async () => {
+  f.sign.mockResolvedValue([
+    { ...executionOutcome, transaction_outcome: { id: "2".repeat(32) } },
+  ]);
+  await expect(submitOperation(operation, async () => {})).resolves.toEqual({
+    outcome: "UNKNOWN",
+    hash: null,
+  });
+});
+it("quarantines a malformed identifier beside a valid hash", async () => {
+  f.sign.mockResolvedValue([{ ...executionOutcome, hash: "not-a-chain-hash" }]);
+  await expect(submitOperation(operation, async () => {})).resolves.toEqual({
+    outcome: "UNKNOWN",
+    hash: null,
+  });
+});
+it("distinguishes an explicit Meteor submission failure", async () => {
+  const error = new Error("Wallet failed") as Error & {
+    _reason: { endTags: string[] };
+  };
+  error.name = "MeteorActionError";
+  error._reason = { endTags: ["EXT_DIRECT_RESPONSE_FAILED"] };
+  f.sign.mockRejectedValue(error);
+  await expect(submitOperation(operation, async () => {})).resolves.toEqual({
+    outcome: "SUBMISSION_FAILED",
+    hash: null,
+  });
 });
 it("a canceled emergency pause remains an attempted unknown outcome and is never retried", async () => {
   f.sign.mockRejectedValue(new Error("Action was cancelled"));
@@ -107,7 +173,7 @@ it("a canceled emergency pause remains an attempted unknown outcome and is never
       },
       begin,
     ),
-  ).rejects.toThrow();
+  ).resolves.toEqual({ outcome: "CANCELED", hash: null });
   expect(begin).toHaveBeenCalledOnce();
   expect(f.sign).toHaveBeenCalledOnce();
 });
