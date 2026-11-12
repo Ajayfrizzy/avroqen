@@ -2,7 +2,7 @@
 
 The API prepares one immutable, typed FunctionCall per intent. It never broadcasts or signs. Preparation requires the original owner role, scoped agent wallet or exact designated M5 review author; active sessions, origin, CSRF, tenant bindings and live consent/agent checks apply. Recovery withdrawals/pause/revoke remain available after offchain consent revocation. The Rust contract remains the financial authority.
 
-The wallet connector uses in-memory storage, refuses key storage, omits all access-key installation parameters and sets `useFunctionCallKey:false`. It connects the exact account and network before persisting `AWAITING_WALLET`, then opens one transaction prompt. The result is only a reported hash. Unknown/canceled post-prompt results remain quarantined; the application does not automatically repeat them.
+The wallet connector uses in-memory storage, refuses key storage, omits all access-key installation parameters and sets `useFunctionCallKey:false`. It connects the exact account and network before persisting `AWAITING_WALLET`, then opens one transaction prompt. Pinned Meteor SDK 3.24.1's `near::sign_transactions` action uses its `sign` route to sign and broadcast and documents `FinalExecutionOutcome[]`; Avroqen accepts the transaction hash from a single consistent `transaction.hash`, `transaction_outcome.id`, or the SDK's exported legacy hash-only result. The result remains only an untrusted reported hash. Conflicting/missing hashes, cancellation and wallet-declared submission failure remain distinctly labeled but quarantined as UNKNOWN; the application does not automatically repeat them.
 
 `chain_intents` persists operation bytes, actor/org/mandate, deployment manifest, idempotency key, finalized scan anchor, claimed/verified hashes, receipt IDs and observation height/hash. One unresolved intent per wallet/vault prevents app-level parallel retries. Append-only `chain_events` record status changes atomically. SQL triggers protect scope and terminal observations. Worker leases use `SKIP LOCKED`, expire after process loss, and compare the lease and hash claim before publishing observations. Terminal records are not reprocessed; stale/conflicting finalized observations cannot advance a projection. A database rollback does not advance progress or imply success.
 
@@ -41,8 +41,11 @@ terminal result. One unresolved signer/vault operation blocks application retrie
 Connect the exact account and Testnet before persisting AWAITING_WALLET, and
 persist that uncertainty before opening the transaction prompt. Cancellation before
 the transaction prompt may leave an unsigned PREPARED intent. After the prompt can
-have opened, cancellation or a missing hash does not prove absence of broadcast:
-retain UNKNOWN and its operation lock. No timeout releases contract reservations,
+have opened, cancellation, wallet-declared submission failure or a missing hash
+does not prove absence of broadcast: retain UNKNOWN with its distinct reason and
+operation lock. If the browser obtains a hash but its report request fails, it must
+not replace that hash with a null report; the durable AWAITING_WALLET intent remains
+eligible for exact-operation scanning from its pre-prompt anchor. No timeout releases contract reservations,
 creates another transaction or authorizes a blind retry. Reconciliation is
 read-only, idempotent and restartable; unavailable/pruned history, ambiguous matches
 or missing receipt bodies remain unresolved. It cannot repair contract state.

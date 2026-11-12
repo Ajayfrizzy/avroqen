@@ -191,9 +191,11 @@ export const chainParams = z.strictObject({
   mandateId: z.uuid(),
 });
 export const intentParams = z.strictObject({ intentId: z.uuid() });
-export const hashReport = z.strictObject({
-  hash: z
-    .string()
-    .regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/)
-    .nullable(),
-});
+const reportedChainHash = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
+export const walletReport = z.discriminatedUnion("outcome", [
+  z.strictObject({ outcome: z.literal("BROADCAST"), hash: reportedChainHash }),
+  z.strictObject({ outcome: z.literal("CANCELED"), hash: z.null() }),
+  z.strictObject({ outcome: z.literal("SUBMISSION_FAILED"), hash: z.null() }),
+  z.strictObject({ outcome: z.literal("UNKNOWN"), hash: z.null() }),
+]);
+export type WalletReport = z.infer<typeof walletReport>;

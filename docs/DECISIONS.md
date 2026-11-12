@@ -424,3 +424,30 @@ records. The already deployed November 7 Wasm is unchanged and does not inherit
 this correction. Any replacement deployment or migration is a separate
 owner-authorized action. Primary proof remains BLOCKED, the Testing FullAccess key
 remains RETAINED and financial operations remain DISABLED.
+
+## D030 — Meteor broadcast results remain untrusted until chain reconciliation
+
+Transaction recovery correction, November 12, 2026: pinned Meteor SDK 3.24.1's
+`near::sign_transactions` action invokes the wallet's sign-and-broadcast flow and
+documents `FinalExecutionOutcome[]`. Avroqen previously accepted only
+`transaction.hash`, discarding otherwise usable single-result identifiers and
+collapsing every post-prompt condition into one missing-hash outcome. A failed API
+report could then overwrite a hash already returned to the browser with null.
+
+The browser now accepts one consistent base58 hash from the documented
+`transaction.hash`, the same outcome's `transaction_outcome.id`, or the SDK's
+exported legacy hash-only response. Conflicting, multiple, malformed or missing
+results are not guessed. Cancellation, explicit wallet submission failure and
+genuinely unknown results receive distinct safe reason codes but all remain
+`UNKNOWN` after prompt opening. A known hash is never replaced with null after a
+reporting failure. The durable pre-prompt intent and finalized-block scanner remain
+the recovery path, and only exact operation, signer, receiver, receipt graph,
+deployment and contract-state verification can establish terminal success or
+failure.
+
+No backend signer, wallet key custody, automatic financial replay, timeout unlock,
+contract change, database reset or terminal UNKNOWN override is introduced. The
+wallet result and a block scan are attribution evidence under the documented trusted
+RPC assumption, not independent consensus. An identical out-of-band operation after
+the intent anchor can still be indistinguishable; multiple matches remain
+quarantined. Existing deployment and transaction authorization gates are unchanged.
