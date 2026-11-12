@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import bs58 from "bs58";
 import { z } from "zod";
 import { nearAccount } from "../../packages/domain/src/index.js";
-import { readOnlyRpcFetch } from "./rpc-rate-limit.js";
+import {
+  READ_ONLY_RPC_OVERALL_TIMEOUT_MS,
+  READ_ONLY_RPC_RESPONSE_LIMIT,
+  readOnlyRpcFetch,
+} from "./rpc-rate-limit.js";
 export const chainHash = z.string().refine((v) => {
   try {
     return bs58.decode(v).length === 32;
@@ -60,7 +64,7 @@ const endpoints = [
 ] as const;
 export const FINALIZED_BLOCK_MAX_AGE_MS = 120_000;
 export const FINALIZED_BLOCK_MAX_FUTURE_SKEW_MS = 30_000;
-const RPC_RESPONSE_LIMIT = 4 * 1024 * 1024;
+export const DEPLOYMENT_VERIFICATION_TIMEOUT_MS = 15_000;
 const RPC_JSON_MAX_DEPTH = 64;
 const RPC_JSON_MAX_NUMBER_LENGTH = 128;
 const TIMESTAMP_NANOSECONDS_MAX_DIGITS = 20;
@@ -75,13 +79,19 @@ const rpcMethods = new Set([
   "EXPERIMENTAL_receipt",
 ]);
 const rpcError = (code: string): Error => new Error(code);
-const transportError = (error: unknown) =>
-  rpcError(
+const transportError = (error: unknown) => {
+  if (
+    error instanceof Error &&
+    ["RPC_RATE_LIMITED", "RPC_PROVIDERS_EXHAUSTED"].includes(error.message)
+  )
+    return rpcError(error.message);
+  return rpcError(
     error instanceof Error &&
       (error.name === "TimeoutError" || error.name === "AbortError")
       ? "RPC_TIMEOUT"
       : "RPC_UNAVAILABLE",
   );
+};
 
 /**
  * JSON.parse keeps the last duplicate object member. Critical RPC fields must
@@ -243,18 +253,28 @@ export class NearReader {
     if (!(endpoints as readonly string[]).includes(endpoint))
       throw new Error("RPC_ENDPOINT_NOT_ALLOWED");
   }
-  async rpc(method: string, params: unknown): Promise<unknown> {
+  async rpc(
+    method: string,
+    params: unknown,
+    parentSignal?: AbortSignal,
+  ): Promise<unknown> {
     if (!rpcMethods.has(method)) throw new Error("READ_ONLY_RPC");
     const id = `m6-${++this.requestId}`;
     let response: Response;
     try {
-      const init: RequestInit = {
-        method: "POST",
-        redirect: "error",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
-        signal: AbortSignal.timeout(6000),
-      };
+      const requestSignal = AbortSignal.timeout(
+          READ_ONLY_RPC_OVERALL_TIMEOUT_MS,
+        ),
+        signal = parentSignal
+          ? AbortSignal.any([parentSignal, requestSignal])
+          : requestSignal,
+        init: RequestInit = {
+          method: "POST",
+          redirect: "error",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+          signal,
+        };
       response =
         this.endpoint === endpoints[0]
           ? await readOnlyRpcFetch("testnet", init, this.transport, this.now)
@@ -272,7 +292,8 @@ export class NearReader {
         const r = await reader.read();
         if (r.done) break;
         bytes += r.value.length;
-        if (bytes > RPC_RESPONSE_LIMIT) throw rpcError("RPC_RESPONSE_LIMIT");
+        if (bytes > READ_ONLY_RPC_RESPONSE_LIMIT)
+          throw rpcError("RPC_RESPONSE_LIMIT");
         parts.push(r.value);
       }
     } catch (error) {
@@ -297,11 +318,12 @@ export class NearReader {
     }
     return body.result;
   }
-  async block(id?: string | number) {
+  async block(id?: string | number, signal?: AbortSignal) {
     const block = blockSchema.safeParse(
       await this.rpc(
         "block",
         id === undefined ? { finality: "final" } : { block_id: id },
+        signal,
       ),
     );
     if (!block.success) throw rpcError("RPC_BLOCK_INVALID");
@@ -312,19 +334,25 @@ export class NearReader {
     account: string,
     block: string,
     extra: Record<string, unknown> = {},
+    signal?: AbortSignal,
   ) {
-    return this.rpc("query", {
-      request_type: type,
-      account_id: account,
-      block_id: block,
-      ...extra,
-    });
+    return this.rpc(
+      "query",
+      {
+        request_type: type,
+        account_id: account,
+        block_id: block,
+        ...extra,
+      },
+      signal,
+    );
   }
   async view(
     account: string,
     method: string,
     args: Record<string, unknown>,
     block: string,
+    signal?: AbortSignal,
   ): Promise<unknown> {
     if (
       ![
@@ -343,28 +371,41 @@ export class NearReader {
         result: z.array(z.number().int().min(0).max(255)).max(100000),
       })
       .parse(
-        await this.query("call_function", account, block, {
-          method_name: method,
-          args_base64: Buffer.from(JSON.stringify(args)).toString("base64"),
-        }),
+        await this.query(
+          "call_function",
+          account,
+          block,
+          {
+            method_name: method,
+            args_base64: Buffer.from(JSON.stringify(args)).toString("base64"),
+          },
+          signal,
+        ),
       );
     if (r.block_hash !== block) throw new Error("RPC_BLOCK_MISMATCH");
     return JSON.parse(Buffer.from(r.result).toString("utf8"));
   }
   async deployment(manifest: Manifest, at?: string) {
+    const signal = AbortSignal.timeout(DEPLOYMENT_VERIFICATION_TIMEOUT_MS);
     const status = z
       .object({ chain_id: z.literal("testnet") })
-      .parse(await this.rpc("status", []));
+      .parse(await this.rpc("status", [], signal));
     if (status.chain_id !== manifest.network)
       throw new Error("NETWORK_MISMATCH");
-    const b = await this.block(at);
+    const b = await this.block(at, signal);
     if (at === undefined)
       this.assertFreshFinalizedBlock(b.header.timestamp_nanosec);
     const [code, account, keys, domain] = await Promise.all([
-      this.query("view_code", manifest.account, b.header.hash),
-      this.query("view_account", manifest.account, b.header.hash),
-      this.query("view_access_key_list", manifest.account, b.header.hash),
-      this.view(manifest.account, "get_accounting", {}, b.header.hash),
+      this.query("view_code", manifest.account, b.header.hash, {}, signal),
+      this.query("view_account", manifest.account, b.header.hash, {}, signal),
+      this.query(
+        "view_access_key_list",
+        manifest.account,
+        b.header.hash,
+        {},
+        signal,
+      ),
+      this.view(manifest.account, "get_accounting", {}, b.header.hash, signal),
     ]);
     const c = z
       .object({

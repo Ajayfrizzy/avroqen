@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearRpcCooldownForTests,
+  type RpcDiagnostic,
   readOnlyRpcFetch,
   retryAfterMs,
 } from "../../services/chain/rpc-rate-limit";
@@ -35,14 +36,16 @@ describe("read-only RPC 429 handling", () => {
           headers: { "Retry-After": "72" },
         }),
       )
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            id: "test",
-            result: { permission: "FullAccess" },
-          }),
-          { status: 200 },
+      .mockImplementation(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: "test",
+              result: { permission: "FullAccess" },
+            }),
+            { status: 200 },
+          ),
         ),
       );
     const now = () => 1_000;
@@ -116,8 +119,109 @@ describe("read-only RPC 429 handling", () => {
       .mockRejectedValue(new TypeError("private network detail"));
     await expect(
       readOnlyRpcFetch("testnet", request, transport),
-    ).rejects.toThrow("private network detail");
+    ).rejects.toThrow("RPC_PROVIDERS_EXHAUSTED");
     expect(transport).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not let transient failures block the next independent request", async () => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("", { status: 503 }))
+      .mockResolvedValueOnce(new Response("", { status: 503 }))
+      .mockResolvedValueOnce(new Response("", { status: 503 }))
+      .mockResolvedValue(new Response("ok"));
+    await expect(
+      readOnlyRpcFetch("testnet", request, transport),
+    ).rejects.toThrow("RPC_PROVIDERS_EXHAUSTED");
+    await expect(
+      readOnlyRpcFetch("testnet", request, transport),
+    ).resolves.toMatchObject({ ok: true });
+    expect(transport).toHaveBeenCalledTimes(4);
+    expect(transport.mock.calls[3]?.[0]).toBe(
+      "https://rpc.testnet.fastnear.com",
+    );
+  });
+
+  it("recovers after the reported timeout, HTTP, and cooldown-exhaustion sequence", async () => {
+    const stalled = vi.fn<typeof fetch>(async (_url, init) => {
+      const signal = init?.signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) =>
+        signal.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        }),
+      );
+    });
+    await expect(
+      readOnlyRpcFetch("testnet", request, stalled, Date.now, {
+        perProviderTimeoutMs: 20,
+        overallTimeoutMs: 35,
+      }),
+    ).rejects.toMatchObject({ name: "TimeoutError" });
+
+    const httpFailure = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("", { status: 503 }));
+    await expect(
+      readOnlyRpcFetch("testnet", request, httpFailure),
+    ).rejects.toThrow("RPC_PROVIDERS_EXHAUSTED");
+    expect(httpFailure).toHaveBeenCalledTimes(3);
+
+    const recovered = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("ok"));
+    await expect(
+      readOnlyRpcFetch("testnet", request, recovered),
+    ).resolves.toMatchObject({ ok: true });
+    expect(recovered).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back when a successful HTTP response body fails", async () => {
+    const diagnostics: RpcDiagnostic[] = [];
+    const failedBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error("body transport failed"));
+      },
+    });
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(failedBody, { status: 200 }))
+      .mockResolvedValue(new Response("ok"));
+    const response = await readOnlyRpcFetch(
+      "testnet",
+      request,
+      transport,
+      Date.now,
+      { diagnostic: (event) => diagnostics.push(event) },
+    );
+    expect(await response.text()).toBe("ok");
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(diagnostics[0]).toMatchObject({
+      category: "RESPONSE_BODY",
+      method: "query",
+      attempt: 1,
+    });
+  });
+
+  it("emits bounded diagnostics without request parameters", async () => {
+    const diagnostics: RpcDiagnostic[] = [];
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("", { status: 503 }))
+      .mockResolvedValue(new Response("ok"));
+    await readOnlyRpcFetch("testnet", request, transport, Date.now, {
+      diagnostic: (event) => diagnostics.push(event),
+    });
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        method: "query",
+        provider: "rpc.testnet.fastnear.com",
+        attempt: 1,
+        category: "TRANSIENT_HTTP",
+        status: 503,
+      }),
+    ]);
+    expect(JSON.stringify(diagnostics)).not.toContain("example.testnet");
+    expect(JSON.stringify(diagnostics)).not.toContain("public_key");
   });
 
   it("stops failover when the strict overall deadline expires", async () => {
@@ -145,8 +249,9 @@ describe("read-only RPC 429 handling", () => {
         new Response("", { status: 429, headers: { "Retry-After": "72" } }),
       );
     const now = () => 1000;
-    const response = await readOnlyRpcFetch("testnet", request, transport, now);
-    expect(response.status).toBe(429);
+    await expect(
+      readOnlyRpcFetch("testnet", request, transport, now),
+    ).rejects.toThrow("RPC_RATE_LIMITED");
     expect(transport).toHaveBeenCalledTimes(3);
     await expect(
       readOnlyRpcFetch("testnet", request, transport, now),
@@ -191,5 +296,6 @@ describe("read-only RPC 429 handling", () => {
     expect(response.ok).toBe(true);
     const data = await response.json();
     expect(data.error).toBeDefined();
+    expect(transport).toHaveBeenCalledTimes(1);
   });
 });

@@ -95,7 +95,7 @@ it.each([
     async () => {
       throw new Error("private network diagnostic");
     },
-    "RPC_UNAVAILABLE",
+    "RPC_PROVIDERS_EXHAUSTED",
   ],
   [
     "timeout",
@@ -107,6 +107,11 @@ it.each([
   [
     "HTTP failure",
     async () => new Response("private provider diagnostic", { status: 503 }),
+    "RPC_PROVIDERS_EXHAUSTED",
+  ],
+  [
+    "non-retryable HTTP failure",
+    async () => new Response("", { status: 501 }),
     "RPC_HTTP_STATUS",
   ],
   ["empty body", async () => new Response(null), "RPC_EMPTY_RESPONSE"],
