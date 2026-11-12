@@ -35,6 +35,9 @@ for (const mobile of [false, true])
       return route.fulfill({ status: 403, json: { error: "ACCESS_DENIED" } });
     });
     await page.goto("/workspace/settlement");
+    await expect(
+      page.getByText("Live submission disabled.", { exact: false }),
+    ).toHaveCount(0);
     await page
       .getByRole("combobox", { name: "Mandate", exact: true })
       .selectOption(policy.mandateId);
@@ -85,6 +88,7 @@ test("unknown operation warns against retry and has no unverified explorer link"
             id: "fixture",
             state: "UNKNOWN",
             reason: "RPC_OR_EVIDENCE_UNAVAILABLE",
+            wallet_outcome: "WALLET_CANCELED",
             operation: { methodName: "authorize_and_execute" },
             explorerUrl: null,
           },
@@ -100,6 +104,15 @@ test("unknown operation warns against retry and has no unverified explorer link"
     page.getByText(
       "Do not repeat this operation while its outcome is unresolved.",
     ),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Avroqen will compare the exact operation with finalized onchain transactions.",
+      { exact: false },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Wallet report: canceled without a transaction hash."),
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: "View verified transaction" }),

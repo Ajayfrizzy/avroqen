@@ -434,8 +434,12 @@ it("never opens the same intent twice; missing wallet result stays quarantined a
     409,
   );
   expect(
-    (await post(`/api/chain/intents/${id}/report`, { hash: null })).json()
-      .state,
+    (
+      await post(`/api/chain/intents/${id}/report`, {
+        outcome: "UNKNOWN",
+        hash: null,
+      })
+    ).json().state,
   ).toBe("UNKNOWN");
   await Promise.all([runOnce(pool, reader), runOnce(pool, reader)]);
   const row = (
@@ -453,6 +457,59 @@ it("never opens the same intent twice; missing wallet result stays quarantined a
     (await pool.query("SELECT state FROM chain_intents WHERE id=$1", [id]))
       .rows[0].state,
   ).toBe("UNKNOWN");
+});
+it.each([
+  ["CANCELED", "WALLET_CANCELED"],
+  ["SUBMISSION_FAILED", "WALLET_SUBMISSION_FAILED"],
+] as const)(
+  "persists %s distinctly while preserving UNKNOWN quarantine",
+  async (outcome, reason) => {
+    const r = await prepare();
+    const id = r.json().id;
+    await post(`/api/chain/intents/${id}/begin`, {});
+    const report = await post(`/api/chain/intents/${id}/report`, {
+      outcome,
+      hash: null,
+    });
+    expect(report.statusCode).toBe(200);
+    expect(report.json().state).toBe("UNKNOWN");
+    expect(
+      (
+        await pool.query(
+          "SELECT state,reason,reported_hash FROM chain_intents WHERE id=$1",
+          [id],
+        )
+      ).rows[0],
+    ).toMatchObject({ state: "UNKNOWN", reason, reported_hash: null });
+    const detail = await app.inject({
+      url: `${path(mandateId)}/chain`,
+      headers,
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json().intents[0].wallet_outcome).toBe(reason);
+    expect((await prepare()).statusCode).toBe(409);
+  },
+);
+it("rejects inconsistent wallet outcome and hash reports", async () => {
+  const r = await prepare();
+  const id = r.json().id;
+  await post(`/api/chain/intents/${id}/begin`, {});
+  expect(
+    (
+      await post(`/api/chain/intents/${id}/report`, {
+        outcome: "BROADCAST",
+        hash: null,
+      })
+    ).statusCode,
+  ).toBe(400);
+  expect(
+    (
+      await post(`/api/chain/intents/${id}/report`, {
+        outcome: "CANCELED",
+        hash: bs58.encode(Buffer.alloc(32, 5)),
+      })
+    ).statusCode,
+  ).toBe(400);
 });
 it("rolls back the intent when audit persistence fails", async () => {
   await pool.query(
@@ -541,6 +598,7 @@ it("untrusted wallet hash is not an explorer link or success", async () => {
   const r = await prepare();
   await post(`/api/chain/intents/${r.json().id}/begin`, {});
   await post(`/api/chain/intents/${r.json().id}/report`, {
+    outcome: "BROADCAST",
     hash: bs58.encode(Buffer.alloc(32, 5)),
   });
   const v = await app.inject({ url: `${path(mandateId)}/chain`, headers });
@@ -616,6 +674,7 @@ it.each([false, true])(
     const id = r.json().id;
     await post(`/api/chain/intents/${id}/begin`, {});
     await post(`/api/chain/intents/${id}/report`, {
+      outcome: "BROADCAST",
       hash: bs58.encode(Buffer.alloc(32, 5)),
     });
     rpcResult = finalizedFixture(r.json().operation, failure);
@@ -642,6 +701,7 @@ it("quarantines a transaction receipt mismatch without manufacturing settlement"
   const id = r.json().id;
   await post(`/api/chain/intents/${id}/begin`, {});
   await post(`/api/chain/intents/${id}/report`, {
+    outcome: "BROADCAST",
     hash: bs58.encode(Buffer.alloc(32, 5)),
   });
   const raw = finalizedFixture(r.json().operation);
@@ -693,6 +753,7 @@ it("historical finalized success cannot settle a new intent or release its lock"
   const id = r.json().id;
   await post(`/api/chain/intents/${id}/begin`, {});
   await post(`/api/chain/intents/${id}/report`, {
+    outcome: "BROADCAST",
     hash: bs58.encode(Buffer.alloc(32, 5)),
   });
   const raw = finalizedFixture(r.json().operation);
@@ -790,6 +851,7 @@ it("keeps reconciliation operating when monitoring projection fails", async () =
     id = r.json().id;
   await post(`/api/chain/intents/${id}/begin`, {});
   await post(`/api/chain/intents/${id}/report`, {
+    outcome: "BROADCAST",
     hash: bs58.encode(Buffer.alloc(32, 5)),
   });
   await pool.query(
@@ -815,6 +877,7 @@ it("projects receipt mismatch as unverified evidence without financial success",
     id = r.json().id;
   await post(`/api/chain/intents/${id}/begin`, {});
   await post(`/api/chain/intents/${id}/report`, {
+    outcome: "BROADCAST",
     hash: bs58.encode(Buffer.alloc(32, 5)),
   });
   const raw = finalizedFixture(r.json().operation);

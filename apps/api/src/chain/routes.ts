@@ -23,10 +23,10 @@ import {
   buildOperation,
   type ChainOperation,
   chainParams,
-  hashReport,
   intentInput,
   intentParams,
   type OperationInput,
+  walletReport,
 } from "../../../../packages/domain/src/settlement.js";
 import {
   chainHash,
@@ -263,7 +263,9 @@ export function chainRoutes(
       load(db, request, orgId, mandateId, false),
     );
     const intents = await ctx.pool.query(
-      `SELECT id,actor_account,canonical_operation,state,reason,verified_hash,receipt_ids,last_height,last_block_hash,created_at FROM chain_intents WHERE org_id=$1 AND mandate_id=$2 AND ($3 OR actor_account=$4) ORDER BY created_at DESC LIMIT 50`,
+      `SELECT i.id,i.actor_account,i.canonical_operation,i.state,i.reason,i.verified_hash,i.receipt_ids,i.last_height,i.last_block_hash,i.created_at,
+       (SELECT e.reason FROM chain_events e WHERE e.intent_id=i.id AND e.reason IN ('UNVERIFIED_WALLET_HASH','WALLET_CANCELED','WALLET_SUBMISSION_FAILED','WALLET_OUTCOME_UNKNOWN') ORDER BY e.occurred_at DESC,e.id DESC LIMIT 1) AS wallet_outcome
+       FROM chain_intents i WHERE i.org_id=$1 AND i.mandate_id=$2 AND ($3 OR i.actor_account=$4) ORDER BY i.created_at DESC LIMIT 50`,
       [orgId, mandateId, data.owner, data.who.account_id],
     );
     const onchainProposals: Record<string, unknown> = {};
@@ -508,7 +510,7 @@ export function chainRoutes(
     });
   });
   app.post("/api/chain/intents/:intentId/report", async (request) => {
-    const input = hashReport.parse(request.body);
+    const input = walletReport.parse(request.body);
     if (input.hash) chainHash.parse(input.hash);
     return transaction(async (db) => {
       const r = await owned(db, request);
@@ -517,10 +519,14 @@ export function chainRoutes(
         return { state: r.state };
       if (r.reported_hash && input.hash !== r.reported_hash)
         return deny(409, "HASH_ALREADY_REPORTED");
-      const state = input.hash ? "BROADCAST_REPORTED" : "UNKNOWN",
-        reason = input.hash
-          ? "UNVERIFIED_WALLET_HASH"
-          : "WALLET_OUTCOME_UNKNOWN";
+      const state =
+          input.outcome === "BROADCAST" ? "BROADCAST_REPORTED" : "UNKNOWN",
+        reason = {
+          BROADCAST: "UNVERIFIED_WALLET_HASH",
+          CANCELED: "WALLET_CANCELED",
+          SUBMISSION_FAILED: "WALLET_SUBMISSION_FAILED",
+          UNKNOWN: "WALLET_OUTCOME_UNKNOWN",
+        }[input.outcome];
       await db.query(
         "UPDATE chain_intents SET state=$2,reason=$3,reported_hash=$4,next_check=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1",
         [r.id, state, reason, input.hash],
