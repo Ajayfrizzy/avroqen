@@ -214,6 +214,24 @@ export const replacementEvidence = z.strictObject({
   validityBlocks: z.literal(RECOVERY_VALIDITY_BLOCKS),
 });
 export type ReplacementEvidence = z.infer<typeof replacementEvidence>;
+export const replacementInspection = z.strictObject({
+  intentId: z.uuid(),
+  status: z.enum([
+    "WAITING_VALIDITY",
+    "SIGNER_STATE_CHANGED",
+    "STORAGE_CREDIT_CHANGED",
+    "ELIGIBLE",
+  ]),
+  thresholdBlocks: z.literal(RECOVERY_VALIDITY_BLOCKS),
+  anchorHeight: z.string().regex(/^[1-9][0-9]*$/),
+  anchorHash: recoveryChainHash,
+  currentHeight: z.string().regex(/^[1-9][0-9]*$/),
+  currentHash: recoveryChainHash,
+  elapsedBlocks: z.string().regex(/^(0|[1-9][0-9]*)$/),
+  remainingBlocks: z.string().regex(/^(0|[1-9][0-9]*)$/),
+  evidence: replacementEvidence.nullable(),
+});
+export type ReplacementInspection = z.infer<typeof replacementInspection>;
 export const replacementProof = verifyInput.extend({
   action: z.literal("AUTHORIZE_CONTROLLED_REPLACEMENT"),
   replacementIntentId: z.uuid(),

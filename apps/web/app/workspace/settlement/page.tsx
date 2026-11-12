@@ -15,6 +15,8 @@ import {
   type ChainOperation,
   type OperationInput,
   operationInput,
+  RECOVERY_VALIDITY_BLOCKS,
+  type ReplacementInspection,
   type WalletReport,
 } from "../../../../../packages/domain/src/settlement";
 import type { VaultMandate } from "../../../../../packages/domain/src/vault";
@@ -22,6 +24,7 @@ import { useWorkspaceIdentity } from "../../components/shell";
 import { Badge, PageHeader, TransactionSummary } from "../../components/ui";
 import { submitOperation } from "../transaction-wallet";
 import { type Challenge, signChallenge } from "../wallet";
+import { WalletSignInError } from "../wallet-errors";
 
 type Session = { accountId: string; csrfToken: string };
 type Intent = {
@@ -47,6 +50,25 @@ type Detail = {
     }
   >;
   reviews: { id: string; payload: Map1 }[];
+};
+type RecoveryAuthorization =
+  | "idle"
+  | "requesting"
+  | "wallet"
+  | "canceled"
+  | "success"
+  | "error";
+type RecoveryReview = {
+  intent: Intent;
+  phase: "loading" | "ready" | "error";
+  inspection?: ReplacementInspection;
+  error?: string;
+  authorization: RecoveryAuthorization;
+  authorizationMessage?: string;
+};
+type RecoveryChallenge = Challenge & {
+  replacementIntentId: string;
+  expiresAt: string;
 };
 const expiryRecoveryOperations: readonly OperationInput["kind"][] = [
   "WITHDRAW",
@@ -107,6 +129,8 @@ async function api<T>(
         "Onchain storage credit changed after the original attempt. Reconcile the original operation before any replacement.",
       RECOVERY_EVIDENCE_UNAVAILABLE:
         "Independent recovery evidence is currently unavailable. The original operation remains quarantined.",
+      RPC_TIMEOUT:
+        "The blockchain evidence check timed out. The original operation remains quarantined; retry the read-only check later.",
       RECOVERY_NOT_ELIGIBLE:
         "This operation is not eligible for controlled replacement.",
       RECOVERY_CHALLENGE_EXISTS:
@@ -140,6 +164,11 @@ export default function Settlement() {
     [reviewId, setReviewId] = useState("");
   const [guardian, setGuardian] = useState("");
   const [prepared, setPrepared] = useState<Intent>();
+  const [recovery, setRecovery] = useState<RecoveryReview>();
+  const [recoveryChallenge, setRecoveryChallenge] = useState<{
+    intentId: string;
+    challenge: RecoveryChallenge;
+  }>();
   const policy = assignments.find((p) => p.mandateId === selected);
   const verifierPolicyStatus = policy
       ? independentVerifierPolicy(policy)
@@ -151,6 +180,7 @@ export default function Settlement() {
     operationAllowed =
       !unsafePolicy && (!expired || expiryRecoveryOperations.includes(kind));
   const refreshVersion = useRef(0);
+  const recoveryVersion = useRef(0);
   const refresh = useCallback(async () => {
     if (!session) return;
     const version = ++refreshVersion.current;
@@ -420,7 +450,7 @@ export default function Settlement() {
       await refresh().catch(() => {});
     }
   }
-  async function recover(intent: Intent) {
+  async function inspectRecovery(intent: Intent) {
     if (
       !session ||
       !policy ||
@@ -433,12 +463,83 @@ export default function Settlement() {
       intent.replacement_authorized_at
     )
       return;
-    setBusy(true);
-    setMessage("");
+    const version = ++recoveryVersion.current;
+    setRecovery({
+      intent,
+      phase: "loading",
+      authorization: "idle",
+    });
+    setRecoveryChallenge(undefined);
     try {
-      const challenge = await api<
-        Challenge & { replacementIntentId: string; expiresAt: string }
-      >(`/chain/intents/${intent.id}/recovery/challenge`, session, {});
+      const inspection = await api<ReplacementInspection>(
+        `/chain/intents/${intent.id}/recovery/eligibility`,
+        session,
+      );
+      if (inspection.intentId !== intent.id)
+        throw new Error("Recovery evidence did not match the selected intent.");
+      if (version !== recoveryVersion.current) return;
+      setRecovery({
+        intent,
+        phase: "ready",
+        inspection,
+        authorization: "idle",
+      });
+    } catch (error) {
+      if (version !== recoveryVersion.current) return;
+      setRecovery({
+        intent,
+        phase: "error",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Recovery evidence is unavailable. The original operation remains quarantined.",
+        authorization: "idle",
+      });
+    }
+  }
+  async function authorizeRecovery() {
+    if (
+      !session ||
+      !recovery ||
+      recovery.phase !== "ready" ||
+      recovery.inspection?.status !== "ELIGIBLE" ||
+      !recovery.inspection.evidence ||
+      !enabled ||
+      !currentState ||
+      unsafePolicy ||
+      recovery.intent.operation.signerId !== session.accountId
+    )
+      return;
+    const intent = recovery.intent;
+    const update = (
+      authorization: RecoveryAuthorization,
+      authorizationMessage?: string,
+    ) =>
+      setRecovery((current) =>
+        current?.intent.id === intent.id
+          ? {
+              ...current,
+              authorization,
+              ...(authorizationMessage ? { authorizationMessage } : {}),
+            }
+          : current,
+      );
+    update("requesting", "Preparing owner authorization challenge...");
+    try {
+      let challenge =
+        recoveryChallenge?.intentId === intent.id &&
+        Date.parse(recoveryChallenge.challenge.expiresAt) > Date.now()
+          ? recoveryChallenge.challenge
+          : undefined;
+      if (!challenge) {
+        challenge = await api<RecoveryChallenge>(
+          `/chain/intents/${intent.id}/recovery/challenge`,
+          session,
+          {},
+        );
+        setRecoveryChallenge({ intentId: intent.id, challenge });
+      }
+      update("wallet", "Waiting for owner approval in Meteor Wallet...");
       const signed = await signChallenge(challenge, "testnet");
       if (signed.accountId !== session.accountId)
         throw new Error(
@@ -456,18 +557,21 @@ export default function Settlement() {
         },
       );
       setPrepared(replacement);
-      setMessage(
+      setRecoveryChallenge(undefined);
+      update(
+        "success",
         "One unsigned replacement is prepared. The original remains unknown. Review the exact operation before separately opening your wallet.",
       );
-      await refresh();
+      await refresh().catch(() => {});
     } catch (error) {
-      setMessage(
+      update(
+        error instanceof WalletSignInError && error.kind === "canceled"
+          ? "canceled"
+          : "error",
         error instanceof Error
           ? error.message
-          : "Controlled recovery failed. The original operation remains quarantined.",
+          : "Controlled replacement authorization failed. The original operation remains quarantined.",
       );
-    } finally {
-      setBusy(false);
     }
   }
   const owner = policy?.ownerAccount === session?.accountId;
@@ -516,6 +620,9 @@ export default function Settlement() {
                 setCurrentState(false);
                 setEnabled(false);
                 setPrepared(undefined);
+                recoveryVersion.current++;
+                setRecovery(undefined);
+                setRecoveryChallenge(undefined);
                 setGuardian("");
                 setProposalId("");
                 setReviewId("");
@@ -965,13 +1072,23 @@ export default function Settlement() {
                         </p>
                       </>
                     )}
-                    {i.replacement_authorized_at && (
-                      <p>
-                        A single controlled replacement has been authorized. The
-                        original operation remains unknown and must not be
-                        resubmitted.
-                      </p>
-                    )}
+                    {i.replacement_authorized_at &&
+                      !(
+                        recovery?.intent.id === i.id &&
+                        recovery.authorization === "success"
+                      ) && (
+                        <section
+                          className="recovery-panel"
+                          aria-label="Controlled replacement authorization"
+                        >
+                          <Badge tone="success">Authorization complete</Badge>
+                          <p>
+                            A single controlled replacement has been authorized.
+                            The original intent <code>{i.id}</code> remains
+                            UNKNOWN and must not be resubmitted.
+                          </p>
+                        </section>
+                      )}
                     <details>
                       <summary>Technical outcome</summary>
                       <p>
@@ -1002,11 +1119,209 @@ export default function Settlement() {
                           disabled={
                             busy || !enabled || !currentState || unsafePolicy
                           }
-                          onClick={() => void recover(i)}
+                          onClick={() => void inspectRecovery(i)}
                         >
                           Review controlled replacement
                         </button>
                       )}
+                    {recovery?.intent.id === i.id && (
+                      <section
+                        className="recovery-panel"
+                        aria-label="Controlled replacement eligibility"
+                      >
+                        <h4>Controlled replacement review</h4>
+                        <p>
+                          Original intent <code>{i.id}</code>
+                        </p>
+                        {recovery.phase === "loading" && (
+                          <>
+                            <p role="status">
+                              Checking finalized blockchain evidence...
+                            </p>
+                            <div
+                              className="skeleton short"
+                              aria-hidden="true"
+                            />
+                          </>
+                        )}
+                        {recovery.phase === "error" && (
+                          <>
+                            <p role="alert">{recovery.error}</p>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void inspectRecovery(i)}
+                            >
+                              Retry eligibility check
+                            </button>
+                          </>
+                        )}
+                        {recovery.phase === "ready" && recovery.inspection && (
+                          <>
+                            <Badge
+                              tone={
+                                recovery.inspection.status === "ELIGIBLE"
+                                  ? "success"
+                                  : recovery.inspection.status ===
+                                      "WAITING_VALIDITY"
+                                    ? "warning"
+                                    : "danger"
+                              }
+                            >
+                              {
+                                {
+                                  ELIGIBLE: "Eligible for owner authorization",
+                                  WAITING_VALIDITY:
+                                    "Waiting for validity window",
+                                  SIGNER_STATE_CHANGED: "Signer state changed",
+                                  STORAGE_CREDIT_CHANGED:
+                                    "Storage credit changed",
+                                }[recovery.inspection.status]
+                              }
+                            </Badge>
+                            <dl className="review-summary">
+                              <div>
+                                <dt>Recovery threshold</dt>
+                                <dd>
+                                  {recovery.inspection.thresholdBlocks.toLocaleString()}{" "}
+                                  blocks
+                                </dd>
+                              </div>
+                              <div>
+                                <dt>Current finalized block</dt>
+                                <dd>{recovery.inspection.currentHeight}</dd>
+                              </div>
+                              <div>
+                                <dt>Blocks since original anchor</dt>
+                                <dd>{recovery.inspection.elapsedBlocks}</dd>
+                              </div>
+                              <div>
+                                <dt>Blocks remaining</dt>
+                                <dd>{recovery.inspection.remainingBlocks}</dd>
+                              </div>
+                            </dl>
+                            {recovery.inspection.status ===
+                              "WAITING_VALIDITY" && (
+                              <p role="status">
+                                The original attempt remains UNKNOWN and
+                                quarantined until the full{" "}
+                                {RECOVERY_VALIDITY_BLOCKS.toLocaleString()}
+                                -block window has elapsed.
+                              </p>
+                            )}
+                            {recovery.inspection.status ===
+                              "SIGNER_STATE_CHANGED" && (
+                              <p role="alert">
+                                The signer key set, permissions, or nonce
+                                changed after the original attempt. Safe
+                                non-broadcast recovery cannot be established.
+                              </p>
+                            )}
+                            {recovery.inspection.status ===
+                              "STORAGE_CREDIT_CHANGED" && (
+                              <p role="alert">
+                                Onchain storage credit differs from the required
+                                null state. Reconcile the original operation; no
+                                replacement can be authorized.
+                              </p>
+                            )}
+                            {recovery.inspection.status === "ELIGIBLE" &&
+                              recovery.inspection.evidence && (
+                                <>
+                                  <h5>Verified recovery evidence</h5>
+                                  <dl className="review-summary">
+                                    <div>
+                                      <dt>Original anchor</dt>
+                                      <dd>
+                                        {
+                                          recovery.inspection.evidence
+                                            .anchorHeight
+                                        }
+                                        <br />
+                                        {
+                                          recovery.inspection.evidence
+                                            .anchorHash
+                                        }
+                                      </dd>
+                                    </div>
+                                    <div>
+                                      <dt>Finalized evidence head</dt>
+                                      <dd>
+                                        {
+                                          recovery.inspection.evidence
+                                            .evidenceHeight
+                                        }
+                                        <br />
+                                        {
+                                          recovery.inspection.evidence
+                                            .evidenceHash
+                                        }
+                                      </dd>
+                                    </div>
+                                    <div>
+                                      <dt>Signer key state</dt>
+                                      <dd>
+                                        Unchanged ·{" "}
+                                        {
+                                          recovery.inspection.evidence
+                                            .signerKeysDigest
+                                        }
+                                      </dd>
+                                    </div>
+                                    <div>
+                                      <dt>Storage credit</dt>
+                                      <dd>Null at anchor and evidence head</dd>
+                                    </div>
+                                  </dl>
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      busy ||
+                                      !enabled ||
+                                      !currentState ||
+                                      [
+                                        "requesting",
+                                        "wallet",
+                                        "success",
+                                      ].includes(recovery.authorization)
+                                    }
+                                    onClick={() => void authorizeRecovery()}
+                                  >
+                                    {recovery.authorization === "canceled"
+                                      ? "Retry controlled replacement authorization"
+                                      : "Authorize controlled replacement"}
+                                  </button>
+                                </>
+                              )}
+                            {recovery.authorization === "requesting" && (
+                              <p role="status">
+                                Preparing owner authorization challenge...
+                              </p>
+                            )}
+                            {recovery.authorization === "wallet" && (
+                              <p role="status">
+                                Waiting for owner approval in Meteor Wallet...
+                              </p>
+                            )}
+                            {recovery.authorization === "canceled" && (
+                              <p role="status">
+                                {recovery.authorizationMessage}
+                              </p>
+                            )}
+                            {recovery.authorization === "error" && (
+                              <p role="alert">
+                                {recovery.authorizationMessage}
+                              </p>
+                            )}
+                            {recovery.authorization === "success" && (
+                              <p role="status">
+                                {recovery.authorizationMessage}
+                              </p>
+                            )}
+                          </>
+                        )}
+                      </section>
+                    )}
                   </article>
                 ))}
               </section>

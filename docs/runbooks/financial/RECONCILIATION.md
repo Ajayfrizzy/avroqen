@@ -62,13 +62,16 @@ identical, and `get_storage_credit` must be null. A partial scan, explorer absen
 timeout or null credit alone is insufficient.
 
 The owner selects **Review controlled replacement** and signs the displayed
-NEP-413 message. This message sends no transaction. It authorizes one exact unsigned
-replacement preparation and discloses that the old outcome remains unknown and
-trusted RPC is a residual risk. The server repeats the evidence check after the
-signature and atomically stores the challenge/evidence, one-way marker and identical
-`PREPARED` replacement. The owner must then separately review and approve the normal
-wallet transaction. Never script either approval or automatically open the second
-prompt.
+recovery action. The first step is read-only: it creates no challenge or wallet
+prompt and displays the finalized block, threshold distance and eligibility or
+blocker. Only an eligible panel exposes **Authorize controlled replacement**. That
+action obtains and signs the NEP-413 message. This message sends no transaction. It
+authorizes one exact unsigned replacement preparation and discloses that the old
+outcome remains unknown and trusted RPC is a residual risk. The server repeats the
+evidence check when issuing the challenge and after the signature, then atomically
+stores the challenge/evidence, one-way marker and identical `PREPARED` replacement.
+The owner must separately review and approve the normal wallet transaction. Never
+script either approval or automatically open the second prompt.
 
 If the validity distance is short, any signer key/nonce/permission changed, storage
 credit is non-null, a hash appears, RPC is unavailable or block binding conflicts,

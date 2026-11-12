@@ -838,6 +838,27 @@ hr {
 .workspace article h3 {
   margin-top: 0;
 }
+.recovery-panel {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-left: 3px solid var(--emerald);
+  background: #f7faf9;
+}
+.recovery-panel h4,
+.recovery-panel h5 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+.recovery-panel h5 {
+  margin-top: 20px;
+}
+.recovery-panel .review-summary {
+  margin: 14px 0;
+  padding: 16px;
+}
+.recovery-panel > button {
+  margin-top: 8px;
+}
 .timeline {
   list-style: none;
   padding: 0;

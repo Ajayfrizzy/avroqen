@@ -90,6 +90,11 @@ tests require one atomic exact replacement, immutable original UNKNOWN history,
 challenge replay/concurrency rejection, direct-marker rejection and continued
 unresolved uniqueness. Browser coverage must use Meteor's message-only action and
 prove cancellation or recovery never invokes the transaction begin/report path.
+Inspection-first UI/API tests must also prove the initial GET creates no challenge,
+shows immediate loading and block distance, distinguishes timeout/unavailable/key/
+storage blockers, and exposes owner signing only after ELIGIBLE evidence. Wallet
+pending, cancellation, authorization failure and persisted completion are separate
+visible states.
 
 ## M7 security gates
 

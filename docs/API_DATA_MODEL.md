@@ -138,6 +138,11 @@ binding guards and immutable row triggers. It adds no secret/provider/file stora
   storage deposit only, rechecks the original owner and exact operation, verifies
   the 90,000-block/key-nonce/storage-credit evidence rule and returns a five-minute
   session-bound NEP-413 controlled-replacement challenge. It sends no transaction.
+- `GET /api/chain/intents/:intentId/recovery/eligibility`: read-only inspection
+  for the original signer. It creates no challenge and returns the pinned anchor,
+  current finalized block, elapsed/remaining blocks and one of WAITING_VALIDITY,
+  SIGNER_STATE_CHANGED, STORAGE_CREDIT_CHANGED or ELIGIBLE. Only ELIGIBLE includes
+  replacement evidence; RPC timeout/unavailability remains an explicit error.
 - `POST /api/chain/intents/:intentId/recovery/complete`: verifies the original
   FullAccess signer proof, repeats current evidence and atomically preserves the
   original UNKNOWN record while creating exactly one identical unsigned PREPARED

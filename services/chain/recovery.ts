@@ -3,7 +3,9 @@ import { z } from "zod";
 import {
   RECOVERY_VALIDITY_BLOCKS,
   type ReplacementEvidence,
+  type ReplacementInspection,
   replacementEvidence,
+  replacementInspection,
 } from "../../packages/domain/src/settlement.js";
 import type { Intent } from "./reconcile.js";
 import { chainHash, type NearReader } from "./rpc.js";
@@ -49,10 +51,10 @@ function canonicalKeys(value: unknown, blockHash: string) {
   return JSON.stringify(keys);
 }
 
-export async function replacementEvidenceFor(
+export async function inspectReplacementEligibility(
   reader: NearReader,
   intent: Intent,
-): Promise<ReplacementEvidence> {
+): Promise<ReplacementInspection> {
   if (intent.reported_hash || intent.verified_hash)
     throw new Error("RECOVERY_HASH_PRESENT");
   const operation = z
@@ -70,8 +72,25 @@ export async function replacementEvidenceFor(
   )
     throw new Error("CONFLICTING_INTENT_ANCHOR");
   const current = await reader.deployment(intent.manifest);
-  if (current.block.height - anchor.block.height < RECOVERY_VALIDITY_BLOCKS)
-    throw new Error("RECOVERY_VALIDITY_WINDOW_OPEN");
+  if (current.block.height < anchor.block.height)
+    throw new Error("CONFLICTING_RPC");
+  const elapsed = current.block.height - anchor.block.height;
+  const base = {
+    intentId: intent.id,
+    thresholdBlocks: RECOVERY_VALIDITY_BLOCKS,
+    anchorHeight: String(anchor.block.height),
+    anchorHash: anchor.block.hash,
+    currentHeight: String(current.block.height),
+    currentHash: current.block.hash,
+    elapsedBlocks: String(elapsed),
+    remainingBlocks: String(Math.max(0, RECOVERY_VALIDITY_BLOCKS - elapsed)),
+  };
+  if (elapsed < RECOVERY_VALIDITY_BLOCKS)
+    return replacementInspection.parse({
+      ...base,
+      status: "WAITING_VALIDITY",
+      evidence: null,
+    });
   const [anchorKeysRaw, currentKeysRaw, anchorCredit, currentCredit] =
     await Promise.all([
       reader.query(
@@ -100,10 +119,18 @@ export async function replacementEvidenceFor(
   const anchorKeys = canonicalKeys(anchorKeysRaw, anchor.block.hash);
   const currentKeys = canonicalKeys(currentKeysRaw, current.block.hash);
   if (anchorKeys !== currentKeys)
-    throw new Error("RECOVERY_SIGNER_NONCE_CHANGED");
+    return replacementInspection.parse({
+      ...base,
+      status: "SIGNER_STATE_CHANGED",
+      evidence: null,
+    });
   if (anchorCredit !== null || currentCredit !== null)
-    throw new Error("RECOVERY_STORAGE_CREDIT_CHANGED");
-  return replacementEvidence.parse({
+    return replacementInspection.parse({
+      ...base,
+      status: "STORAGE_CREDIT_CHANGED",
+      evidence: null,
+    });
+  const evidence = replacementEvidence.parse({
     anchorHeight: String(anchor.block.height),
     anchorHash: anchor.block.hash,
     evidenceHeight: String(current.block.height),
@@ -113,4 +140,26 @@ export async function replacementEvidenceFor(
     storageCreditAtEvidence: null,
     validityBlocks: RECOVERY_VALIDITY_BLOCKS,
   });
+  return replacementInspection.parse({
+    ...base,
+    status: "ELIGIBLE",
+    evidence,
+  });
+}
+
+export async function replacementEvidenceFor(
+  reader: NearReader,
+  intent: Intent,
+): Promise<ReplacementEvidence> {
+  const inspection = await inspectReplacementEligibility(reader, intent);
+  if (inspection.status === "ELIGIBLE" && inspection.evidence)
+    return inspection.evidence;
+  throw new Error(
+    {
+      WAITING_VALIDITY: "RECOVERY_VALIDITY_WINDOW_OPEN",
+      SIGNER_STATE_CHANGED: "RECOVERY_SIGNER_NONCE_CHANGED",
+      STORAGE_CREDIT_CHANGED: "RECOVERY_STORAGE_CREDIT_CHANGED",
+      ELIGIBLE: "RECOVERY_EVIDENCE_UNAVAILABLE",
+    }[inspection.status],
+  );
 }
