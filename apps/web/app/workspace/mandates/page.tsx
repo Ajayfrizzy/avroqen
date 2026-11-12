@@ -227,6 +227,30 @@ export default function Mandates() {
           "The agent is disabled or unavailable. New consent is not allowed.",
         INVALID_PROOF:
           "Wallet proof rejected or expired. Check the account and retry with a fresh challenge.",
+        CONSENT_PROOF_ACCOUNT_MISMATCH:
+          "Meteor returned a different account. Select this mandate's owner and retry with a fresh challenge.",
+        CONSENT_PROOF_NETWORK_MISMATCH:
+          "Meteor returned a proof for the wrong NEAR network. Select Testnet and retry.",
+        CONSENT_PROOF_CHALLENGE_UNAVAILABLE:
+          "This consent challenge is unavailable. Retry to create a fresh challenge.",
+        CONSENT_PROOF_SESSION_MISMATCH:
+          "This challenge belongs to an earlier browser session. Retry from this session.",
+        CONSENT_PROOF_ACTION_MISMATCH:
+          "The wallet proof does not match the requested consent action. Retry with a fresh challenge.",
+        CONSENT_PROOF_ORIGIN_MISMATCH:
+          "The consent challenge does not match this Avroqen origin. Stop and contact support.",
+        CONSENT_PROOF_CHALLENGE_CONSUMED:
+          "This consent challenge was already used. Refresh the mandate before retrying.",
+        CONSENT_PROOF_CHALLENGE_EXPIRED:
+          "Wallet approval finished after the consent challenge expired. Retry and approve the fresh challenge promptly.",
+        CONSENT_PROOF_MESSAGE_MISMATCH:
+          "The stored consent message no longer matches the mandate. Stop and contact support.",
+        CONSENT_PROOF_SIGNATURE_INVALID:
+          "Meteor returned a signature that does not verify for this exact consent message and key. Retry with a fresh challenge.",
+        CONSENT_PROOF_KEY_NOT_AUTHORIZED:
+          "The signing key is not a finalized FullAccess key for the owner account. Select the owner's authorized key and retry.",
+        CONSENT_PROOF_CONSUME_RACE:
+          "This challenge expired or was used while verification completed. Refresh the mandate before retrying.",
         VERIFIER_ROLE_CONFLICT_OWNER:
           "A designated verifier cannot also be the mandate owner.",
         VERIFIER_ROLE_CONFLICT_AGENT:

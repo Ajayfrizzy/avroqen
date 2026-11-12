@@ -295,23 +295,26 @@ export function mandateRoutes(app: FastifyInstance, ctx: Context) {
     const input = consentProofInput.parse(request.body);
     const inspect = async (db: pg.PoolClient) => {
       const data = await load(db, request, true);
-      if (
-        input.accountId !== data.who.account_id ||
-        input.network !== config.network
-      )
-        deny(401, "INVALID_PROOF");
+      if (input.accountId !== data.who.account_id)
+        deny(401, "CONSENT_PROOF_ACCOUNT_MISMATCH");
+      if (input.network !== config.network)
+        deny(401, "CONSENT_PROOF_NETWORK_MISMATCH");
       const result = await db.query(
-        "SELECT * FROM mandate_challenges WHERE id=$1 AND mandate_id=$2 AND session_hash=$3 AND action=$4 AND origin=$5 AND consumed_at IS NULL AND expires_at>clock_timestamp()",
-        [
-          input.challengeId,
-          data.policy.mandateId,
-          hash(tokenOf(request)),
-          input.action,
-          config.origin,
-        ],
+        `SELECT *,session_hash=$3 AS session_matches,
+          expires_at>clock_timestamp() AS unexpired
+         FROM mandate_challenges WHERE id=$1 AND mandate_id=$2`,
+        [input.challengeId, data.policy.mandateId, hash(tokenOf(request))],
       );
       const challenge = result.rows[0];
-      if (!challenge) return deny(401, "INVALID_PROOF");
+      if (!challenge) deny(401, "CONSENT_PROOF_CHALLENGE_UNAVAILABLE");
+      if (!challenge.session_matches)
+        deny(401, "CONSENT_PROOF_SESSION_MISMATCH");
+      if (challenge.action !== input.action)
+        deny(401, "CONSENT_PROOF_ACTION_MISMATCH");
+      if (challenge.origin !== config.origin)
+        deny(401, "CONSENT_PROOF_ORIGIN_MISMATCH");
+      if (challenge.consumed_at) deny(401, "CONSENT_PROOF_CHALLENGE_CONSUMED");
+      if (!challenge.unexpired) deny(401, "CONSENT_PROOF_CHALLENGE_EXPIRED");
       await allowed(db, data, input.action);
       const expected = consentMessage({
         action: input.action,
@@ -321,8 +324,9 @@ export function mandateRoutes(app: FastifyInstance, ctx: Context) {
         origin: config.origin,
         expiresAt: challenge.expires_at.toISOString(),
       });
+      if (expected !== challenge.message)
+        deny(401, "CONSENT_PROOF_MESSAGE_MISMATCH");
       if (
-        expected !== challenge.message ||
         !verifyMessage(
           {
             message: expected,
@@ -334,7 +338,7 @@ export function mandateRoutes(app: FastifyInstance, ctx: Context) {
           input.signature,
         )
       )
-        deny(401, "INVALID_PROOF");
+        deny(401, "CONSENT_PROOF_SIGNATURE_INVALID");
       // Locks may have waited beyond the initial session lookup.
       await session(request, db, true);
       return data;
@@ -342,14 +346,14 @@ export function mandateRoutes(app: FastifyInstance, ctx: Context) {
     await transaction(inspect);
     // Never hold SQL locks during a network request. Recheck all state after RPC.
     if (!(await verifyKey(input.accountId, input.publicKey)))
-      deny(401, "INVALID_PROOF");
+      deny(401, "CONSENT_PROOF_KEY_NOT_AUTHORIZED");
     return transaction(async (db) => {
       const data = await inspect(db);
       const consumed = await db.query(
         "UPDATE mandate_challenges SET consumed_at=clock_timestamp() WHERE id=$1 AND consumed_at IS NULL AND expires_at>clock_timestamp() RETURNING id",
         [input.challengeId],
       );
-      if (consumed.rowCount !== 1) deny(401, "INVALID_PROOF");
+      if (consumed.rowCount !== 1) deny(401, "CONSENT_PROOF_CONSUME_RACE");
       const status =
         input.action === "APPROVE_CONSENT"
           ? "CONSENT_APPROVED_OFFCHAIN"

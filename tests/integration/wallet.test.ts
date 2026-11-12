@@ -1,4 +1,8 @@
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { serialize } from "borsh";
+import bs58 from "bs58";
 import { beforeEach, expect, it, vi } from "vitest";
+import { verifyMessage } from "../../apps/api/src/identity/crypto.js";
 import { signChallenge } from "../../apps/web/app/workspace/wallet.js";
 import { normalizeWalletProof } from "../../apps/web/app/workspace/wallet-proof.js";
 
@@ -142,6 +146,52 @@ it("normalizes binary signatures byte-for-byte and rejects malformed wallet shap
       "Invalid wallet message response",
     );
   }
+});
+
+it("verifies a Meteor-shaped NEP-413 owner proof end to end", () => {
+  const pair = generateKeyPairSync("ed25519");
+  const publicKey = `ed25519:${bs58.encode(
+    pair.publicKey.export({ format: "der", type: "spki" }).subarray(-32),
+  )}`;
+  const challenge = {
+    message: "Approve exact Avroqen consent\nMandate: fixture",
+    nonce: Buffer.from(Array.from({ length: 32 }, (_, i) => i)),
+    recipient: "https://127.0.0.1:8443",
+    callback_url: "",
+  };
+  const serialized = serialize(
+    {
+      struct: {
+        tag: "u32",
+        message: "string",
+        nonce: { array: { type: "u8", len: 32 } },
+        recipient: "string",
+        callback: { option: "string" },
+      },
+    },
+    {
+      tag: 2147484061,
+      message: challenge.message,
+      nonce: [...challenge.nonce],
+      recipient: challenge.recipient,
+      callback: null,
+    },
+  );
+  const signature = sign(
+    null,
+    createHash("sha256").update(serialized).digest(),
+    pair.privateKey,
+  );
+  const normalized = normalizeWalletProof({
+    accountId: "demo-testing.testnet",
+    publicKey: { toString: () => publicKey },
+    signature: new Uint8Array(signature),
+  });
+
+  expect(normalized.accountId).toBe("demo-testing.testnet");
+  expect(
+    verifyMessage(challenge, normalized.publicKey, normalized.signature),
+  ).toBe(true);
 });
 
 it.each([

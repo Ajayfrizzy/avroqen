@@ -221,7 +221,21 @@ export function consentMessage(input: {
   origin: string;
   expiresAt: string;
 }): string {
-  return `Avroqen M2 offchain consent v1\nAction: ${input.action}\nNo transaction. No funds moved. Not onchain MandateVault authorization.\nOrigin: ${input.origin}\nChallenge: ${input.challengeId}\nChallenge expires: ${input.expiresAt}\nPolicy SHA-256: ${input.policyDigest}\nExact immutable policy:\n${canonicalPolicy(input.policy)}\nQuorum applies to EACH required third-party claim. Owner approval, if required, is a separate per-payment attestation. This consent is not delivery evidence.`;
+  // Some remote wallet versions serialize non-ASCII NEP-413 strings
+  // inconsistently. JSON Unicode escapes preserve the exact policy text while
+  // making the bytes signed by every wallet implementation unambiguous.
+  const policy = canonicalPolicy(input.policy).replace(
+    /\P{ASCII}/gu,
+    (character) => {
+      const point = character.codePointAt(0) as number;
+      if (point <= 0xffff) return `\\u${point.toString(16).padStart(4, "0")}`;
+      const offset = point - 0x10000;
+      return `\\u${(0xd800 + (offset >> 10)).toString(16)}\\u${(
+        0xdc00 + (offset & 0x3ff)
+      ).toString(16)}`;
+    },
+  );
+  return `Avroqen M2 offchain consent v2\nAction: ${input.action}\nNo transaction. No funds moved. Not onchain MandateVault authorization.\nOrigin: ${input.origin}\nChallenge: ${input.challengeId}\nChallenge expires: ${input.expiresAt}\nPolicy SHA-256: ${input.policyDigest}\nExact immutable policy (JSON Unicode escapes preserve original text):\n${policy}\nQuorum applies to EACH required third-party claim. Owner approval, if required, is a separate per-payment attestation. This consent is not delivery evidence.`;
 }
 export type MandateView = {
   policy: MandatePolicy;
