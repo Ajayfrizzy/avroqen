@@ -491,3 +491,33 @@ blocker. Only an ELIGIBLE result exposes a separate authorization action. That P
 recomputes evidence before issuing the five-minute owner message, and completion
 recomputes it again. Loading, wallet-pending, cancellation, failure and durable
 success remain distinct; no inspection result itself permits replacement creation.
+
+## D032 — Consent proof rejection diagnostics preserve every authorization gate
+
+Meteor consent investigation on November 12, 2026 confirmed that its pinned SDK
+and Avroqen produce the same NEP-413 SHA-256 Borsh payload: message, 32-byte nonce,
+recipient and an omitted optional callback. SDK `state` is retained response
+metadata and is not signed. Stored challenge messages for the reported mandate
+also reconstructed byte-for-byte. Sanitized timestamps show the latest proof was
+rejected six seconds after challenge issuance, ruling out the five-minute expiry.
+The remaining distinguishing input was one U+2014 character in `taskReference`:
+login messages were ASCII, while all five rejected consent messages contained the
+same multibyte policy text. This isolates remote wallet UTF-8 serialization as the
+demonstrated interoperability failure; no proof bytes were retained or inspected.
+
+New consent challenges therefore use message v2. The canonical policy and its
+SHA-256 digest remain signed, but literal non-ASCII policy characters are rendered
+with JSON `\\uXXXX` escapes before NEP-413 serialization. This is an exact,
+reversible JSON representation and gives the wallet an ASCII-stable byte string;
+it does not normalize, omit or alter policy terms. Existing challenges are not
+rewritten and cannot be silently upgraded or replayed.
+
+Consent verification now returns fixed, allowlisted stage codes for account and
+network binding, scoped challenge/session/action/origin/expiry/consumption,
+reconstructed-message integrity, local signature verification, finalized
+FullAccess authorization and the final atomic consume. Security observations and
+audit records contain only those codes and existing scoped identifiers. They never
+contain signatures, nonces, bearer tokens or complete messages. RPC errors remain
+service failures rather than false key rejection. Challenge TTL, owner/session/
+CSRF binding, finalized-key requirement, single use and atomic consent recording
+are unchanged; no malformed or unauthorized proof is accepted.

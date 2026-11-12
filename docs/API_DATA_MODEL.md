@@ -79,7 +79,10 @@ original owner wallet may sign approval/revocation. Admin role is not owner cons
 - POST `.../:mandateId/verify`: challenge/action/account/network/key/signature;
   binds initiating session and original owner, verifies finalized FullAccess key,
   and atomically records consent plus audit. No proof material is logged/retained
-  in audit, reports or public list/detail responses.
+  in audit, reports or public list/detail responses. Rejections use allowlisted
+  stage codes for identity/network, challenge binding/expiry, reconstructed message,
+  local signature, finalized key authorization and atomic consumption; the codes
+  never include the nonce, session token, signature or complete signing message.
 
 `onchainStatus` is always NOT_SUBMITTED. No PATCH, custody, execution or payment
 endpoint is added. Changed policies need a new ID and fresh signature. SQL migration

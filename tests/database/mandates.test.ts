@@ -223,6 +223,28 @@ it("creates immutable owner terms, approves and revokes offchain only, rejects r
   ).rows.map((r) => r.event);
   expect(events).toEqual(["APPROVE_CONSENT", "REVOKE_CONSENT"]);
 });
+it("approves a Meteor-compatible ASCII proof for a policy containing Unicode", async () => {
+  const d = await draft({ taskReference: "Hosting \u2014 annual" }),
+    id = d.policy.mandateId;
+  const challenge = await post(`${path(id)}/challenge`, {
+    action: "APPROVE_CONSENT",
+  });
+  expect(challenge.statusCode).toBe(200);
+  expect(challenge.json().message).toContain("Hosting \\u2014 annual");
+  expect(Buffer.byteLength(challenge.json().message)).toBe(
+    challenge.json().message.length,
+  );
+  const response = await post(`${path(id)}/verify`, {
+    action: "APPROVE_CONSENT",
+    challengeId: challenge.json().challengeId,
+    network: "testnet",
+    accountId: "alice.testnet",
+    publicKey,
+    signature: signature(challenge.json()),
+  });
+  expect(response.statusCode).toBe(200);
+  expect(response.json().consentStatus).toBe("CONSENT_APPROVED_OFFCHAIN");
+});
 it.each([
   ["OWNER", "alice.testnet"],
   ["AGENT", "agent.testnet"],
@@ -263,13 +285,13 @@ it("keeps an unsafe historical mandate readable while blocking new approval", as
   expect((await pool.query("SELECT * FROM mandate_policies")).rowCount).toBe(1);
 });
 it.each([
-  "accountId",
-  "network",
-  "action",
-  "signature",
-  "publicKey",
-  "challengeId",
-])("rejects proof substitution: %s", async (field) => {
+  ["accountId", "CONSENT_PROOF_ACCOUNT_MISMATCH"],
+  ["network", "CONSENT_PROOF_NETWORK_MISMATCH"],
+  ["action", "CONSENT_PROOF_ACTION_MISMATCH"],
+  ["signature", "CONSENT_PROOF_SIGNATURE_INVALID"],
+  ["publicKey", "CONSENT_PROOF_SIGNATURE_INVALID"],
+  ["challengeId", "CONSENT_PROOF_CHALLENGE_UNAVAILABLE"],
+])("rejects proof substitution: %s", async (field, code) => {
   const d = await draft(),
     id = d.policy.mandateId,
     p = await proof(id);
@@ -281,10 +303,12 @@ it.each([
     publicKey: `ed25519:${bs58.encode(Buffer.alloc(32))}`,
     challengeId: randomUUID(),
   };
-  expect(
-    (await post(`${path(id)}/verify`, { ...p, [field]: replacements[field] }))
-      .statusCode,
-  ).toBe(401);
+  const response = await post(`${path(id)}/verify`, {
+    ...p,
+    [field]: replacements[field],
+  });
+  expect(response.statusCode).toBe(401);
+  expect(response.json().error).toBe(code);
   expect(
     (
       await pool.query(
@@ -343,9 +367,37 @@ it("binds consent to the initiating session even for the same wallet", async () 
     id = d.policy.mandateId,
     p = await proof(id),
     second = await login();
-  expect((await post(`${path(id)}/verify`, p, second)).statusCode).toBe(401);
+  const rejected = await post(`${path(id)}/verify`, p, second);
+  expect(rejected.statusCode).toBe(401);
+  expect(rejected.json().error).toBe("CONSENT_PROOF_SESSION_MISMATCH");
   expect((await post(`${path(id)}/verify`, p)).statusCode).toBe(200);
 });
+it.each([
+  ["message", "CONSENT_PROOF_MESSAGE_MISMATCH"],
+  ["origin", "CONSENT_PROOF_ORIGIN_MISMATCH"],
+])(
+  "diagnoses stored challenge %s mismatch without consuming it",
+  async (field, code) => {
+    const d = await draft(),
+      id = d.policy.mandateId,
+      p = await proof(id);
+    await pool.query(`UPDATE mandate_challenges SET ${field}=$1 WHERE id=$2`, [
+      field === "message" ? "altered stored message" : "https://other.test",
+      p.challengeId,
+    ]);
+    const response = await post(`${path(id)}/verify`, p);
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe(code);
+    expect(
+      (
+        await pool.query(
+          "SELECT consumed_at FROM mandate_challenges WHERE id=$1",
+          [p.challengeId],
+        )
+      ).rows[0].consumed_at,
+    ).toBeNull();
+  },
+);
 it.each(["expiry", "logout", "session-expiry", "role", "agent"])(
   "rechecks %s after finalized RPC",
   async (kind) => {
@@ -393,9 +445,9 @@ it("checks challenge five-minute TTL and rejects expired proofs", async () => {
   await pool.query(
     "UPDATE mandate_challenges SET created_at=clock_timestamp()-interval '10 minutes',expires_at=clock_timestamp()-interval '1 second'",
   );
-  expect((await post(`${path(d.policy.mandateId)}/verify`, p)).statusCode).toBe(
-    401,
-  );
+  const response = await post(`${path(d.policy.mandateId)}/verify`, p);
+  expect(response.statusCode).toBe(401);
+  expect(response.json().error).toBe("CONSENT_PROOF_CHALLENGE_EXPIRED");
 });
 it.each([false, true])(
   "one winner under concurrent challenges, distinct=%s",
@@ -440,6 +492,8 @@ it.each(["restricted", "missing", "unavailable"])(
     unavailable = kind === "unavailable";
     const r = await post(`${path(id)}/verify`, p);
     expect(r.statusCode).toBe(unavailable ? 503 : 401);
+    if (!unavailable)
+      expect(r.json().error).toBe("CONSENT_PROOF_KEY_NOT_AUTHORIZED");
     expect(r.body.includes("private provider error")).toBe(false);
     expect(
       (await pool.query("SELECT consumed_at FROM mandate_challenges")).rows[0]
