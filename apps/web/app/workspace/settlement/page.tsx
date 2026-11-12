@@ -15,6 +15,7 @@ import {
   type ChainOperation,
   type OperationInput,
   operationInput,
+  type WalletReport,
 } from "../../../../../packages/domain/src/settlement";
 import type { VaultMandate } from "../../../../../packages/domain/src/vault";
 import { useWorkspaceIdentity } from "../../components/shell";
@@ -26,6 +27,7 @@ type Intent = {
   id: string;
   state: string;
   reason: string;
+  wallet_outcome: string | null;
   operation: ChainOperation;
   explorerUrl: string | null;
 };
@@ -50,6 +52,23 @@ const expiryRecoveryOperations: readonly OperationInput["kind"][] = [
   "PAUSE",
   "REVOKE",
 ];
+const walletOutcomeMessage: Record<WalletReport["outcome"], string> = {
+  BROADCAST:
+    "Wallet reported a transaction. Awaiting independent RPC and receipt verification.",
+  CANCELED:
+    "Wallet reported cancellation. No transaction hash was returned. Do not retry until reconciliation checks the chain.",
+  SUBMISSION_FAILED:
+    "Wallet reported submission failure. No transaction hash was returned. Do not retry until reconciliation checks the chain.",
+  UNKNOWN:
+    "The wallet returned no usable transaction hash. Do not retry. Reconciliation will inspect the chain.",
+};
+const persistedWalletOutcome: Record<string, string> = {
+  UNVERIFIED_WALLET_HASH: "Wallet report: transaction hash received.",
+  WALLET_CANCELED: "Wallet report: canceled without a transaction hash.",
+  WALLET_SUBMISSION_FAILED:
+    "Wallet report: submission failed without a transaction hash.",
+  WALLET_OUTCOME_UNKNOWN: "Wallet report: no usable transaction hash returned.",
+};
 async function api<T>(
   path: string,
   session?: Session,
@@ -303,6 +322,7 @@ export default function Settlement() {
     setBusy(true);
     setMessage("");
     let began = false;
+    let walletOutcome: WalletReport | undefined;
     try {
       if (!policy || !detail) throw new Error("Review required");
       const op = prepared.operation;
@@ -353,23 +373,27 @@ export default function Settlement() {
       });
       if (JSON.stringify(expected) !== JSON.stringify(op))
         throw new Error("Transaction binding mismatch");
-      const hash = await submitOperation(prepared.operation, async () => {
+      walletOutcome = await submitOperation(prepared.operation, async () => {
         await api(`/chain/intents/${prepared.id}/begin`, session, {});
         began = true;
       });
-      await api(`/chain/intents/${prepared.id}/report`, session, { hash });
-      setMessage(
-        "Wallet reported a transaction. Awaiting independent RPC and receipt verification.",
-      );
+      await api(`/chain/intents/${prepared.id}/report`, session, walletOutcome);
+      setMessage(walletOutcomeMessage[walletOutcome.outcome]);
       setPrepared(undefined);
     } catch {
       if (began) {
-        await api(`/chain/intents/${prepared.id}/report`, session, {
-          hash: null,
-        }).catch(() => {});
+        // Never replace a known wallet hash with a null report. If reporting
+        // failed, the AWAITING_WALLET intent is still scanned independently.
+        if (!walletOutcome)
+          await api(`/chain/intents/${prepared.id}/report`, session, {
+            outcome: "UNKNOWN",
+            hash: null,
+          }).catch(() => {});
         setPrepared(undefined);
         setMessage(
-          "Transaction outcome unknown. Do not retry. Reconciliation will inspect the chain.",
+          walletOutcome?.outcome === "BROADCAST"
+            ? "The wallet returned a transaction hash, but Avroqen could not record it. Do not retry. Independent reconciliation will scan for the exact operation."
+            : "Transaction outcome unknown. Do not retry. Independent reconciliation will inspect the chain.",
         );
       } else
         setMessage(
@@ -389,16 +413,18 @@ export default function Settlement() {
         title="Payments"
         description="Review exact operations and track their verified onchain outcome."
       />
-      <p role="status">
-        <Badge tone={enabled ? "success" : "warning"}>
-          {enabled ? "Deployment verified" : "Live submission disabled."}
-        </Badge>{" "}
-        {enabled
-          ? "Review every wallet prompt."
-          : deployment === "NOT_AUTHORIZED"
-            ? "Deployment authorization is required before financial operations."
-            : deployment}
-      </p>
+      {policy && (
+        <p role="status">
+          <Badge tone={enabled ? "success" : "warning"}>
+            {enabled ? "Deployment verified" : "Live submission disabled."}
+          </Badge>{" "}
+          {enabled
+            ? "Review every wallet prompt."
+            : deployment === "NOT_AUTHORIZED"
+              ? "Deployment authorization is required before financial operations."
+              : deployment}
+        </p>
+      )}
       {loading && <p>Loading assignments…</p>}
       {message && <p role="status">{message}</p>}
       {session && (
@@ -849,6 +875,10 @@ export default function Settlement() {
                   <article key={i.id}>
                     <h3>{i.operation.methodName}</h3>
                     <p>{i.state.replaceAll("_", " ").toLowerCase()}</p>
+                    {i.wallet_outcome &&
+                      persistedWalletOutcome[i.wallet_outcome] && (
+                        <p>{persistedWalletOutcome[i.wallet_outcome]}</p>
+                      )}
                     {[
                       "UNKNOWN",
                       "AWAITING_WALLET",
@@ -856,10 +886,18 @@ export default function Settlement() {
                       "FINALIZING",
                       "SUBMITTED",
                     ].includes(i.state) && (
-                      <p>
-                        Do not repeat this operation while its outcome is
-                        unresolved.
-                      </p>
+                      <>
+                        <p>
+                          Do not repeat this operation while its outcome is
+                          unresolved.
+                        </p>
+                        <p>
+                          Avroqen will compare the exact operation with
+                          finalized onchain transactions. Refresh verified state
+                          after reconciliation; contact an operator if it
+                          remains unresolved.
+                        </p>
+                      </>
                     )}
                     <details>
                       <summary>Technical outcome</summary>

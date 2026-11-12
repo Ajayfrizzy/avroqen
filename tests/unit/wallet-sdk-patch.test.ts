@@ -25,3 +25,20 @@ it("installs the pinned SDK patch removing unconditional login payload logs in b
     expect(source.includes("payload: data.payload")).toBe(true);
   }
 });
+
+it("pins Meteor's wallet broadcast flow and execution outcome result contract", () => {
+  const require = createRequire(
+    new URL("../../apps/web/package.json", import.meta.url),
+  );
+  const root = dirname(require.resolve("@meteorwallet/sdk/package.json"));
+  const types = readFileSync(join(root, "dist", "index.d.ts"), "utf8");
+  const source = readFileSync(join(root, "dist", "index.js"), "utf8");
+  expect(types).toContain(
+    '"near::sign_transactions": {\n    readonly input: IMCA_Near_SignTransactions_Input;',
+  );
+  expect(types).toContain(
+    "readonly output: _near_js_types0.FinalExecutionOutcome[];",
+  );
+  expect(source).toContain("actionType: EExternalActionType.sign");
+  expect(source).toContain("return response.payload.executionOutcomes");
+});
