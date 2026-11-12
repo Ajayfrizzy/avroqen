@@ -58,9 +58,10 @@ export interface OperationContext {
   evidence?: Map1;
   guardian?: string | null;
 }
-export function buildOperation(
+function buildOperationInternal(
   input: unknown,
   c: OperationContext,
+  enforceExpiry: boolean,
 ): ChainOperation {
   const i = operationInput.parse(input),
     p = mandatePolicy.parse(c.policy);
@@ -79,7 +80,7 @@ export function buildOperation(
     "PAUSE",
     "REVOKE",
   ].includes(i.kind);
-  if (!emergency && BigInt(p.expiresAtNs) <= c.now)
+  if (enforceExpiry && !emergency && BigInt(p.expiresAtNs) <= c.now)
     throw new Error("MANDATE_EXPIRED");
   if (
     i.kind !== "PROPOSE" &&
@@ -169,6 +170,34 @@ export function buildOperation(
       );
     }
   }
+}
+export function buildOperation(
+  input: unknown,
+  c: OperationContext,
+): ChainOperation {
+  return buildOperationInternal(input, c, true);
+}
+export function rebuildHistoricalStorageDeposit(
+  operation: unknown,
+  c: Pick<OperationContext, "policy" | "policyDigest" | "actor">,
+): ChainOperation {
+  if (
+    !operation ||
+    typeof operation !== "object" ||
+    (operation as { kind?: unknown }).kind !== "STORAGE_DEPOSIT"
+  )
+    throw new Error("HISTORICAL_STORAGE_DEPOSIT_REQUIRED");
+  const expected = buildOperationInternal(
+    {
+      kind: "STORAGE_DEPOSIT",
+      amount: (operation as { deposit?: unknown }).deposit,
+    },
+    { ...c, now: 0n },
+    false,
+  );
+  if (JSON.stringify(operation) !== JSON.stringify(expected))
+    throw new Error("HISTORICAL_OPERATION_MISMATCH");
+  return expected;
 }
 export const intentStates = [
   "PREPARED",

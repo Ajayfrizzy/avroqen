@@ -142,7 +142,7 @@ binding guards and immutable row triggers. It adds no secret/provider/file stora
 - `GET /api/chain/assignments`: exact owner/agent/designated-verifier mandate assignments, bounded to 50.
 - `GET /api/organizations/:orgId/mandates/:mandateId/chain`: scoped policy, exact onchain mandate/proposal snapshots and authorized intent history. Unavailable state is null, never a zero balance. Explorer links require an RPC-matched hash.
 - `POST .../chain/intents`: strict `{idempotencyKey, operation}`; allowlisted typed operations only. No arbitrary receiver, arguments, signer, method or raw transfer action.
-- `POST /api/chain/intents/:intentId/begin`: rechecks original actor, live role/session/consent/agent bindings and deployment manifest before marking the prompt attempted.
+- `POST /api/chain/intents/:intentId/begin`: rechecks original actor, live role/session/consent/agent bindings and deployment manifest before marking the prompt attempted. A database-linked controlled storage-deposit replacement instead rechecks its exact immutable historical operation and owner binding, so mandate expiry alone cannot invalidate the separately authorized recovery; no other expired operation uses this path.
 - `POST /api/chain/intents/:intentId/report`: a strict wallet report is either
   `{outcome:"BROADCAST",hash:string}` or a null-hash `CANCELED`,
   `SUBMISSION_FAILED` or `UNKNOWN` outcome. It is untrusted transport evidence,
@@ -161,7 +161,9 @@ binding guards and immutable row triggers. It adds no secret/provider/file stora
 - `POST /api/chain/intents/:intentId/recovery/complete`: verifies the original
   FullAccess signer proof, repeats current evidence and atomically preserves the
   original UNKNOWN record while creating exactly one identical unsigned PREPARED
-  replacement. Normal wallet authorization remains separate.
+  replacement. Historical operation verification does not apply current mandate
+  expiry, but remains limited to account-level storage deposits and grants no live
+  mandate authority. Normal wallet authorization remains separate.
 
 Migration 005 adds immutable intent bindings and append-only chain events,
 per-wallet/vault unresolved-operation uniqueness, idempotency and monotonic

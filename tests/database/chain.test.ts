@@ -745,6 +745,86 @@ it("prepares one exact replacement while preserving the historical UNKNOWN inten
   ).toBe("UNKNOWN");
 });
 
+it("authorizes an exact storage replacement after the historical mandate expires", async () => {
+  const expiresAtMs = Date.now() + 3_000;
+  const expiring = await draft({
+    expiresAtNs: (BigInt(expiresAtMs) * 1_000_000n).toString(),
+  });
+  mandateId = expiring.policy.mandateId;
+  expect(
+    (await post(`${path(mandateId)}/verify`, await proof(mandateId)))
+      .statusCode,
+  ).toBe(200);
+  const original = await unknownStorageDeposit();
+  await new Promise((resolve) =>
+    setTimeout(resolve, Math.max(0, expiresAtMs - Date.now() + 50)),
+  );
+  recoveryHeadHeight = 90_100;
+
+  for (const operation of [
+    { kind: "REGISTER", storageLimit: "1", guardian: null },
+    { kind: "FUND", amount: "1" },
+    { kind: "STORAGE_DEPOSIT", amount: "1" },
+  ]) {
+    const rejected = await prepare(operation);
+    expect(rejected.statusCode).toBe(409);
+    expect(rejected.json().error).toBe("OPERATION_NOT_ALLOWED");
+  }
+
+  const challenge = await recoveryChallenge(original.id);
+  expect(challenge.statusCode).toBe(200);
+  const completed = await completeRecovery(original.id, challenge.json());
+  expect(completed.statusCode).toBe(201);
+  expect(completed.json()).toMatchObject({
+    operation: original.operation,
+    state: "PREPARED",
+    recoveryOf: original.id,
+  });
+  expect(
+    (
+      await pool.query("SELECT state,reason FROM chain_intents WHERE id=$1", [
+        original.id,
+      ])
+    ).rows[0],
+  ).toMatchObject({ state: "UNKNOWN", reason: "WALLET_OUTCOME_UNKNOWN" });
+  expect(
+    (
+      await pool.query("SELECT state FROM chain_intents WHERE id=$1", [
+        challenge.json().replacementIntentId,
+      ])
+    ).rows[0].state,
+  ).toBe("PREPARED");
+  expect(
+    (
+      await post(
+        `/api/chain/intents/${challenge.json().replacementIntentId}/begin`,
+        {},
+      )
+    ).statusCode,
+  ).toBe(200);
+});
+
+it("does not disclose or authorize recovery to a different signer", async () => {
+  const original = await unknownStorageDeposit();
+  recoveryHeadHeight = 90_100;
+  const other = await login("mallory.testnet");
+  const result = await post(
+    `/api/chain/intents/${original.id}/recovery/challenge`,
+    {},
+    other,
+  );
+  expect(result.statusCode).toBe(404);
+  expect(result.json().error).toBe("INTENT_NOT_FOUND");
+  expect(
+    (
+      await pool.query(
+        "SELECT count(*)::int AS n FROM chain_recovery_challenges WHERE original_intent_id=$1",
+        [original.id],
+      )
+    ).rows[0].n,
+  ).toBe(0);
+});
+
 it.each([
   ["validity window", { height: 90_099 }, "RECOVERY_VALIDITY_WINDOW_OPEN"],
   [

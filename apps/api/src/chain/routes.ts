@@ -26,6 +26,7 @@ import {
   intentInput,
   intentParams,
   type OperationInput,
+  rebuildHistoricalStorageDeposit,
   replacementChallengeInput,
   replacementEvidence,
   replacementMessage,
@@ -48,6 +49,12 @@ export interface ChainConfig {
   submissionEnabled: boolean;
   reader: NearReader;
 }
+type HistoricalStorageIntent = {
+  org_id: string;
+  mandate_id: string;
+  actor_account: string;
+  canonical_operation: string;
+};
 export function chainRoutes(
   app: FastifyInstance,
   ctx: Context,
@@ -505,6 +512,32 @@ export function chainRoutes(
       return deny(503, "RECOVERY_EVIDENCE_UNAVAILABLE");
     }
   }
+  async function historicalStorageDeposit(
+    db: pg.PoolClient,
+    request: FastifyRequest,
+    r: HistoricalStorageIntent,
+    manifest: Manifest,
+  ) {
+    const d = await load(db, request, r.org_id, r.mandate_id, true);
+    if (!d.owner || d.who.account_id !== r.actor_account)
+      return deny(403, "OWNER_REQUIRED");
+    if (d.row.status !== "CONSENT_APPROVED_OFFCHAIN" || d.row.disabled_at)
+      return deny(409, "CONSENT_OR_AGENT_UNAVAILABLE");
+    if (d.policy.vaultAccount !== manifest.account)
+      return deny(409, "VAULT_MISMATCH");
+    try {
+      return rebuildHistoricalStorageDeposit(
+        JSON.parse(String(r.canonical_operation)),
+        {
+          policy: d.policy,
+          policyDigest: d.row.policy_digest,
+          actor: d.who.account_id,
+        },
+      );
+    } catch {
+      return deny(409, "INTENT_CONFIGURATION_CHANGED");
+    }
+  }
   app.get(
     "/api/chain/intents/:intentId/recovery/eligibility",
     async (request) => {
@@ -530,19 +563,15 @@ export function chainRoutes(
       const manifest = enabled();
       const initial = await transaction(async (db) => {
         const r = await owned(db, request);
-        const op = recoverable(r, manifest);
-        const rebuilt = await operation(db, request, r.org_id, r.mandate_id, {
-          kind: "STORAGE_DEPOSIT",
-          amount: op.deposit,
-        });
-        if (JSON.stringify(rebuilt.built) !== r.canonical_operation)
-          return deny(409, "INTENT_CONFIGURATION_CHANGED");
+        recoverable(r, manifest);
+        await historicalStorageDeposit(db, request, r, manifest);
         return r;
       });
       const evidence = await recoveryEvidence(initial);
       return transaction(async (db) => {
         const r = await owned(db, request);
         const op = recoverable(r, manifest);
+        await historicalStorageDeposit(db, request, r, manifest);
         if (
           (
             await db.query(
@@ -677,12 +706,7 @@ export function chainRoutes(
           ).rowCount
         )
           return deny(409, "UNRESOLVED_OPERATION");
-        const rebuilt = await operation(db, request, r.org_id, r.mandate_id, {
-          kind: "STORAGE_DEPOSIT",
-          amount: op.deposit,
-        });
-        if (JSON.stringify(rebuilt.built) !== r.canonical_operation)
-          return deny(409, "INTENT_CONFIGURATION_CHANGED");
+        await historicalStorageDeposit(db, request, r, manifest);
         const consumed = await db.query(
           "UPDATE chain_recovery_challenges SET consumed_at=clock_timestamp() WHERE id=$1 AND consumed_at IS NULL AND expires_at>clock_timestamp() RETURNING id",
           [input.challengeId],
@@ -755,7 +779,7 @@ export function chainRoutes(
       if (r.state !== "PREPARED") return deny(409, "INTENT_ALREADY_ATTEMPTED");
       const recoveryOriginal = (
         await db.query(
-          `SELECT original.state,original.reported_hash,original.verified_hash
+          `SELECT original.*
            FROM chain_recoveries recovery
            JOIN chain_intents original ON original.id=recovery.original_intent_id
            WHERE recovery.replacement_intent_id=$1
@@ -772,38 +796,47 @@ export function chainRoutes(
         return deny(409, "RECOVERY_NOT_ELIGIBLE");
       // Rebuild the original operation from immutable inputs; stale app authority cannot open a prompt.
       const op = JSON.parse(r.canonical_operation) as ChainOperation;
-      const input: Record<string, unknown> = { kind: op.kind };
-      if (["FUND", "STORAGE_DEPOSIT"].includes(op.kind))
-        input.amount = op.deposit;
-      if (["WITHDRAW", "WITHDRAW_STORAGE"].includes(op.kind))
-        input.amount = op.args.amount;
-      if (op.kind === "REGISTER") {
-        input.storageLimit = op.args.storage_limit;
-        input.guardian = op.args.guardian;
-      }
-      if (["PROPOSE", "EXECUTE"].includes(op.kind))
-        input.proposalId = op.args.proposal_id;
-      if (op.kind === "ATTEST") {
-        const e = map1.parse(op.args.evidence);
-        const review = (
-          await db.query(
-            "SELECT id FROM evidence_reviews WHERE actor_account=$1 AND attestation_nonce=$2",
-            [op.signerId, e.nonce],
+      let built: ChainOperation;
+      if (recoveryOriginal) {
+        if (recoveryOriginal.canonical_operation !== r.canonical_operation)
+          return deny(409, "INTENT_CONFIGURATION_CHANGED");
+        built = await historicalStorageDeposit(db, request, r, manifest);
+      } else {
+        const input: Record<string, unknown> = { kind: op.kind };
+        if (["FUND", "STORAGE_DEPOSIT"].includes(op.kind))
+          input.amount = op.deposit;
+        if (["WITHDRAW", "WITHDRAW_STORAGE"].includes(op.kind))
+          input.amount = op.args.amount;
+        if (op.kind === "REGISTER") {
+          input.storageLimit = op.args.storage_limit;
+          input.guardian = op.args.guardian;
+        }
+        if (["PROPOSE", "EXECUTE"].includes(op.kind))
+          input.proposalId = op.args.proposal_id;
+        if (op.kind === "ATTEST") {
+          const e = map1.parse(op.args.evidence);
+          const review = (
+            await db.query(
+              "SELECT id FROM evidence_reviews WHERE actor_account=$1 AND attestation_nonce=$2",
+              [op.signerId, e.nonce],
+            )
+          ).rows[0];
+          if (!review) return deny(403, "VERIFIED_REVIEW_REQUIRED");
+          input.reviewId = review.id;
+        }
+        built = (
+          await operation(
+            db,
+            request,
+            r.org_id,
+            r.mandate_id,
+            intentInput.shape.operation.parse(input),
+            guardian,
           )
-        ).rows[0];
-        if (!review) return deny(403, "VERIFIED_REVIEW_REQUIRED");
-        input.reviewId = review.id;
+        ).built;
       }
-      const rebuilt = await operation(
-        db,
-        request,
-        r.org_id,
-        r.mandate_id,
-        intentInput.shape.operation.parse(input),
-        guardian,
-      );
       if (
-        JSON.stringify(rebuilt.built) !== r.canonical_operation ||
+        JSON.stringify(built) !== r.canonical_operation ||
         r.manifest.wasmSha256 !== manifest.wasmSha256 ||
         r.manifest.authorization !== manifest.authorization ||
         r.manifest.account !== manifest.account ||
@@ -820,7 +853,7 @@ export function chainRoutes(
         "INSERT INTO chain_events(intent_id,state,reason) VALUES($1,'AWAITING_WALLET','WALLET_PROMPT_OPENING')",
         [r.id],
       );
-      return { id: r.id, operation: rebuilt.built, state: "AWAITING_WALLET" };
+      return { id: r.id, operation: built, state: "AWAITING_WALLET" };
     });
   });
   app.post("/api/chain/intents/:intentId/report", async (request) => {

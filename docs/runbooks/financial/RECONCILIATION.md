@@ -73,6 +73,16 @@ stores the challenge/evidence, one-way marker and identical `PREPARED` replaceme
 The owner must separately review and approve the normal wallet transaction. Never
 script either approval or automatically open the second prompt.
 
+Mandate expiry after the original attempt does not itself invalidate this recovery:
+the replacement restores the same account-level storage deposit, not authority to
+act under the mandate. Challenge issuance, completion and the later wallet-review
+step reconstruct the exact immutable operation from the original owner, policy
+digest and vault binding without applying current mandate expiry. This exception is
+not available to registration, funding, proposal submission or execution, evidence,
+withdrawal, or any newly prepared storage deposit. It never changes consent or
+reactivates the expired mandate; revoked consent or a disabled agent still blocks
+recovery authorization.
+
 If the validity distance is short, any signer key/nonce/permission changed, storage
 credit is non-null, a hash appears, RPC is unavailable or block binding conflicts,
 leave the operation `UNKNOWN`. Do not edit the marker or prepare another intent.
