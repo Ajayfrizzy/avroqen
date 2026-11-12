@@ -569,3 +569,30 @@ signatures, nonces, session tokens and complete messages remain excluded. The
 five-minute TTL, CSRF/session binding, designated verifier and claim checks, exact
 proposal/evidence/policy bindings, finalized key requirement and single-use commit
 are unchanged.
+
+## D035 — Historical storage recovery is independent of live mandate expiry
+
+Controlled-recovery correction on November 12, 2026: mandate expiry governs new
+mandate operations, but it must not alter the immutable meaning of a storage-deposit
+attempt made while the mandate was active. Reusing the live operation builder for
+recovery challenge issuance, proof completion and replacement wallet review applied
+the current timestamp and rejected an otherwise eligible historical replacement as
+`OPERATION_NOT_ALLOWED`.
+
+Historical reconstruction now has one narrow domain path: it accepts only an exact
+canonical `STORAGE_DEPOSIT`, derives the expected signer, vault, method, arguments,
+gas, deposit, mandate and policy digest from the immutable policy, and requires
+byte-for-byte equality. It intentionally does not apply current mandate expiry.
+The route additionally requires the current authenticated owner membership and the
+original signer, approved deployment manifest, hashless UNKNOWN state, 90,000-block
+distance, identical complete signer-key state, null finalized storage credit, fresh
+evidence, still-approved consent, an enabled agent, owner NEP-413 proof and the
+atomic single-replacement database binding.
+
+This path does not change consent, mandate status or contract state and cannot build
+registration, funding, proposal, evidence, execution, withdrawal or a new unlinked
+storage-deposit intent. Ordinary operation preparation retains the live expiry and
+consent checks. Completion creates only one identical unsigned `PREPARED` record,
+preserves the original UNKNOWN record and audit events, and never opens or approves
+a wallet transaction. The owner must separately request wallet review; if the
+original advances or any binding changes, that review remains blocked.

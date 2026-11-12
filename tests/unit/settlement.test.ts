@@ -8,6 +8,7 @@ import {
 import {
   buildOperation,
   operationInput,
+  rebuildHistoricalStorageDeposit,
 } from "../../packages/domain/src/settlement.js";
 
 const policy = mandatePolicy.parse(
@@ -73,6 +74,31 @@ it("rejects account/network substitution and expired financial permissions", () 
       { ...context, now: BigInt(policy.expiresAtNs) },
     ).methodName,
   ).toBe("withdraw_available");
+});
+it("rebuilds only an exact historical storage deposit after mandate expiry", () => {
+  const operation = buildOperation(
+    { kind: "STORAGE_DEPOSIT", amount: "100" },
+    context,
+  );
+  expect(
+    rebuildHistoricalStorageDeposit(operation, {
+      policy,
+      policyDigest,
+      actor: policy.ownerAccount,
+    }),
+  ).toEqual(operation);
+  expect(() =>
+    rebuildHistoricalStorageDeposit(
+      { ...operation, receiverId: "attacker.testnet" },
+      { policy, policyDigest, actor: policy.ownerAccount },
+    ),
+  ).toThrow("HISTORICAL_OPERATION_MISMATCH");
+  expect(() =>
+    rebuildHistoricalStorageDeposit(
+      buildOperation({ kind: "FUND", amount: "100" }, context),
+      { policy, policyDigest, actor: policy.ownerAccount },
+    ),
+  ).toThrow("HISTORICAL_STORAGE_DEPOSIT_REQUIRED");
 });
 it("does not accept caller supplied transaction parameters", () => {
   expect(
