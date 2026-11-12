@@ -21,6 +21,7 @@ import type { VaultMandate } from "../../../../../packages/domain/src/vault";
 import { useWorkspaceIdentity } from "../../components/shell";
 import { Badge, PageHeader, TransactionSummary } from "../../components/ui";
 import { submitOperation } from "../transaction-wallet";
+import { type Challenge, signChallenge } from "../wallet";
 
 type Session = { accountId: string; csrfToken: string };
 type Intent = {
@@ -28,6 +29,7 @@ type Intent = {
   state: string;
   reason: string;
   wallet_outcome: string | null;
+  replacement_authorized_at: string | null;
   operation: ChainOperation;
   explorerUrl: string | null;
 };
@@ -97,6 +99,20 @@ async function api<T>(
       VAULT_MISMATCH: "This mandate targets a different vault.",
       INTENT_ALREADY_ATTEMPTED:
         "The wallet prompt was already attempted. Do not retry a transaction with an uncertain outcome.",
+      RECOVERY_VALIDITY_WINDOW_OPEN:
+        "The original transaction is still within its possible validity window. It remains quarantined and cannot be replaced yet.",
+      RECOVERY_SIGNER_NONCE_CHANGED:
+        "The signing account changed after the original attempt, so non-broadcast cannot be established safely.",
+      RECOVERY_STORAGE_CREDIT_CHANGED:
+        "Onchain storage credit changed after the original attempt. Reconcile the original operation before any replacement.",
+      RECOVERY_EVIDENCE_UNAVAILABLE:
+        "Independent recovery evidence is currently unavailable. The original operation remains quarantined.",
+      RECOVERY_NOT_ELIGIBLE:
+        "This operation is not eligible for controlled replacement.",
+      RECOVERY_CHALLENGE_EXISTS:
+        "A recovery authorization is already pending. Wait for it to expire before requesting another.",
+      INVALID_PROOF:
+        "The recovery authorization could not be verified. No replacement was prepared.",
     };
     throw new Error(
       messages[e.error] ??
@@ -402,6 +418,56 @@ export default function Settlement() {
     } finally {
       setBusy(false);
       await refresh().catch(() => {});
+    }
+  }
+  async function recover(intent: Intent) {
+    if (
+      !session ||
+      !policy ||
+      !enabled ||
+      !currentState ||
+      unsafePolicy ||
+      intent.state !== "UNKNOWN" ||
+      intent.operation.kind !== "STORAGE_DEPOSIT" ||
+      intent.operation.signerId !== session.accountId ||
+      intent.replacement_authorized_at
+    )
+      return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const challenge = await api<
+        Challenge & { replacementIntentId: string; expiresAt: string }
+      >(`/chain/intents/${intent.id}/recovery/challenge`, session, {});
+      const signed = await signChallenge(challenge, "testnet");
+      if (signed.accountId !== session.accountId)
+        throw new Error(
+          "Recovery must be authorized by the account that approved the original wallet attempt.",
+        );
+      const replacement = await api<Intent>(
+        `/chain/intents/${intent.id}/recovery/complete`,
+        session,
+        {
+          action: "AUTHORIZE_CONTROLLED_REPLACEMENT",
+          replacementIntentId: challenge.replacementIntentId,
+          challengeId: challenge.challengeId,
+          network: "testnet",
+          ...signed,
+        },
+      );
+      setPrepared(replacement);
+      setMessage(
+        "One unsigned replacement is prepared. The original remains unknown. Review the exact operation before separately opening your wallet.",
+      );
+      await refresh();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Controlled recovery failed. The original operation remains quarantined.",
+      );
+    } finally {
+      setBusy(false);
     }
   }
   const owner = policy?.ownerAccount === session?.accountId;
@@ -899,6 +965,13 @@ export default function Settlement() {
                         </p>
                       </>
                     )}
+                    {i.replacement_authorized_at && (
+                      <p>
+                        A single controlled replacement has been authorized. The
+                        original operation remains unknown and must not be
+                        resubmitted.
+                      </p>
+                    )}
                     <details>
                       <summary>Technical outcome</summary>
                       <p>
@@ -918,6 +991,20 @@ export default function Settlement() {
                           onClick={() => setPrepared(i)}
                         >
                           Review unsigned operation
+                        </button>
+                      )}
+                    {i.state === "UNKNOWN" &&
+                      i.operation.kind === "STORAGE_DEPOSIT" &&
+                      i.operation.signerId === session.accountId &&
+                      !i.replacement_authorized_at && (
+                        <button
+                          type="button"
+                          disabled={
+                            busy || !enabled || !currentState || unsafePolicy
+                          }
+                          onClick={() => void recover(i)}
+                        >
+                          Review controlled replacement
                         </button>
                       )}
                   </article>

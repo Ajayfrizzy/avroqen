@@ -50,6 +50,33 @@ creates another transaction or authorizes a blind retry. Reconciliation is
 read-only, idempotent and restartable; unavailable/pruned history, ambiguous matches
 or missing receipt bodies remain unresolved. It cannot repair contract state.
 
+## Controlled replacement of a historical hashless storage deposit
+
+Controlled replacement is available only for an original `STORAGE_DEPOSIT` intent
+that is `UNKNOWN`, has no reported or verified hash and has no prior replacement.
+It does not clear, fail or stop reconciliation of the original. The operator and
+owner must first wait until a fresh finalized head is at least 90,000 blocks after
+the immutable anchor. At both pinned blocks the configured deployment must verify,
+the signer's complete access-key list (public keys, permissions and nonces) must be
+identical, and `get_storage_credit` must be null. A partial scan, explorer absence,
+timeout or null credit alone is insufficient.
+
+The owner selects **Review controlled replacement** and signs the displayed
+NEP-413 message. This message sends no transaction. It authorizes one exact unsigned
+replacement preparation and discloses that the old outcome remains unknown and
+trusted RPC is a residual risk. The server repeats the evidence check after the
+signature and atomically stores the challenge/evidence, one-way marker and identical
+`PREPARED` replacement. The owner must then separately review and approve the normal
+wallet transaction. Never script either approval or automatically open the second
+prompt.
+
+If the validity distance is short, any signer key/nonce/permission changed, storage
+credit is non-null, a hash appears, RPC is unavailable or block binding conflicts,
+leave the operation `UNKNOWN`. Do not edit the marker or prepare another intent.
+If an original transaction later appears after replacement authorization, halt the
+replacement before wallet approval when possible, preserve both records and perform
+incident reconciliation; do not create a second replacement.
+
 ## Manifest and immutable operation boundary
 
 Submission is disabled by default. A complete manifest may be configured for

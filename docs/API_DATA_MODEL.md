@@ -134,8 +134,24 @@ binding guards and immutable row triggers. It adds no secret/provider/file stora
   not settlement evidence. Every null-hash outcome remains UNKNOWN and prohibits
   blind retry; only independent finalized-chain verification establishes success
   or failure.
+- `POST /api/chain/intents/:intentId/recovery/challenge`: for a hashless UNKNOWN
+  storage deposit only, rechecks the original owner and exact operation, verifies
+  the 90,000-block/key-nonce/storage-credit evidence rule and returns a five-minute
+  session-bound NEP-413 controlled-replacement challenge. It sends no transaction.
+- `POST /api/chain/intents/:intentId/recovery/complete`: verifies the original
+  FullAccess signer proof, repeats current evidence and atomically preserves the
+  original UNKNOWN record while creating exactly one identical unsigned PREPARED
+  replacement. Normal wallet authorization remains separate.
 
-Migration 005 adds immutable intent bindings and append-only chain events, per-wallet/vault unresolved-operation uniqueness, idempotency and monotonic finalized observation protections. Worker leases and finalized scan cursors survive restarts. Intent transitions and audit evidence commit atomically. Existing migrations and financial contract state are not rewritten. See runbooks/financial/RECONCILIATION.md for receipt and withdrawal verification.
+Migration 005 adds immutable intent bindings and append-only chain events,
+per-wallet/vault unresolved-operation uniqueness, idempotency and monotonic
+finalized observation protections. Migration 007 adds immutable recovery challenges
+and evidence plus a one-way replacement marker; the unresolved uniqueness guard is
+transferred atomically from the original to its single replacement. Worker leases
+and finalized scan cursors survive restarts. Intent transitions and audit evidence
+commit atomically. Existing migrations and financial contract state are not
+rewritten. See runbooks/financial/RECONCILIATION.md for receipt, withdrawal and
+controlled-replacement verification.
 
 ## M7 monitoring and incidents
 

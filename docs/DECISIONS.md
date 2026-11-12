@@ -451,3 +451,35 @@ wallet result and a block scan are attribution evidence under the documented tru
 RPC assumption, not independent consensus. An identical out-of-band operation after
 the intent anchor can still be indistinguishable; multiple matches remain
 quarantined. Existing deployment and transaction authorization gates are unchanged.
+
+## D031 — Hashless UNKNOWN storage deposits require explicit controlled replacement
+
+Historical M8.1 recovery correction, November 12, 2026: absence from a partial
+block scan, a null storage-credit view and repeated RPC errors do not prove that a
+wallet-approved transaction was never broadcast. The original intent therefore
+remains `UNKNOWN`, continues ordinary reconciliation and retains every audit event.
+It is never relabeled as an onchain failure and its hash is never fabricated.
+
+One exact `STORAGE_DEPOSIT` replacement may be prepared only after at least 90,000
+finalized blocks have elapsed from the immutable intent anchor. This exceeds the
+documented 86,400-block transaction-validity period by 3,600 blocks. At the exact
+anchor and a fresh finalized head, the application re-verifies the authorized
+deployment, requires the signer's complete access-key set, permissions and nonces
+to be identical, and requires `get_storage_credit` to be null. Any hash, changed
+key/nonce/permission, storage credit, conflicting pinned block, short window or RPC
+failure preserves quarantine.
+
+After those checks, the original signer must authorize a five-minute, session-bound
+NEP-413 message that states the original remains unknown, names the exact operation
+and evidence, and authorizes only one unsigned replacement. Evidence is checked
+again after signing. One database transaction appends immutable recovery evidence,
+marks the original as replacement-authorized and creates one exact `PREPARED`
+intent. The uniqueness guard then applies to the replacement; replay and concurrent
+preparation remain blocked. No wallet transaction prompt opens automatically, and
+the replacement still requires the normal separate wallet approval.
+
+This is a controlled residual-risk decision under the existing trusted-RPC model,
+not consensus proof of non-broadcast. A malicious or incorrect trusted provider
+could conceal both nonce and contract-state changes. If the original later appears,
+stop submission and reconcile both records. No contract, custody, deployment key,
+automatic retry or terminal-state rule changes.
