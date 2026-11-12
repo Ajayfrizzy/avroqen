@@ -128,7 +128,11 @@ to per-claim readiness; active consent/agent/mandate and separate owner approval
 are required. NOT_SUBMITTED/NOT_DEPLOYED remain unconditional chain labels.
 Stable errors include SOURCE_REFERENCE_MISMATCH, EVIDENCE_MISMATCH,
 INDEPENDENCE_REQUIRED, SOURCE_UNAVAILABLE, CLAIM_MISMATCH, REVIEW_ALREADY_FINAL,
-DELIVERY_DISPUTED, INVALID_PROOF, AGENT_DISABLED and CONSENT_UNAVAILABLE.
+DELIVERY_DISPUTED, AGENT_DISABLED and CONSENT_UNAVAILABLE. Review proof failures
+use fixed `REVIEW_PROOF_*` stage codes for account/network, challenge/session/
+actor/origin/expiry/consumption, exact MAP-1 payload, reconstructed message,
+Ed25519 signature, finalized FullAccess key and final consume-race checks. These
+codes contain no proof bytes or private provider details.
 Migration004 adds evidence_submissions/challenges/reviews/events, exact proposal
 binding guards and immutable row triggers. It adds no secret/provider/file storage.
 

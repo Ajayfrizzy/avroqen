@@ -418,34 +418,41 @@ export function evidenceRoutes(app: FastifyInstance, ctx: Context) {
     const input = reviewProof.parse(req.body);
     const inspect = async (db: pg.PoolClient) => {
       const d = await load(db, req, true);
-      if (
-        input.accountId !== d.who.account_id ||
-        input.network !== config.network ||
-        !d.evidence
-      )
-        deny(401, "INVALID_PROOF");
+      if (input.accountId !== d.who.account_id)
+        deny(401, "REVIEW_PROOF_ACCOUNT_MISMATCH");
+      if (input.network !== config.network)
+        deny(401, "REVIEW_PROOF_NETWORK_MISMATCH");
+      if (!d.evidence) deny(401, "REVIEW_PROOF_EVIDENCE_UNAVAILABLE");
       const c = (
         await db.query(
-          "SELECT * FROM evidence_challenges WHERE id=$1 AND evidence_id=$2 AND session_hash=$3 AND actor_account=$4 AND origin=$5 AND consumed_at IS NULL AND expires_at>clock_timestamp()",
-          [
-            input.challengeId,
-            d.evidence.id,
-            hash(tokenOf(req)),
-            d.who.account_id,
-            config.origin,
-          ],
+          `SELECT *,session_hash=$3 AS session_matches,
+            expires_at>clock_timestamp() AS unexpired
+           FROM evidence_challenges WHERE id=$1 AND evidence_id=$2`,
+          [input.challengeId, d.evidence.id, hash(tokenOf(req))],
         )
       ).rows[0];
-      if (!c) return deny(401, "INVALID_PROOF");
-      const review = reviewInput.parse(JSON.parse(c.canonical_review)),
+      if (!c) return deny(401, "REVIEW_PROOF_CHALLENGE_UNAVAILABLE");
+      if (!c.session_matches) deny(401, "REVIEW_PROOF_SESSION_MISMATCH");
+      if (c.actor_account !== d.who.account_id)
+        deny(401, "REVIEW_PROOF_ACTOR_MISMATCH");
+      if (c.origin !== config.origin) deny(401, "REVIEW_PROOF_ORIGIN_MISMATCH");
+      if (c.consumed_at) deny(401, "REVIEW_PROOF_CHALLENGE_CONSUMED");
+      if (!c.unexpired) deny(401, "REVIEW_PROOF_CHALLENGE_EXPIRED");
+      let review: ReturnType<typeof reviewInput.parse>;
+      let payload: ReturnType<typeof map1.parse>;
+      try {
+        review = reviewInput.parse(JSON.parse(c.canonical_review));
         payload = map1.parse(JSON.parse(c.canonical_payload));
+      } catch {
+        return deny(401, "REVIEW_PROOF_PAYLOAD_MISMATCH");
+      }
       const status = await permitted(db, d, review);
       if (
         !validateMap1(payload, d.proposal, d.policy, d.now) ||
         payload.verifier_account !== d.who.account_id ||
         payload.claim_type !== review.claim
       )
-        deny(401, "INVALID_PROOF");
+        deny(401, "REVIEW_PROOF_PAYLOAD_MISMATCH");
       const message = reviewMessage({
         organizationId: d.policy.organizationId,
         policyDigest: d.row.policy_digest,
@@ -457,8 +464,8 @@ export function evidenceRoutes(app: FastifyInstance, ctx: Context) {
         origin: config.origin,
         expiresAt: c.expires_at.toISOString(),
       });
+      if (message !== c.message) deny(401, "REVIEW_PROOF_MESSAGE_MISMATCH");
       if (
-        message !== c.message ||
         !verifyMessage(
           {
             message,
@@ -470,20 +477,20 @@ export function evidenceRoutes(app: FastifyInstance, ctx: Context) {
           input.signature,
         )
       )
-        deny(401, "INVALID_PROOF");
+        deny(401, "REVIEW_PROOF_SIGNATURE_INVALID");
       await session(req, db, true);
       return { d, c, review, payload, status };
     };
     await transaction(inspect);
     if (!(await verifyKey(input.accountId, input.publicKey)))
-      deny(401, "INVALID_PROOF");
+      deny(401, "REVIEW_PROOF_KEY_NOT_AUTHORIZED");
     return transaction(async (db) => {
       const { d, c, review, payload, status } = await inspect(db);
       const used = await db.query(
         "UPDATE evidence_challenges SET consumed_at=clock_timestamp() WHERE id=$1 AND consumed_at IS NULL AND expires_at>clock_timestamp() RETURNING id",
         [c.id],
       );
-      if (used.rowCount !== 1) deny(401, "INVALID_PROOF");
+      if (used.rowCount !== 1) deny(401, "REVIEW_PROOF_CONSUME_RACE");
       const id = randomUUID();
       await db.query(
         "INSERT INTO evidence_reviews(id,evidence_id,challenge_id,actor_account,claim,status,canonical_review,canonical_payload,attestation_nonce) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",

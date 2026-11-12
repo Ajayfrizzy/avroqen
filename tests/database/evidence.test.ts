@@ -562,9 +562,33 @@ it("local exercise never contributes to quorum or prepares a live intent", async
   expect(out.json().reviews[0].intent).toBeNull();
   expect(out.json().readiness.claims[0].count).toBe(0);
 });
-it.each(["accountId", "network", "signature", "challengeId"])(
-  "rejects proof substitution %s",
-  async (field) => {
+it("verifies a Meteor-compatible ASCII review proof after removing the legacy Unicode header", async () => {
+  const challenge = await reviewChallenge();
+  expect(challenge.message).toContain(
+    "Avroqen M5 human review v2 - OFFCHAIN ONLY.",
+  );
+  expect(challenge.message).not.toContain("\u2014");
+  expect(Buffer.byteLength(challenge.message)).toBe(challenge.message.length);
+  const response = await verifyReview(reviewSignature(challenge));
+  expect(response.statusCode).toBe(200);
+  expect(response.json().reviews[0]).toMatchObject({
+    status: "VERIFIED",
+    payload: {
+      proposal_id: proposal.proposalId,
+      mandate_id: mandateId,
+      verifier_account: "verifier.testnet",
+      evidence_digest: proposal.evidenceDigest,
+    },
+  });
+});
+it.each([
+  ["accountId", "REVIEW_PROOF_ACCOUNT_MISMATCH"],
+  ["network", "REVIEW_PROOF_NETWORK_MISMATCH"],
+  ["signature", "REVIEW_PROOF_SIGNATURE_INVALID"],
+  ["challengeId", "REVIEW_PROOF_CHALLENGE_UNAVAILABLE"],
+] as const)(
+  "rejects proof substitution %s with a safe stage code",
+  async (field, code) => {
     const c = await reviewChallenge();
     const p = reviewSignature(c);
     const values: Record<string, string> = {
@@ -573,9 +597,9 @@ it.each(["accountId", "network", "signature", "challengeId"])(
       signature: Buffer.alloc(64).toString("base64"),
       challengeId: randomUUID(),
     };
-    expect(
-      (await verifyReview({ ...p, [field]: values[field] })).statusCode,
-    ).toBe(401);
+    const response = await verifyReview({ ...p, [field]: values[field] });
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe(code);
   },
 );
 it("rejects altered signed terms and binds session/origin/CSRF", async () => {
@@ -586,9 +610,9 @@ it("rejects altered signed terms and binds session/origin/CSRF", async () => {
   };
   expect((await verifyReview(reviewSignature(changed))).statusCode).toBe(401);
   const otherSession = await login("verifier.testnet");
-  expect(
-    (await verifyReview(reviewSignature(c), otherSession)).statusCode,
-  ).toBe(401);
+  const wrongSession = await verifyReview(reviewSignature(c), otherSession);
+  expect(wrongSession.statusCode).toBe(401);
+  expect(wrongSession.json().error).toBe("REVIEW_PROOF_SESSION_MISMATCH");
   expect(
     (
       await verifyReview(reviewSignature(c), {
@@ -606,6 +630,48 @@ it("rejects altered signed terms and binds session/origin/CSRF", async () => {
     ).statusCode,
   ).toBe(403);
 });
+it.each([
+  ["message", "REVIEW_PROOF_MESSAGE_MISMATCH"],
+  ["payload", "REVIEW_PROOF_PAYLOAD_MISMATCH"],
+] as const)(
+  "diagnoses stored review %s tampering without consuming the challenge",
+  async (field, code) => {
+    const c = await reviewChallenge();
+    if (field === "message")
+      await pool.query(
+        "UPDATE evidence_challenges SET message=$1 WHERE id=$2",
+        [
+          "Avroqen M5 human review — OFFCHAIN ONLY. Legacy challenge",
+          c.challengeId,
+        ],
+      );
+    else {
+      const stored = (
+        await pool.query(
+          "SELECT canonical_payload FROM evidence_challenges WHERE id=$1",
+          [c.challengeId],
+        )
+      ).rows[0];
+      const payload = JSON.parse(stored.canonical_payload);
+      payload.proposal_id = randomUUID();
+      await pool.query(
+        "UPDATE evidence_challenges SET canonical_payload=$1 WHERE id=$2",
+        [JSON.stringify(payload), c.challengeId],
+      );
+    }
+    const response = await verifyReview(reviewSignature(c));
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe(code);
+    expect(
+      (
+        await pool.query(
+          "SELECT consumed_at FROM evidence_challenges WHERE id=$1",
+          [c.challengeId],
+        )
+      ).rows[0].consumed_at,
+    ).toBeNull();
+  },
+);
 it.each(["restricted", "missing", "outage"])(
   "fails closed on finalized key %s",
   async (kind) => {
@@ -614,6 +680,8 @@ it.each(["restricted", "missing", "outage"])(
     unavailable = kind === "outage";
     const r = await verifyReview(reviewSignature(c));
     expect(r.statusCode).toBe(unavailable ? 503 : 401);
+    if (!unavailable)
+      expect(r.json().error).toBe("REVIEW_PROOF_KEY_NOT_AUTHORIZED");
     expect(r.body).not.toContain("private provider error");
     expect((await pool.query("SELECT * FROM evidence_reviews")).rowCount).toBe(
       0,
@@ -638,12 +706,14 @@ it("five-minute challenge expiry and replay reject", async () => {
   await pool.query(
     "UPDATE evidence_challenges SET created_at=clock_timestamp()-interval '10 minutes',expires_at=clock_timestamp()-interval '1 second'",
   );
-  expect((await verifyReview(reviewSignature(c))).statusCode).toBe(401);
+  const expired = await verifyReview(reviewSignature(c));
+  expect(expired.statusCode).toBe(401);
+  expect(expired.json().error).toBe("REVIEW_PROOF_CHALLENGE_EXPIRED");
   const second = await reviewChallenge();
   expect((await verifyReview(reviewSignature(second))).statusCode).toBe(200);
-  expect([401, 409]).toContain(
-    (await verifyReview(reviewSignature(second))).statusCode,
-  );
+  const replay = await verifyReview(reviewSignature(second));
+  expect(replay.statusCode).toBe(401);
+  expect(replay.json().error).toBe("REVIEW_PROOF_CHALLENGE_CONSUMED");
 });
 it("concurrent decisions commit one immutable review", async () => {
   const a = await reviewChallenge(),
@@ -859,4 +929,12 @@ it("records mismatched verifier proof as scoped denial without retaining signatu
   expect(
     JSON.stringify((await pool.query("SELECT * FROM security_events")).rows),
   ).not.toContain(input.signature);
+  const audit = await pool.query("SELECT * FROM security_audit_records");
+  expect(
+    audit.rows.some((row) => row.reason === "REVIEW_PROOF_SIGNATURE_INVALID"),
+  ).toBe(true);
+  const retained = JSON.stringify(audit.rows);
+  expect(retained).not.toContain(input.signature);
+  expect(retained).not.toContain(c.nonce);
+  expect(retained).not.toContain(c.message);
 });
