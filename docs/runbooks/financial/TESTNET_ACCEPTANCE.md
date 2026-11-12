@@ -1,6 +1,6 @@
-# Coordinated M8 live acceptance — pending, not executed
+# Coordinated M8 live financial acceptance — pending, not executed
 
-**Deployment checkpoint:** [owner-verified November 7 deployment/initialization evidence](../../DEPLOYMENT_KEY_GATE_REPORT.md#owner-verified-testnet-deployment--november-7-2026) supersedes earlier undeployed/one-key observations in the preparation packages. Both Primary and Testing FullAccess keys remain retained; Primary proof is BLOCKED and financial operations are DISABLED. Deployment evidence does not pass this runbook's public financial acceptance. A replacement deployment requires a new reviewed plan and separate explicit owner authorization.
+**Deployment checkpoint (updated November 11):** [owner-reported finalized corrected code replacement and post-deployment verification](../../evidence/2026-11-11-VAULT-CODE-REPLACEMENT.md) supersede the older deployed-code digest. The [November 7 initialization](../../DEPLOYMENT_KEY_GATE_REPORT.md#owner-verified-testnet-deployment--november-7-2026) remains historical. Primary and Testing FullAccess keys are both retained; D026's narrow Primary proof remains BLOCKED but is not a denial of account control. Financial submissions remain DISABLED, and no real public-chain payment has been accepted. No new deployment is needed merely to begin separately authorized genuine-source payment testing.
 
 Use one coordinated desktop/physical Android session after integrated implementation review. Earlier owner-confirmed M1/M2 desktop/Android login, cancellation/retry, organization/agent persistence and mandate consent/revocation remain valid only for those earlier tests. They do not pass M5 independent-source or M6–M8 public financial acceptance. iOS explicitly deferred. Browser fixtures are not physical Android evidence.
 
@@ -30,11 +30,7 @@ separate original-owner per-payment approval.
 
 Review current protocol/gas price, finalized balance, code, all keys, initialized
 domain, reserve and storage before approving an exact plan. Reconcile the existing
-deployment evidence rather than treating its old observation as fresh. Review
-artifact/source identity and cross-host build hashes; a local build alone does not
-prove byte identity with the approved 366735-byte archive. Any replacement must
-use the freshly approved account/network, signer, atomic deploy+initialization
-actions and exact bytes; no implicit AddKey/DeleteKey/Transfer approval is granted.
+deployment evidence rather than treating its old observation as fresh. Review artifact/source identity and cross-host build hashes; the currently verified November 11 deployed artifact is **367353 bytes**, SHA-256 `d2ec5048af0577b60c0aef4ecfd1aad1def4289828c841b2d7a7f83dd0f8428d`, not the historical 366735-byte November 7 archive. Any future replacement must use a freshly approved account/network, signer, exact actions, and artifact; do not apply the historical initial deploy+initialization recipe to an already initialized vault; no implicit AddKey/DeleteKey/Transfer approval is granted.
 
 Set explicit per-actor and aggregate gas ceilings, owner prepaid-storage credit,
 mandate storage allowance, funding allocation, policy/per-payment limits, recipient,

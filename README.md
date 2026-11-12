@@ -1,10 +1,9 @@
 # Avroqen — foundation and identity
 
-**Current status — November 8, 2026:** The merged six-page
+**Current status — November 11, 2026:** The merged six-page
 [SAMPLE judge demo](http://127.0.0.1:3000/demo) is implemented and documented in
 the [canonical judge walkthrough and evidence ledger](docs/JUDGE_DEMO.md).
-Owner-verified Testnet evidence records MandateVault deployment and initialization;
-it is not payment evidence. M8 live financial acceptance remains pending, and
+Owner-reported finalized Testnet evidence now confirms the corrected MandateVault code replacement and post-deployment code/key/accounting checks; [November 11 evidence](docs/evidence/2026-11-11-VAULT-CODE-REPLACEMENT.md) is **not** live payment evidence. The historical November 7 initialization remains separately recorded. M8 live financial acceptance remains pending, and
 public hosting and full M9 readiness are incomplete. Financial operations remain
 disabled.
 

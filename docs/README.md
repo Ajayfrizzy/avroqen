@@ -5,8 +5,7 @@ and [judge walkthrough](JUDGE_DEMO.md) first. Permanent specifications live here
 active procedures have stable names under `runbooks/`. Milestone-named history,
 old deployment recipes and investigations live in the [archive](archive/README.md).
 
-Primary proof is **BLOCKED**, Testing FullAccess is **RETAINED**, and financial
-operations are **DISABLED**. No independent security audit or public payment
+The narrowly scoped Primary proof remains **BLOCKED** (not a claim of missing account control). Primary and Testing FullAccess are **RETAINED**, and financial operations are **DISABLED**. The [November 11 corrected Wasm replacement](evidence/2026-11-11-VAULT-CODE-REPLACEMENT.md) has finalized receipt and post-deployment evidence, but no real payment acceptance. No independent security audit or public payment
 acceptance is claimed.
 
 ## Judges and release reviewers
@@ -64,8 +63,8 @@ session or administrative action can release them.
 
 ## Evidence and review
 
-- [Owner-verified deployment/key report](DEPLOYMENT_KEY_GATE_REPORT.md):
-  deployment/initialization only, not payment or fresh live RPC evidence
+- [November 11 corrected vault replacement](evidence/2026-11-11-VAULT-CODE-REPLACEMENT.md): owner-reported finalized transaction and read-only code/key/accounting verification, not payment acceptance
+- [November 7 deployment/key report](DEPLOYMENT_KEY_GATE_REPORT.md): historical initialization evidence, not current deployed code or payment acceptance
 - [Financial S01–S20 acceptance matrix](evidence/FINANCIAL_ACCEPTANCE_MATRIX.md)
 - [M9 screenshot provenance manifest](evidence/m9/README.md)
 - [M1 security-review package](security-review/m1/README.md) and
