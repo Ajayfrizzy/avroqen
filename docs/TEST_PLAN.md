@@ -83,6 +83,14 @@ All mandatory CI checks pass; sandbox tests demonstrate onchain behavior; networ
 
 M6 adds typed-operation and wallet-sender boundary tests, real PostgreSQL intent concurrency/rollback/restart/isolation tests, deployment/RPC failure tests, finalized receipt graph and missing-hash scanner tests, desktop/mobile settlement UI tests, and actual Rust-sandbox-to-TypeScript receipt verification for both successful and definitively failed transfers. Retain all M1–M5 tests. The worker must remain alive but unready during a database outage, and must preserve UNKNOWN during RPC failures. Public testnet acceptance still requires the separate deployment/transaction authorization package; M8 owns integrated real-wallet and genuine independent-source acceptance. Fixture and local sandbox success never satisfy live acceptance.
 
+M8.1 adds unit and adversarial coverage for the 90,000-block threshold, pinned
+anchor/head checks, complete signer-key/permission/nonce equality, null storage
+credit at both blocks, known hashes, malformed evidence and RPC failures. PostgreSQL
+tests require one atomic exact replacement, immutable original UNKNOWN history,
+challenge replay/concurrency rejection, direct-marker rejection and continued
+unresolved uniqueness. Browser coverage must use Meteor's message-only action and
+prove cancellation or recovery never invokes the transaction begin/report path.
+
 ## M7 security gates
 
 Require real PostgreSQL source replay, late commits, batch bounds, rollback/restart, tenant isolation, revoked/read-only responders, concurrent transitions, immutable evidence/history, real oversized agent denials and revoked/disabled capability use, verifier denial, receipt mismatch, delayed outcomes and reconciliation independence from monitoring failure. Require code/key/domain/block mutation RPC tests and safe failure redaction. Browser tests cover desktop/narrow layouts, reduced-motion focus, incident lifecycle without financial effects, denied/offline/empty views, organization switching and containment cancellation. Wallet transport tests cover emergency cancellation as unknown attempted outcome; existing real M3 sandbox authority/callback/accounting tests remain mandatory. Automated results cannot pass public Testnet, physical Android, authentic provider or independent-review gates.

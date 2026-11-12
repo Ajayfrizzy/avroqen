@@ -7,6 +7,7 @@ import {
   type MandatePolicy,
   mandatePolicy,
   nearAccount,
+  verifyInput,
 } from "./index";
 import { type ProposalInput, preflight, toVaultProposal } from "./proposals";
 
@@ -199,3 +200,34 @@ export const walletReport = z.discriminatedUnion("outcome", [
   z.strictObject({ outcome: z.literal("UNKNOWN"), hash: z.null() }),
 ]);
 export type WalletReport = z.infer<typeof walletReport>;
+
+export const RECOVERY_VALIDITY_BLOCKS = 90_000;
+const recoveryChainHash = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
+export const replacementEvidence = z.strictObject({
+  anchorHeight: z.string().regex(/^[1-9][0-9]*$/),
+  anchorHash: recoveryChainHash,
+  evidenceHeight: z.string().regex(/^[1-9][0-9]*$/),
+  evidenceHash: recoveryChainHash,
+  signerKeysDigest: z.string().regex(/^[0-9a-f]{64}$/),
+  storageCreditAtAnchor: z.null(),
+  storageCreditAtEvidence: z.null(),
+  validityBlocks: z.literal(RECOVERY_VALIDITY_BLOCKS),
+});
+export type ReplacementEvidence = z.infer<typeof replacementEvidence>;
+export const replacementProof = verifyInput.extend({
+  action: z.literal("AUTHORIZE_CONTROLLED_REPLACEMENT"),
+  replacementIntentId: z.uuid(),
+});
+export const replacementChallengeInput = z.strictObject({});
+export function replacementMessage(input: {
+  originalIntentId: string;
+  replacementIntentId: string;
+  operation: ChainOperation;
+  operationDigest: string;
+  evidence: ReplacementEvidence;
+  challengeId: string;
+  origin: string;
+  expiresAt: string;
+}): string {
+  return `Avroqen controlled transaction replacement v1\nAction: AUTHORIZE_CONTROLLED_REPLACEMENT\nOriginal intent: ${input.originalIntentId}\nReplacement intent: ${input.replacementIntentId}\nOriginal outcome remains UNKNOWN. This is not proof of failure or non-broadcast.\nNo transaction is signed or sent by this message. It authorizes one unsigned replacement preparation only; the replacement still requires a separate wallet transaction approval.\nOrigin: ${input.origin}\nChallenge: ${input.challengeId}\nChallenge expires: ${input.expiresAt}\nExact operation SHA-256: ${input.operationDigest}\nExact operation: ${JSON.stringify(input.operation)}\nEvidence anchor: ${input.evidence.anchorHeight} ${input.evidence.anchorHash}\nEvidence head: ${input.evidence.evidenceHeight} ${input.evidence.evidenceHash}\nUnchanged signer-key digest: ${input.evidence.signerKeysDigest}\nStorage credit at anchor: null\nStorage credit at evidence head: null\nRequired validity distance: ${input.evidence.validityBlocks} blocks\nResidual risk: trusted RPC providers may be wrong or malicious. If the original transaction later appears, stop and reconcile both intents; never submit another replacement automatically.`;
+}

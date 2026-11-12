@@ -118,6 +118,106 @@ test("unknown operation warns against retry and has no unverified explorer link"
     page.getByRole("link", { name: "View verified transaction" }),
   ).toHaveCount(0);
 });
+test("controlled replacement cancellation leaves UNKNOWN and never opens a transaction action", async ({
+  page,
+}) => {
+  let challenges = 0;
+  let completions = 0;
+  let transactionRequests = 0;
+  const original = {
+    id: "fc90a45b-5a0d-42bb-a73b-e4c1bec9ef84",
+    state: "UNKNOWN",
+    reason: "HASH_NOT_RECOVERED",
+    wallet_outcome: "WALLET_OUTCOME_UNKNOWN",
+    replacement_authorized_at: null,
+    operation: {
+      network: "testnet",
+      signerId: policy.ownerAccount,
+      receiverId: policy.vaultAccount,
+      methodName: "storage_deposit",
+      args: {},
+      gas: "100000000000000",
+      deposit: "100000000000000000000000",
+      mandateId: policy.mandateId,
+      policyDigest: "a".repeat(64),
+      kind: "STORAGE_DEPOSIT",
+    },
+    explorerUrl: null,
+  };
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith("/session"))
+      return route.fulfill({
+        json: { accountId: policy.ownerAccount, csrfToken: "fixture" },
+      });
+    if (path.endsWith("/assignments"))
+      return route.fulfill({ json: { mandates: [policy] } });
+    if (path.endsWith("/status"))
+      return route.fulfill({
+        json: { status: "VERIFIED", submissionEnabled: true },
+      });
+    if (path.endsWith("/recovery/challenge")) {
+      challenges++;
+      return route.fulfill({
+        json: {
+          challengeId: `recovery-${challenges}`,
+          replacementIntentId: "33333333-3333-4333-8333-333333333333",
+          message: "Authorize one unsigned controlled replacement only",
+          nonce: Buffer.alloc(32, challenges).toString("base64"),
+          recipient: "http://127.0.0.1:3000",
+          expiresAt: new Date(Date.now() + 300_000).toISOString(),
+        },
+      });
+    }
+    if (path.endsWith("/recovery/complete")) {
+      completions++;
+      return route.fulfill({ status: 500 });
+    }
+    if (path.endsWith("/begin") || path.endsWith("/report")) {
+      transactionRequests++;
+      return route.fulfill({ status: 500 });
+    }
+    return route.fulfill({
+      json: {
+        policy,
+        onchain: null,
+        block: null,
+        proposals: [],
+        reviews: [],
+        intents: [original],
+      },
+    });
+  });
+  await page.goto(`/workspace/settlement?mandate=${policy.mandateId}`);
+  await page
+    .getByRole("button", { name: "Review controlled replacement" })
+    .click();
+  await page.waitForFunction(() =>
+    Array.from(document.querySelectorAll("*")).some(
+      (node) =>
+        node.tagName.startsWith("METEOR-") &&
+        typeof (node as HTMLElement & { closeAction?: unknown }).closeAction ===
+          "function",
+    ),
+  );
+  await page.evaluate(() => {
+    const node = Array.from(document.querySelectorAll("*")).find(
+      (candidate) =>
+        candidate.tagName.startsWith("METEOR-") &&
+        typeof (candidate as HTMLElement & { closeAction?: unknown })
+          .closeAction === "function",
+    );
+    (node as HTMLElement & { closeAction: () => void }).closeAction();
+  });
+  await expect(
+    page.getByText("Wallet sign-in canceled. No transaction was sent."),
+  ).toBeVisible();
+  await expect(page.getByText("unknown", { exact: true })).toBeVisible();
+  expect(challenges).toBe(1);
+  expect(completions).toBe(0);
+  expect(transactionRequests).toBe(0);
+});
 test("expired and unsafe historical mandates stay readable but cannot authorize", async ({
   page,
 }) => {
