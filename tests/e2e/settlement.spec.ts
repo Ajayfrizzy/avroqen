@@ -1,9 +1,81 @@
 import { readFileSync } from "node:fs";
-import { expect, test } from "@playwright/test";
+import { expect, type Page, type Route, test } from "@playwright/test";
 
 const policy = JSON.parse(
   readFileSync("tests/fixtures/m3-policy.canonical.txt", "utf8"),
 );
+const controlledIntent = (replacementAuthorizedAt: string | null = null) => ({
+  id: "fc90a45b-5a0d-42bb-a73b-e4c1bec9ef84",
+  state: "UNKNOWN",
+  reason: "HASH_NOT_RECOVERED",
+  wallet_outcome: "WALLET_OUTCOME_UNKNOWN",
+  replacement_authorized_at: replacementAuthorizedAt,
+  operation: {
+    network: "testnet",
+    signerId: policy.ownerAccount,
+    receiverId: policy.vaultAccount,
+    methodName: "storage_deposit",
+    args: {},
+    gas: "100000000000000",
+    deposit: "100000000000000000000000",
+    mandateId: policy.mandateId,
+    policyDigest: "a".repeat(64),
+    kind: "STORAGE_DEPOSIT",
+  },
+  explorerUrl: null,
+});
+const eligibleInspection = (intentId: string) => ({
+  intentId,
+  status: "ELIGIBLE",
+  thresholdBlocks: 90_000,
+  anchorHeight: "100",
+  anchorHash: "1".repeat(32),
+  currentHeight: "90100",
+  currentHash: "2".repeat(32),
+  elapsedBlocks: "90000",
+  remainingBlocks: "0",
+  evidence: {
+    anchorHeight: "100",
+    anchorHash: "1".repeat(32),
+    evidenceHeight: "90100",
+    evidenceHash: "2".repeat(32),
+    signerKeysDigest: "a".repeat(64),
+    storageCreditAtAnchor: null,
+    storageCreditAtEvidence: null,
+    validityBlocks: 90_000,
+  },
+});
+async function setupControlledPage(
+  page: Page,
+  intercept: (path: string, route: Route) => Promise<boolean>,
+  intents = [controlledIntent()],
+) {
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (await intercept(path, route)) return;
+    if (path.endsWith("/session"))
+      return route.fulfill({
+        json: { accountId: policy.ownerAccount, csrfToken: "fixture" },
+      });
+    if (path.endsWith("/assignments"))
+      return route.fulfill({ json: { mandates: [policy] } });
+    if (path.endsWith("/status"))
+      return route.fulfill({
+        json: { status: "VERIFIED", submissionEnabled: true },
+      });
+    return route.fulfill({
+      json: {
+        policy,
+        onchain: null,
+        block: null,
+        proposals: [],
+        reviews: [],
+        intents,
+      },
+    });
+  });
+  await page.goto(`/workspace/settlement?mandate=${policy.mandateId}`);
+}
 for (const mobile of [false, true])
   test(`settlement remains disabled and separates offchain terms from chain balances (${mobile ? "mobile" : "desktop"})`, async ({
     page,
@@ -118,32 +190,169 @@ test("unknown operation warns against retry and has no unverified explorer link"
     page.getByRole("link", { name: "View verified transaction" }),
   ).toHaveCount(0);
 });
+test("recovery inspection shows loading and block progress without authorization", async ({
+  page,
+}) => {
+  let release: () => void = () => {};
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let challengeRequests = 0;
+  const original = controlledIntent();
+  await setupControlledPage(page, async (path, route) => {
+    if (path.endsWith("/recovery/challenge")) {
+      challengeRequests++;
+      await route.fulfill({ status: 500 });
+      return true;
+    }
+    if (!path.endsWith("/recovery/eligibility")) return false;
+    await pending;
+    await route.fulfill({
+      json: {
+        intentId: original.id,
+        status: "WAITING_VALIDITY",
+        thresholdBlocks: 90_000,
+        anchorHeight: "100",
+        anchorHash: "1".repeat(32),
+        currentHeight: "89100",
+        currentHash: "2".repeat(32),
+        elapsedBlocks: "89000",
+        remainingBlocks: "1000",
+        evidence: null,
+      },
+    });
+    return true;
+  });
+  await page
+    .getByRole("button", { name: "Review controlled replacement" })
+    .click();
+  const panel = page.getByRole("region", {
+    name: "Controlled replacement eligibility",
+  });
+  await expect(
+    panel.getByText("Checking finalized blockchain evidence..."),
+  ).toBeVisible();
+  expect(challengeRequests).toBe(0);
+  release();
+  await expect(panel.getByText("Waiting for validity window")).toBeVisible();
+  await expect(panel).toContainText(original.id);
+  await expect(panel).toContainText("90,000 blocks");
+  await expect(panel).toContainText("89100");
+  await expect(panel).toContainText("1000");
+  await expect(
+    panel.getByRole("button", { name: "Authorize controlled replacement" }),
+  ).toHaveCount(0);
+  expect(challengeRequests).toBe(0);
+});
+
+for (const [name, code, message] of [
+  ["RPC timeout", "RPC_TIMEOUT", "The blockchain evidence check timed out."],
+  [
+    "unavailable evidence",
+    "RECOVERY_EVIDENCE_UNAVAILABLE",
+    "Independent recovery evidence is currently unavailable.",
+  ],
+] as const)
+  test(`recovery inspection shows ${name}`, async ({ page }) => {
+    await setupControlledPage(page, async (path, route) => {
+      if (!path.endsWith("/recovery/eligibility")) return false;
+      await route.fulfill({ status: 503, json: { error: code } });
+      return true;
+    });
+    await page
+      .getByRole("button", { name: "Review controlled replacement" })
+      .click();
+    const panel = page.getByRole("region", {
+      name: "Controlled replacement eligibility",
+    });
+    await expect(panel.getByRole("alert")).toContainText(message);
+    await expect(
+      panel.getByRole("button", { name: "Retry eligibility check" }),
+    ).toBeVisible();
+  });
+
+for (const [status, message] of [
+  ["SIGNER_STATE_CHANGED", "The signer key set, permissions, or nonce changed"],
+  ["STORAGE_CREDIT_CHANGED", "Onchain storage credit differs"],
+] as const)
+  test(`recovery inspection blocks ${status}`, async ({ page }) => {
+    const original = controlledIntent();
+    await setupControlledPage(page, async (path, route) => {
+      if (!path.endsWith("/recovery/eligibility")) return false;
+      await route.fulfill({
+        json: {
+          ...eligibleInspection(original.id),
+          status,
+          evidence: null,
+        },
+      });
+      return true;
+    });
+    await page
+      .getByRole("button", { name: "Review controlled replacement" })
+      .click();
+    const panel = page.getByRole("region", {
+      name: "Controlled replacement eligibility",
+    });
+    await expect(panel.getByRole("alert")).toContainText(message);
+    await expect(
+      panel.getByRole("button", { name: "Authorize controlled replacement" }),
+    ).toHaveCount(0);
+  });
+
+test("controlled replacement authorization failure remains visible", async ({
+  page,
+}) => {
+  const original = controlledIntent();
+  await setupControlledPage(page, async (path, route) => {
+    if (path.endsWith("/recovery/eligibility")) {
+      await route.fulfill({ json: eligibleInspection(original.id) });
+      return true;
+    }
+    if (path.endsWith("/recovery/challenge")) {
+      await route.fulfill({
+        status: 503,
+        json: { error: "RECOVERY_EVIDENCE_UNAVAILABLE" },
+      });
+      return true;
+    }
+    return false;
+  });
+  await page
+    .getByRole("button", { name: "Review controlled replacement" })
+    .click();
+  const panel = page.getByRole("region", {
+    name: "Controlled replacement eligibility",
+  });
+  await panel
+    .getByRole("button", { name: "Authorize controlled replacement" })
+    .click();
+  await expect(panel.getByRole("alert")).toContainText(
+    "Independent recovery evidence is currently unavailable.",
+  );
+});
+
+test("completed controlled replacement remains clearly visible", async ({
+  page,
+}) => {
+  await setupControlledPage(page, async () => false, [
+    controlledIntent("2026-11-12T12:00:00.000Z"),
+  ]);
+  await expect(
+    page.getByText("A single controlled replacement has been authorized."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Review controlled replacement" }),
+  ).toHaveCount(0);
+});
 test("controlled replacement cancellation leaves UNKNOWN and never opens a transaction action", async ({
   page,
 }) => {
+  let inspections = 0;
   let challenges = 0;
   let completions = 0;
   let transactionRequests = 0;
-  const original = {
-    id: "fc90a45b-5a0d-42bb-a73b-e4c1bec9ef84",
-    state: "UNKNOWN",
-    reason: "HASH_NOT_RECOVERED",
-    wallet_outcome: "WALLET_OUTCOME_UNKNOWN",
-    replacement_authorized_at: null,
-    operation: {
-      network: "testnet",
-      signerId: policy.ownerAccount,
-      receiverId: policy.vaultAccount,
-      methodName: "storage_deposit",
-      args: {},
-      gas: "100000000000000",
-      deposit: "100000000000000000000000",
-      mandateId: policy.mandateId,
-      policyDigest: "a".repeat(64),
-      kind: "STORAGE_DEPOSIT",
-    },
-    explorerUrl: null,
-  };
+  const original = controlledIntent();
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -157,6 +366,14 @@ test("controlled replacement cancellation leaves UNKNOWN and never opens a trans
       return route.fulfill({
         json: { status: "VERIFIED", submissionEnabled: true },
       });
+    if (path.endsWith("/recovery/eligibility")) {
+      inspections++;
+      return route.fulfill({
+        json: {
+          ...eligibleInspection(original.id),
+        },
+      });
+    }
     if (path.endsWith("/recovery/challenge")) {
       challenges++;
       return route.fulfill({
@@ -193,6 +410,20 @@ test("controlled replacement cancellation leaves UNKNOWN and never opens a trans
   await page
     .getByRole("button", { name: "Review controlled replacement" })
     .click();
+  const panel = page.getByRole("region", {
+    name: "Controlled replacement eligibility",
+  });
+  await expect(
+    panel.getByText("Eligible for owner authorization"),
+  ).toBeVisible();
+  await expect(panel.getByText("Verified recovery evidence")).toBeVisible();
+  expect(inspections).toBe(1);
+  expect(challenges).toBe(0);
+  expect(completions).toBe(0);
+  expect(transactionRequests).toBe(0);
+  await panel
+    .getByRole("button", { name: "Authorize controlled replacement" })
+    .click();
   await page.waitForFunction(() =>
     Array.from(document.querySelectorAll("*")).some(
       (node) =>
@@ -211,7 +442,12 @@ test("controlled replacement cancellation leaves UNKNOWN and never opens a trans
     (node as HTMLElement & { closeAction: () => void }).closeAction();
   });
   await expect(
-    page.getByText("Wallet sign-in canceled. No transaction was sent."),
+    panel.getByText("Wallet sign-in canceled. No transaction was sent."),
+  ).toBeVisible();
+  await expect(
+    panel.getByRole("button", {
+      name: "Retry controlled replacement authorization",
+    }),
   ).toBeVisible();
   await expect(page.getByText("unknown", { exact: true })).toBeVisible();
   expect(challenges).toBe(1);

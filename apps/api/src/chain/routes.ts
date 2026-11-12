@@ -32,7 +32,10 @@ import {
   replacementProof,
   walletReport,
 } from "../../../../packages/domain/src/settlement.js";
-import { replacementEvidenceFor } from "../../../../services/chain/recovery.js";
+import {
+  inspectReplacementEligibility,
+  replacementEvidenceFor,
+} from "../../../../services/chain/recovery.js";
 import {
   chainHash,
   type Manifest,
@@ -447,6 +450,18 @@ export function chainRoutes(
     if (!r) return deny(404, "INTENT_NOT_FOUND");
     return r;
   }
+  async function ownedRead(request: FastifyRequest) {
+    const { intentId } = intentParams.parse(request.params),
+      who = await session(request, ctx.pool);
+    const r = (
+      await ctx.pool.query(
+        "SELECT * FROM chain_intents WHERE id=$1 AND actor_account=$2",
+        [intentId, who.account_id],
+      )
+    ).rows[0];
+    if (!r) return deny(404, "INTENT_NOT_FOUND");
+    return r;
+  }
   function recoverable(r: Record<string, unknown>, manifest: Manifest) {
     const op = JSON.parse(String(r.canonical_operation)) as ChainOperation;
     if (op.kind !== "STORAGE_DEPOSIT")
@@ -490,6 +505,24 @@ export function chainRoutes(
       return deny(503, "RECOVERY_EVIDENCE_UNAVAILABLE");
     }
   }
+  app.get(
+    "/api/chain/intents/:intentId/recovery/eligibility",
+    async (request) => {
+      const manifest = enabled();
+      const r = await ownedRead(request);
+      recoverable(r, manifest);
+      try {
+        return await inspectReplacementEligibility(
+          chain.reader,
+          r as unknown as import("../../../../services/chain/reconcile.js").Intent,
+        );
+      } catch (error) {
+        if (error instanceof Error && error.message === "RPC_TIMEOUT")
+          return deny(503, "RPC_TIMEOUT");
+        return deny(503, "RECOVERY_EVIDENCE_UNAVAILABLE");
+      }
+    },
+  );
   app.post(
     "/api/chain/intents/:intentId/recovery/challenge",
     async (request) => {

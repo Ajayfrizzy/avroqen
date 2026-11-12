@@ -483,3 +483,11 @@ not consensus proof of non-broadcast. A malicious or incorrect trusted provider
 could conceal both nonce and contract-state changes. If the original later appears,
 stop submission and reconcile both records. No contract, custody, deployment key,
 automatic retry or terminal-state rule changes.
+
+The Payments UI separates read-only inspection from authorization. Opening the
+recovery panel performs one authenticated GET, creates no challenge and shows the
+90,000-block threshold, finalized head, remaining distance and any key/storage/RPC
+blocker. Only an ELIGIBLE result exposes a separate authorization action. That POST
+recomputes evidence before issuing the five-minute owner message, and completion
+recomputes it again. Loading, wallet-pending, cancellation, failure and durable
+success remain distinct; no inspection result itself permits replacement creation.

@@ -44,9 +44,10 @@ let rpcResult: unknown;
 let recoveryHeadHeight: number | undefined;
 let recoveryNonce = "7";
 let recoveryCredit: unknown = null;
+let recoveryRpcError = "outage";
 class FixtureReader extends NearReader {
   override async deployment(_manifest?: unknown, at?: string) {
-    if (rpcDown) throw new Error("outage");
+    if (rpcDown) throw new Error(recoveryRpcError);
     await duringDeployment?.();
     const anchor = at === bs58.encode(Buffer.alloc(32, 1));
     const height = anchor
@@ -263,6 +264,7 @@ beforeEach(async () => {
   recoveryHeadHeight = undefined;
   recoveryNonce = "7";
   recoveryCredit = null;
+  recoveryRpcError = "outage";
   hook = undefined;
   keyAllowed = true;
   unavailable = false;
@@ -320,6 +322,13 @@ async function unknownStorageDeposit() {
 }
 async function recoveryChallenge(id: string) {
   return post(`/api/chain/intents/${id}/recovery/challenge`, {});
+}
+async function recoveryEligibility(id: string) {
+  return app.inject({
+    method: "GET",
+    url: `/api/chain/intents/${id}/recovery/eligibility`,
+    headers,
+  });
 }
 async function completeRecovery(
   id: string,
@@ -553,6 +562,116 @@ it.each([
     expect(detail.statusCode).toBe(200);
     expect(detail.json().intents[0].wallet_outcome).toBe(reason);
     expect((await prepare()).statusCode).toBe(409);
+  },
+);
+it("inspects an open recovery window without creating authorization state", async () => {
+  const original = await unknownStorageDeposit();
+  recoveryHeadHeight = 89_100;
+  const result = await recoveryEligibility(original.id);
+  expect(result.statusCode).toBe(200);
+  expect(result.json()).toMatchObject({
+    intentId: original.id,
+    status: "WAITING_VALIDITY",
+    thresholdBlocks: 90_000,
+    anchorHeight: "100",
+    currentHeight: "89100",
+    elapsedBlocks: "89000",
+    remainingBlocks: "1000",
+    evidence: null,
+  });
+  expect(
+    (
+      await pool.query(
+        "SELECT count(*)::int AS challenges FROM chain_recovery_challenges",
+      )
+    ).rows[0].challenges,
+  ).toBe(0);
+  expect(
+    (
+      await pool.query(
+        "SELECT replacement_authorized_at FROM chain_intents WHERE id=$1",
+        [original.id],
+      )
+    ).rows[0].replacement_authorized_at,
+  ).toBeNull();
+});
+
+it("returns eligible verified evidence without issuing a challenge", async () => {
+  const original = await unknownStorageDeposit();
+  recoveryHeadHeight = 90_100;
+  const result = await recoveryEligibility(original.id);
+  expect(result.statusCode).toBe(200);
+  expect(result.json()).toMatchObject({
+    intentId: original.id,
+    status: "ELIGIBLE",
+    thresholdBlocks: 90_000,
+    currentHeight: "90100",
+    elapsedBlocks: "90000",
+    remainingBlocks: "0",
+    evidence: {
+      anchorHeight: "100",
+      evidenceHeight: "90100",
+      storageCreditAtAnchor: null,
+      storageCreditAtEvidence: null,
+      validityBlocks: 90_000,
+    },
+  });
+  expect(
+    (
+      await pool.query(
+        "SELECT count(*)::int AS challenges FROM chain_recovery_challenges",
+      )
+    ).rows[0].challenges,
+  ).toBe(0);
+});
+
+it.each([
+  ["signer", { nonce: "8" }, "SIGNER_STATE_CHANGED"],
+  ["storage", { credit: "1" }, "STORAGE_CREDIT_CHANGED"],
+] as const)(
+  "returns a readable %s mismatch without creating recovery authority",
+  async (_name, change, expected) => {
+    const original = await unknownStorageDeposit();
+    recoveryHeadHeight = 90_100;
+    if ("nonce" in change) recoveryNonce = change.nonce;
+    if ("credit" in change) recoveryCredit = change.credit;
+    const result = await recoveryEligibility(original.id);
+    expect(result.statusCode).toBe(200);
+    expect(result.json()).toMatchObject({
+      intentId: original.id,
+      status: expected,
+      remainingBlocks: "0",
+      evidence: null,
+    });
+    expect(
+      (
+        await pool.query(
+          "SELECT count(*)::int AS challenges FROM chain_recovery_challenges",
+        )
+      ).rows[0].challenges,
+    ).toBe(0);
+  },
+);
+
+it.each([
+  ["RPC timeout", "RPC_TIMEOUT", "RPC_TIMEOUT"],
+  ["unavailable evidence", "outage", "RECOVERY_EVIDENCE_UNAVAILABLE"],
+] as const)(
+  "keeps inspection read-only during %s",
+  async (_name, failure, expected) => {
+    const original = await unknownStorageDeposit();
+    rpcDown = true;
+    recoveryRpcError = failure;
+    const result = await recoveryEligibility(original.id);
+    expect(result.statusCode).toBe(503);
+    expect(result.json().error).toBe(expected);
+    expect(
+      (
+        await pool.query(
+          "SELECT count(*)::int AS challenges FROM chain_recovery_challenges",
+        )
+      ).rows[0].challenges,
+    ).toBe(0);
   },
 );
 it("prepares one exact replacement while preserving the historical UNKNOWN intent", async () => {
