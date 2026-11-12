@@ -256,8 +256,8 @@ export class NearReader {
         signal: AbortSignal.timeout(6000),
       };
       response =
-        this.transport === fetch && this.endpoint === endpoints[0]
-          ? await readOnlyRpcFetch("testnet", init)
+        this.endpoint === endpoints[0]
+          ? await readOnlyRpcFetch("testnet", init, this.transport, this.now)
           : await this.transport(this.endpoint, init);
     } catch (error) {
       throw transportError(error);

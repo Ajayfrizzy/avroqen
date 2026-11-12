@@ -188,10 +188,11 @@ export default function Settlement() {
     setEnabled(false);
     setDeployment("Checking deployment");
     try {
-      const status = await api<{ submissionEnabled: boolean; status: string }>(
-        "/chain/status",
-        session,
-      );
+      const status = await api<{
+        deploymentVerified: boolean;
+        submissionEnabled: boolean;
+        status: string;
+      }>("/chain/status", session);
       if (version !== refreshVersion.current) return;
       setDeployment(status.status);
       if (policy) {
@@ -206,7 +207,7 @@ export default function Settlement() {
         ) {
           setDetail(result);
           setCurrentState(true);
-          setEnabled(status.submissionEnabled);
+          setEnabled(status.submissionEnabled && status.deploymentVerified);
           if (
             result.onchain?.guardian === session.accountId &&
             result.policy.ownerAccount !== session.accountId
@@ -586,7 +587,13 @@ export default function Settlement() {
       {policy && (
         <p role="status">
           <Badge tone={enabled ? "success" : "warning"}>
-            {enabled ? "Deployment verified" : "Live submission disabled."}
+            {enabled
+              ? "Deployment verified"
+              : deployment === "Checking deployment"
+                ? "Checking deployment"
+                : deployment === "UNAVAILABLE"
+                  ? "Deployment verification unavailable."
+                  : "Live submission disabled."}
           </Badge>{" "}
           {enabled
             ? "Review every wallet prompt."

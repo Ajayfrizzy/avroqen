@@ -138,7 +138,10 @@ binding guards and immutable row triggers. It adds no secret/provider/file stora
 
 ## M6 API and durable chain records
 
-- `GET /api/chain/status`: authenticated, verified deployment status; disabled unless an approved complete manifest is configured.
+- `GET /api/chain/status`: authenticated deployment status. `submissionEnabled`
+  reports the configured financial switch even while RPC evidence is unavailable;
+  `deploymentVerified` is independently false and all transaction controls remain
+  disabled until a fresh complete verification succeeds.
 - `GET /api/chain/assignments`: exact owner/agent/designated-verifier mandate assignments, bounded to 50.
 - `GET /api/organizations/:orgId/mandates/:mandateId/chain`: scoped policy, exact onchain mandate/proposal snapshots and authorized intent history. Unavailable state is null, never a zero balance. Explorer links require an RPC-matched hash.
 - `POST .../chain/intents`: strict `{idempotencyKey, operation}`; allowlisted typed operations only. No arbitrary receiver, arguments, signer, method or raw transfer action.

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import bs58 from "bs58";
-import { expect, it } from "vitest";
+import { afterEach, expect, it } from "vitest";
 import {
   deploymentConfig,
   FINALIZED_BLOCK_MAX_AGE_MS,
@@ -10,6 +10,7 @@ import {
   NearReader,
   readOnlyDeploymentConfig,
 } from "../../services/chain/rpc.js";
+import { clearRpcCooldownForTests } from "../../services/chain/rpc-rate-limit.js";
 
 const now = 1_800_000_000_000;
 const manifest = {
@@ -39,6 +40,8 @@ const rawEnvelope = (init: RequestInit | undefined, result: string) => {
     `{"jsonrpc":"2.0","id":${JSON.stringify(request.id)},"result":${result}}`,
   );
 };
+
+afterEach(clearRpcCooldownForTests);
 
 it("separates read-only deployment configuration from financial submission", () => {
   expect(readOnlyDeploymentConfig({})).toBeNull();
@@ -373,6 +376,41 @@ function deploymentTransport(timestamp?: string, change?: DeploymentChange) {
   };
   return transport;
 }
+
+it("keeps deployment reads block-pinned across successful provider failover", async () => {
+  const block = bs58.encode(Buffer.alloc(32, 1));
+  const base = deploymentTransport((BigInt(now) * 1_000_000n).toString());
+  const pinned: unknown[] = [];
+  const transport: typeof fetch = async (url, init) => {
+    if (url === "https://rpc.testnet.fastnear.com")
+      return new Response("", { status: 503 });
+    const request = JSON.parse(String(init?.body)) as {
+      method: string;
+      params?: Record<string, unknown>;
+    };
+    if (request.method === "query") pinned.push(request.params?.block_id);
+    return base(url, init);
+  };
+  await expect(
+    new NearReader(undefined, transport, () => now).deployment(manifest),
+  ).resolves.toMatchObject({ block: { hash: block } });
+  expect(pinned).toHaveLength(4);
+  expect(pinned.every((value) => value === block)).toBe(true);
+});
+
+it("rejects inconsistent block-pinned evidence returned after failover", async () => {
+  const base = deploymentTransport(
+    (BigInt(now) * 1_000_000n).toString(),
+    "account",
+  );
+  const transport: typeof fetch = async (url, init) =>
+    url === "https://rpc.testnet.fastnear.com"
+      ? new Response("", { status: 503 })
+      : base(url, init);
+  await expect(
+    new NearReader(undefined, transport, () => now).deployment(manifest),
+  ).rejects.toThrow("RPC_BLOCK_MISMATCH");
+});
 
 it("accepts finalized timestamps at the exact age and future-skew boundaries", async () => {
   for (const offset of [

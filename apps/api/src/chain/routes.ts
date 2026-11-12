@@ -268,7 +268,7 @@ export function chainRoutes(
         network: "testnet",
         deploymentConfigured: true,
         deploymentVerified: false,
-        submissionEnabled: false,
+        submissionEnabled: chain.submissionEnabled,
       };
     }
   });
