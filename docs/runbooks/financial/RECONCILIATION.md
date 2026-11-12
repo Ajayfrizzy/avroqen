@@ -8,6 +8,16 @@ The wallet connector uses in-memory storage, refuses key storage, omits all acce
 
 `services/chain/rpc.ts` has only allowlisted read RPC methods and fixed NEAR testnet endpoints. It checks actual chain ID, finalized bytecode SHA-256/code hash, all pinned access-key permission fingerprints and contract domain. Each response must be an unambiguous JSON-RPC 2.0 envelope with the exact issued request ID; duplicate decoded object keys, extra envelope members, conflicting result/error members, malformed/truncated bodies and responses over 4 MiB fail closed. Provider details are reduced to fixed diagnostic codes, and neither raw provider errors nor transaction/authentication payloads are logged. This is authenticated HTTPS **trusted-RPC verification**, not consensus/light-client proof. A malicious trusted provider is a residual risk; no claim of independent multi-provider consensus is made.
 
+Read-only RPC calls may move through the fixed provider list after a bounded
+per-provider timeout, transport failure, HTTP 429, HTTP 408 or retryable 5xx. Each
+attempt receives a fresh abort signal within one strict overall deadline; failed
+providers enter a bounded cooldown and `Retry-After` remains capped. Failover does
+not accept evidence: the same JSON-RPC, chain identity, freshness and deployment
+checks run on the returned response. Deployment selects one finalized block and
+pins every subsequent provider read to that exact hash; inconsistent fallback data
+fails closed. Signed-transaction broadcast methods are outside the allowlist and
+can never use this retry path.
+
 The current finalized deployment head must be no older than 120 seconds and no
 more than 30 seconds ahead of the application clock. Exact boundary values pass;
 missing/invalid, older or further-future timestamps fail closed. Code, account,

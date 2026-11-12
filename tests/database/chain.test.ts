@@ -951,7 +951,11 @@ it("RPC outage prevents preparation without fabricating deployment status", asyn
   rpcDown = true;
   expect((await prepare()).statusCode).toBe(503);
   const r = await app.inject({ url: "/api/chain/status", headers });
-  expect(r.json().submissionEnabled).toBe(false);
+  expect(r.json()).toMatchObject({
+    status: "UNAVAILABLE",
+    deploymentVerified: false,
+    submissionEnabled: true,
+  });
 });
 it("verifies deployment read-only while disabled and rejects all preparation", async () => {
   chainConfig.submissionEnabled = false;

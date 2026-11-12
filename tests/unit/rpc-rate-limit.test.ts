@@ -57,6 +57,87 @@ describe("read-only RPC 429 handling", () => {
     expect(transport.mock.calls[2]?.[0]).toBe("https://rpc.testnet.near.org");
   });
 
+  it("uses a fresh signal and falls back after a provider timeout", async () => {
+    const signals: AbortSignal[] = [];
+    const transport = vi.fn<typeof fetch>(async (_url, init) => {
+      const signal = init?.signal as AbortSignal;
+      signals.push(signal);
+      if (signals.length === 1)
+        return new Promise<Response>((_resolve, reject) =>
+          signal.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          }),
+        );
+      return new Response("ok");
+    });
+    const response = await readOnlyRpcFetch(
+      "testnet",
+      request,
+      transport,
+      Date.now,
+      { perProviderTimeoutMs: 5, overallTimeoutMs: 100 },
+    );
+    expect(response.ok).toBe(true);
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(signals[0]).not.toBe(signals[1]);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
+  });
+
+  it.each([
+    ["network failure", () => Promise.reject(new TypeError("offline"))],
+    ["HTTP 500", () => Promise.resolve(new Response("", { status: 500 }))],
+    ["HTTP 502", () => Promise.resolve(new Response("", { status: 502 }))],
+    ["HTTP 503", () => Promise.resolve(new Response("", { status: 503 }))],
+    ["HTTP 504", () => Promise.resolve(new Response("", { status: 504 }))],
+  ] as const)("falls back after a transient %s", async (_name, failure) => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(failure)
+      .mockResolvedValue(new Response("ok"));
+    await expect(
+      readOnlyRpcFetch("testnet", request, transport),
+    ).resolves.toMatchObject({ ok: true });
+    expect(transport).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a non-transient HTTP response", async () => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("", { status: 501 }));
+    const response = await readOnlyRpcFetch("testnet", request, transport);
+    expect(response.status).toBe(501);
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed after exhausting every provider", async () => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new TypeError("private network detail"));
+    await expect(
+      readOnlyRpcFetch("testnet", request, transport),
+    ).rejects.toThrow("private network detail");
+    expect(transport).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops failover when the strict overall deadline expires", async () => {
+    const transport = vi.fn<typeof fetch>(async (_url, init) => {
+      const signal = init?.signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) =>
+        signal.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        }),
+      );
+    });
+    await expect(
+      readOnlyRpcFetch("testnet", request, transport, Date.now, {
+        perProviderTimeoutMs: 100,
+        overallTimeoutMs: 5,
+      }),
+    ).rejects.toMatchObject({ name: "TimeoutError" });
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
   it("fails closed when every allowed provider returns 429", async () => {
     const transport = vi
       .fn<typeof fetch>()

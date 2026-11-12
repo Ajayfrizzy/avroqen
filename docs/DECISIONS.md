@@ -596,3 +596,32 @@ consent checks. Completion creates only one identical unsigned `PREPARED` record
 preserves the original UNKNOWN record and audit events, and never opens or approves
 a wallet transaction. The owner must separately request wallet review; if the
 original advances or any binding changes, that review remains blocked.
+
+## D036 — Read-only RPC availability failover preserves evidence validation
+
+Testnet availability correction on November 12, 2026: the fixed RPC helper retried
+HTTP 429 but allowed a timeout, network failure or transient provider 5xx to end a
+read immediately. Deployment verification therefore alternated between current and
+unavailable even though the approved manifest and financial-submission switch were
+unchanged.
+
+Allowlisted read-only JSON-RPC methods now fail over across the existing fixed
+providers after transport errors, per-provider timeout, HTTP 429, HTTP 408 and
+retryable 5xx responses. Every attempt gets a new abort signal, is capped at two
+seconds, and shares a strict six-second overall deadline. Rate-limit `Retry-After`
+and transient-provider cooldowns are bounded. Exhaustion or deadline expiry fails
+closed; non-transient responses and JSON-RPC errors are returned to the unchanged
+strict validator instead of being hidden by another provider.
+
+This is availability failover, not provider quorum or weaker evidence. `NearReader`
+still validates the exact response ID and envelope, Testnet identity, finalized
+freshness, approved code hash, complete vault access-key set and accounting domain.
+Deployment reads remain pinned to one finalized block hash across providers and
+reject inconsistent results. The helper rejects every transaction-broadcast method,
+so it cannot retry or resubmit a signed transaction.
+
+Chain status now reports the configured `submissionEnabled` switch independently
+from `deploymentVerified`. An RPC outage leaves the former unchanged and the latter
+false. Payments labels that state as unavailable and keeps transaction controls
+disabled until fresh verification succeeds; it no longer claims configuration was
+disabled because evidence was temporarily unavailable.

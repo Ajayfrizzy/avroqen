@@ -61,7 +61,11 @@ async function setupControlledPage(
       return route.fulfill({ json: { mandates: [policy] } });
     if (path.endsWith("/status"))
       return route.fulfill({
-        json: { status: "VERIFIED", submissionEnabled: true },
+        json: {
+          status: "VERIFIED",
+          deploymentVerified: true,
+          submissionEnabled: true,
+        },
       });
     return route.fulfill({
       json: {
@@ -146,7 +150,11 @@ test("unknown operation warns against retry and has no unverified explorer link"
       return route.fulfill({ json: { mandates: [policy] } });
     if (path.endsWith("/status"))
       return route.fulfill({
-        json: { status: "UNAVAILABLE", submissionEnabled: false },
+        json: {
+          status: "UNAVAILABLE",
+          deploymentVerified: false,
+          submissionEnabled: true,
+        },
       });
     return route.fulfill({
       json: {
@@ -172,6 +180,9 @@ test("unknown operation warns against retry and has no unverified explorer link"
   await page
     .getByRole("combobox", { name: "Mandate", exact: true })
     .selectOption(policy.mandateId);
+  await expect(
+    page.getByText("Deployment verification unavailable.", { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByText(
       "Do not repeat this operation while its outcome is unresolved.",
@@ -364,7 +375,11 @@ test("controlled replacement cancellation leaves UNKNOWN and never opens a trans
       return route.fulfill({ json: { mandates: [policy] } });
     if (path.endsWith("/status"))
       return route.fulfill({
-        json: { status: "VERIFIED", submissionEnabled: true },
+        json: {
+          status: "VERIFIED",
+          deploymentVerified: true,
+          submissionEnabled: true,
+        },
       });
     if (path.endsWith("/recovery/eligibility")) {
       inspections++;
@@ -489,7 +504,11 @@ test("expired and unsafe historical mandates stay readable but cannot authorize"
       return route.fulfill({ json: { mandates: policies } });
     if (path.endsWith("/status"))
       return route.fulfill({
-        json: { status: "VERIFIED", submissionEnabled: true },
+        json: {
+          status: "VERIFIED",
+          deploymentVerified: true,
+          submissionEnabled: true,
+        },
       });
     const selected = policies.find((candidate) =>
       path.includes(candidate.mandateId),
@@ -687,7 +706,11 @@ test("tampered prepared transaction cannot reach a wallet prompt", async ({
       return route.fulfill({ json: { mandates: [policy] } });
     if (path.endsWith("/status"))
       return route.fulfill({
-        json: { status: "VERIFIED", submissionEnabled: true },
+        json: {
+          status: "VERIFIED",
+          deploymentVerified: true,
+          submissionEnabled: true,
+        },
       });
     if (path.endsWith("/intents"))
       return route.fulfill({
@@ -747,7 +770,11 @@ for (const failure of ["status", "detail"])
         return route.abort();
       if (path.endsWith("/status"))
         return route.fulfill({
-          json: { status: "VERIFIED", submissionEnabled: true },
+          json: {
+            status: "VERIFIED",
+            deploymentVerified: true,
+            submissionEnabled: true,
+          },
         });
       return route.fulfill({
         json: {
@@ -799,7 +826,11 @@ test("optional guardian is bound in exact registration and tampered response can
       return route.fulfill({ json: { mandates: [policy] } });
     if (path.endsWith("/status"))
       return route.fulfill({
-        json: { status: "VERIFIED", submissionEnabled: true },
+        json: {
+          status: "VERIFIED",
+          deploymentVerified: true,
+          submissionEnabled: true,
+        },
       });
     if (path.endsWith("/intents")) {
       operation = route.request().postDataJSON().operation;
