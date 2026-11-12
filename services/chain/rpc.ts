@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import bs58 from "bs58";
 import { z } from "zod";
 import { nearAccount } from "../../packages/domain/src/index.js";
+import { readOnlyRpcFetch } from "./rpc-rate-limit.js";
 export const chainHash = z.string().refine((v) => {
   try {
     return bs58.decode(v).length === 32;
@@ -53,6 +54,7 @@ export function deploymentConfig(env: NodeJS.ProcessEnv): Manifest | null {
 export const fingerprint = (v: string) =>
   createHash("sha256").update(v).digest("hex");
 const endpoints = [
+  "https://rpc.testnet.fastnear.com",
   "https://rpc.testnet.near.org",
   "https://archival-rpc.testnet.near.org",
 ] as const;
@@ -246,13 +248,17 @@ export class NearReader {
     const id = `m6-${++this.requestId}`;
     let response: Response;
     try {
-      response = await this.transport(this.endpoint, {
+      const init: RequestInit = {
         method: "POST",
         redirect: "error",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
         signal: AbortSignal.timeout(6000),
-      });
+      };
+      response =
+        this.transport === fetch && this.endpoint === endpoints[0]
+          ? await readOnlyRpcFetch("testnet", init)
+          : await this.transport(this.endpoint, init);
     } catch (error) {
       throw transportError(error);
     }
