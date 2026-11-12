@@ -91,6 +91,10 @@ export async function uiFixture(page: Page, mode: Mode = "populated") {
           nextOffset: null,
         },
       });
+    if (path === "/api/agent/assignments")
+      return route.fulfill({
+        json: { assignments: [], nextOffset: null },
+      });
     if (path.endsWith("/assignments"))
       return route.fulfill({
         json: { mandates: mode === "empty" ? [] : [policy] },
@@ -253,8 +257,12 @@ export async function openScreen(
     await page
       .getByRole("combobox", { name: "Select organization", exact: true })
       .selectOption(orgId);
-  if (screen === "mandates" || screen === "proposals")
+  if (screen === "mandates")
     await page.getByLabel("Organization", { exact: true }).selectOption(orgId);
+  if (screen === "proposals") {
+    await page.getByRole("tab", { name: "Organization mandates" }).click();
+    await page.getByLabel("Organization", { exact: true }).selectOption(orgId);
+  }
   if (screen === "security")
     await page
       .getByRole("combobox", { name: "Select organization", exact: true })

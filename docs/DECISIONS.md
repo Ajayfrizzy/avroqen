@@ -521,3 +521,26 @@ contain signatures, nonces, bearer tokens or complete messages. RPC errors remai
 service failures rather than false key rejection. Challenge TTL, owner/session/
 CSRF binding, finalized-key requirement, single use and atomic consent recording
 are unchanged; no malformed or unauthorized proof is accepted.
+
+## D033 — Cross-organization agent discovery is exact-assignment scoped
+
+Owner-directed correction on November 12, 2026: organization membership is not a
+precondition for the wallet account explicitly designated as an immutable mandate's
+agent to discover that assignment. A dedicated authenticated list filters by exact
+network and stored `agent_account`; exact mandate lookups repeat that binding and
+return not-found for every unassigned wallet. The view exposes only immutable terms,
+the owner-organization display name and consent/expiry/agent/verifier status. It
+does not grant membership, organization management, consent, evidence review,
+credential-operator, owner or settlement access.
+
+An assigned wallet may mint only a 15-minute demo capability after the server
+rechecks the owner's active membership, approved offchain consent, active matching
+agent registration and mandate expiry under the existing lock order. Authorization
+derives from the owner's signed immutable agent designation and live consent; it
+does not replace or infer a new owner approval. The credential retains the existing
+owner issuer required by policy and adds an immutable exact holder marker. That
+marker permits the wallet to revoke only its own capability, never an owner-issued
+demo/operator credential. Proposal preparation, submission, idempotency, evidence,
+financial and onchain checks remain unchanged and continue through the existing
+bearer-scoped agent tool. Revoked, expired or disabled assignments remain visible
+for an honest denial state but cannot issue a capability or submit a proposal.

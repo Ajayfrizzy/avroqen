@@ -293,6 +293,8 @@ for (const width of [1440, 390]) {
       ["/workspace", "#organization"],
     ] as const) {
       await page.goto(path);
+      if (path === "/workspace/proposals")
+        await page.getByRole("tab", { name: "Organization mandates" }).click();
       const selection =
         path === "/workspace/mandates"
           ? page.getByRole("combobox").first()
@@ -300,6 +302,10 @@ for (const width of [1440, 390]) {
       await expect(selection).toHaveValue(orgId);
       await page.reload();
       await expect(selection).toHaveValue(orgId);
+      if (path === "/workspace/proposals")
+        await expect(
+          page.getByRole("tab", { name: "Organization mandates" }),
+        ).toHaveAttribute("aria-selected", "true");
       if (path === "/workspace")
         await expect(
           page.getByRole("button", { name: "✓ Saved", exact: true }),

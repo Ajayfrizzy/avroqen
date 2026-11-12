@@ -459,6 +459,33 @@ hr {
   padding: 34px;
   min-height: calc(100vh - 200px);
 }
+.tabs {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #eef3f6;
+}
+.tabs button {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+.tabs button[aria-selected="true"] {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(20 42 58 / 12%);
+}
+.tab-panel {
+  display: grid;
+  gap: 10px;
+}
 .page-header {
   display: flex;
   justify-content: space-between;

@@ -246,6 +246,220 @@ it("returns capability target metadata without exposing its bearer token", async
   ]);
   expect(response.body).not.toContain(credential.token);
 });
+it("lets a cross-organization assigned wallet discover and propose without owner organization membership", async () => {
+  const agentHeaders = await login("agent.testnet");
+  const ownOrganization = await post(
+    "/api/organizations",
+    { name: "Agent organization" },
+    agentHeaders,
+  );
+  expect(ownOrganization.statusCode).toBe(201);
+  expect(ownOrganization.json().id).not.toBe(org);
+  expect(
+    (
+      await app.inject({
+        url: `/api/organizations/${org}/mandates`,
+        headers: agentHeaders,
+      })
+    ).statusCode,
+  ).toBe(403);
+
+  const assignments = await app.inject({
+    url: "/api/agent/assignments",
+    headers: agentHeaders,
+  });
+  expect(assignments.statusCode).toBe(200);
+  expect(assignments.json()).toEqual({
+    assignments: [
+      expect.objectContaining({
+        policy: expect.objectContaining({
+          mandateId,
+          organizationId: org,
+          ownerAccount: "alice.testnet",
+          agentAccount: "agent.testnet",
+        }),
+        organizationName: "M2 org",
+        consentStatus: "CONSENT_APPROVED_OFFCHAIN",
+        expired: false,
+        agentDisabled: false,
+      }),
+    ],
+    nextOffset: null,
+  });
+  for (const payload of [
+    { purpose: "operator" },
+    { purpose: "demo", rotateId: credential.id },
+    { purpose: "demo", holderAccount: "attacker.testnet" },
+  ])
+    expect(
+      (
+        await post(
+          `/api/agent/assignments/${mandateId}/credentials`,
+          payload,
+          agentHeaders,
+        )
+      ).statusCode,
+    ).toBe(400);
+
+  const issued = await post(
+    `/api/agent/assignments/${mandateId}/credentials`,
+    { purpose: "demo" },
+    agentHeaders,
+  );
+  expect(issued.statusCode).toBe(200);
+  const assignedCredential = issued.json();
+  const stored = (
+    await pool.query(
+      "SELECT issuer_account,holder_account,purpose FROM agent_credentials WHERE id=$1",
+      [assignedCredential.id],
+    )
+  ).rows[0];
+  expect(stored).toEqual({
+    issuer_account: "alice.testnet",
+    holder_account: "agent.testnet",
+    purpose: "demo",
+  });
+  await expect(
+    pool.query(
+      "UPDATE agent_credentials SET holder_account='attacker.testnet' WHERE id=$1",
+      [assignedCredential.id],
+    ),
+  ).rejects.toThrow();
+  await expect(
+    pool.query(
+      "INSERT INTO agent_credentials(id,token_hash,mandate_id,issuer_account,purpose,holder_account,expires_at) VALUES($1,$2,$3,'alice.testnet','demo','attacker.testnet',clock_timestamp()+interval '1 minute')",
+      [randomUUID(), "f".repeat(64), mandateId],
+    ),
+  ).rejects.toThrow();
+  const submitted = await submit(proposal, assignedCredential.token);
+  expect(submitted.statusCode).toBe(200);
+  expect(submitted.json().status).toBe("SUBMITTED_OFFCHAIN");
+  const history = await app.inject({
+    url: `/api/agent/assignments/${mandateId}/proposals`,
+    headers: agentHeaders,
+  });
+  expect(history.statusCode).toBe(200);
+  expect(history.json().proposals).toEqual([
+    expect.objectContaining({ proposal, status: "SUBMITTED_OFFCHAIN" }),
+  ]);
+  expect(
+    (
+      await post(
+        `/api/agent/assignments/${mandateId}/credentials/revoke`,
+        { credentialId: assignedCredential.id },
+        agentHeaders,
+      )
+    ).statusCode,
+  ).toBe(200);
+  expect(
+    (await tool({ tool: "mandate_summary" }, assignedCredential.token))
+      .statusCode,
+  ).toBe(401);
+});
+it("does not expose assignments or owner credentials to an unassigned wallet", async () => {
+  const unassigned = await login("unassigned.testnet");
+  const list = await app.inject({
+    url: "/api/agent/assignments",
+    headers: unassigned,
+  });
+  expect(list.statusCode).toBe(200);
+  expect(list.json()).toEqual({ assignments: [], nextOffset: null });
+  expect(
+    (
+      await post(
+        `/api/agent/assignments/${mandateId}/credentials`,
+        { purpose: "demo" },
+        unassigned,
+      )
+    ).statusCode,
+  ).toBe(404);
+  expect(
+    (
+      await app.inject({
+        url: `/api/agent/assignments/${mandateId}/proposals`,
+        headers: unassigned,
+      })
+    ).statusCode,
+  ).toBe(404);
+
+  const agentHeaders = await login("agent.testnet");
+  const denied = await post(
+    `/api/agent/assignments/${mandateId}/credentials/revoke`,
+    { credentialId: credential.id },
+    agentHeaders,
+  );
+  expect(denied.statusCode).toBe(404);
+  expect((await submit()).statusCode).toBe(200);
+});
+it.each([
+  ["revoked", 409, "CONSENT_UNAVAILABLE"],
+  ["disabled", 403, "AGENT_DISABLED"],
+  ["expired", 409, "MANDATE_EXPIRED"],
+] as const)(
+  "shows but blocks %s cross-organization assignment credential issuance",
+  async (state, status, code) => {
+    if (state === "revoked")
+      expect(
+        (
+          await post(
+            `${path(mandateId)}/verify`,
+            await proof(mandateId, "REVOKE_CONSENT"),
+          )
+        ).statusCode,
+      ).toBe(200);
+    if (state === "disabled")
+      expect(
+        (await post(`/api/organizations/${org}/agents/${agentId}/disable`, {}))
+          .statusCode,
+      ).toBe(200);
+    if (state === "expired") {
+      await pool.query("ALTER TABLE mandate_policies DISABLE TRIGGER USER");
+      try {
+        const row = (
+          await pool.query(
+            "SELECT canonical_policy FROM mandate_policies WHERE id=$1",
+            [mandateId],
+          )
+        ).rows[0];
+        const policy = JSON.parse(row.canonical_policy);
+        policy.expiresAtNs = "1";
+        const { canonicalPolicy } = await import(
+          "../../packages/domain/src/index.js"
+        );
+        const canonical = canonicalPolicy(policy);
+        await pool.query(
+          "UPDATE mandate_policies SET canonical_policy=$1,policy_digest=$2,expires_at_ns=1 WHERE id=$3",
+          [
+            canonical,
+            createHash("sha256").update(canonical).digest("hex"),
+            mandateId,
+          ],
+        );
+      } finally {
+        await pool.query("ALTER TABLE mandate_policies ENABLE TRIGGER USER");
+      }
+    }
+    const agentHeaders = await login("agent.testnet");
+    const list = await app.inject({
+      url: "/api/agent/assignments",
+      headers: agentHeaders,
+    });
+    expect(list.statusCode).toBe(200);
+    const assignment = list.json().assignments[0];
+    expect(assignment).toBeDefined();
+    if (state === "revoked")
+      expect(assignment.consentStatus).toBe("CONSENT_REVOKED_OFFCHAIN");
+    if (state === "disabled") expect(assignment.agentDisabled).toBe(true);
+    if (state === "expired") expect(assignment.expired).toBe(true);
+    const issued = await post(
+      `/api/agent/assignments/${mandateId}/credentials`,
+      { purpose: "demo" },
+      agentHeaders,
+    );
+    expect(issued.statusCode).toBe(status);
+    expect(issued.json().error).toBe(code);
+  },
+);
 it("concurrent replay creates exactly one proposal/event and altered retry conflicts", async () => {
   const results = await Promise.all([submit(), submit(), submit()]);
   expect(results.every((r) => r.statusCode === 200)).toBe(true);

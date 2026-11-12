@@ -153,7 +153,7 @@ it("requires renewed review if shared UI, global layout or routing changes", () 
     "apps/web/next.config.ts":
       "941e0b02ea9df33e020cc8d0e5431de13970e3ab4b591fc22b224e44eccc20b9",
     "packages/domain/src/index.ts":
-      "20c6c51101e18dfdbfc3245f7eb36e6d8c7fc59d5ab170ee05212d13b4e9d7c1",
+      "61f03156f64074fe505d0b316491827ff55ed731d9367d1b8d41f2de239be828",
     "packages/domain/src/vault.ts":
       "2e91b67ff9b51f80ad052aafb0a373b4d99d754d3b36bddccd1c7b1fb09b8942",
   };

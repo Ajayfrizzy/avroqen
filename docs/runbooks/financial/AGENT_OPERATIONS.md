@@ -23,9 +23,14 @@ services publicly. Outside explicit insecure localhost development, use HTTPS.
    and approve an unexpired offchain mandate as its original owner. Use exact
    recipient, intended vault, limits and verifier policy. No chain registration.
 3. Open `/workspace/proposals` or **Restricted agent proposals** from workspace.
-4. Select the organization and mandate. Inspect agent, recipient, intended vault,
+4. Owners may select an organization and mandate. A wallet designated as an agent
+   instead uses **Assigned to me**; it can discover the exact assigned mandate even
+   when it belongs to another organization, without receiving membership there.
+   Inspect agent, recipient, intended vault,
    network and verifier requirements. Click **Enable scoped demo**. This explicitly
    issues a separate 15-minute-or-shorter application capability, held in memory.
+   Assigned wallets use **Enable scoped proposal access**; owner consent, agent
+   registration and expiry are rechecked before issuance.
 5. Enter a task description, a positive exact decimal NEAR amount in **Exact amount
    (NEAR)** and an evidence SHA-256 digest. The UI uses checked string/BigInt
    conversion to integer yoctoNEAR internally; agent API `amountAtomic` remains a

@@ -178,6 +178,22 @@ export async function identityRoutes(
               mandate = params.mandateId;
           }
         }
+        if (
+          request.routeOptions.url?.startsWith("/api/agent/assignments") &&
+          params.mandateId &&
+          /^[0-9a-f-]{36}$/.test(params.mandateId)
+        ) {
+          const target = (
+            await pool.query(
+              "SELECT org_id,id FROM mandate_policies WHERE id=$1 AND network=$2 AND agent_account=$3",
+              [params.mandateId, config.network, who.account_id],
+            )
+          ).rows[0];
+          if (target) {
+            org = target.org_id;
+            mandate = target.id;
+          }
+        }
       } catch {
         /* Unauthenticated input never determines tenant scope. */
       }

@@ -10,6 +10,8 @@ import { savedOrganization } from "../organization-preference";
 
 type Session = { accountId: string; csrfToken: string; expiresAt: string };
 type Org = { id: string; name: string; role: string };
+type Assignment = MandateView & { organizationName: string };
+type MandateMode = "assigned" | "organization";
 type Prepared = {
   proposal: ProposalInput;
   preflight: { accepted: boolean; code: string };
@@ -28,9 +30,49 @@ function formatUtcTimestamp(value: string) {
     ? "Invalid server timestamp"
     : `${timestamp.toISOString().replace("T", " ").replace("Z", "")} UTC`;
 }
+function MandatePicker({
+  busy,
+  id,
+  label,
+  mandates,
+  onChange,
+}: {
+  busy: boolean;
+  id: string;
+  label: string;
+  mandates: MandateView[];
+  onChange: (id: string) => void;
+}) {
+  return (
+    <>
+      <label htmlFor="proposal-mandate">{label}</label>
+      <select
+        id="proposal-mandate"
+        value={id}
+        disabled={busy}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        <option value="">Choose a mandate</option>
+        {mandates.map((mandate) => (
+          <option
+            key={mandate.policy.mandateId}
+            value={mandate.policy.mandateId}
+          >
+            {mandate.policy.taskReference} —{" "}
+            {mandate.consentStatus === "CONSENT_APPROVED_OFFCHAIN"
+              ? "offchain consent approved"
+              : mandate.consentStatus === "CONSENT_REVOKED_OFFCHAIN"
+                ? "offchain consent revoked"
+                : "consent not approved"}
+          </option>
+        ))}
+      </select>
+    </>
+  );
+}
 const messages: Record<string, string> = {
   AGENT_CREDENTIAL_INVALID:
-    "Demo access expired or was revoked. Enable a new demo credential.",
+    "Scoped access expired or was revoked. Enable a new scoped credential.",
   AGENT_DISABLED: "This agent is disabled. It cannot submit proposals.",
   CONSENT_UNAVAILABLE: "This mandate needs active offchain owner consent.",
   MANDATE_EXPIRED: "This mandate has expired.",
@@ -39,6 +81,7 @@ const messages: Record<string, string> = {
     "Enter a positive exact NEAR amount and a 64-character SHA-256 evidence digest.",
   INVALID_REQUEST: "Check the amount, digest and task fields.",
   ACCESS_DENIED: "You do not have access to this organization.",
+  ASSIGNMENT_NOT_FOUND: "This mandate is not assigned to the signed-in wallet.",
   OWNER_REQUIRED: "Only the original mandate owner can issue demo access.",
   OWNER_ACCESS_REVOKED:
     "The issuing owner no longer has organization owner access.",
@@ -47,6 +90,8 @@ const messages: Record<string, string> = {
   RATE_LIMITED: "Too many requests. Wait one minute before retrying.",
   PROPOSAL_LIMIT: "This mandate has reached its retained proposal limit.",
   CREDENTIAL_LIMIT: "This mandate has reached its retained credential limit.",
+  UNSAFE_VERIFIER_POLICY:
+    "This mandate has a conflicting verifier role and cannot accept proposals.",
 };
 export default function Proposals() {
   const [session, setSession] = useState<Session | null>(null),
@@ -54,6 +99,8 @@ export default function Proposals() {
     [org, setOrg] = useState(""),
     [mandates, setMandates] = useState<MandateView[]>([]),
     [id, setId] = useState("");
+  const [mode, setMode] = useState<MandateMode>("organization"),
+    [assignments, setAssignments] = useState<Assignment[]>([]);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
@@ -65,6 +112,7 @@ export default function Proposals() {
     [historyError, setHistoryError] = useState("");
   const [orgNext, setOrgNext] = useState<number | null>(null),
     [mandateNext, setMandateNext] = useState<number | null>(null),
+    [assignmentNext, setAssignmentNext] = useState<number | null>(null),
     [historyNext, setHistoryNext] = useState<number | null>(null),
     [historyRetryOffset, setHistoryRetryOffset] = useState(0);
   const [digest, setDigest] = useState("");
@@ -77,7 +125,8 @@ export default function Proposals() {
     review = useRef<HTMLElement>(null);
   const operation = useRef(false),
     historyRequest = useRef(0);
-  const current = mandates.find((m) => m.policy.mandateId === id);
+  const availableMandates = mode === "assigned" ? assignments : mandates;
+  const current = availableMandates.find((m) => m.policy.mandateId === id);
   const clearCredential = useCallback(() => {
     capability.current = null;
     setReady(false);
@@ -143,13 +192,20 @@ export default function Proposals() {
       .then(async (r) => {
         if (!r.ok) return;
         const s = await r.json();
-        const o = await fetch("/api/organizations", { cache: "no-store" });
+        const [o, a] = await Promise.all([
+          fetch("/api/organizations", { cache: "no-store" }),
+          fetch("/api/agent/assignments", { cache: "no-store" }),
+        ]);
         if (active) {
           setSession(s);
-          if (o.ok) {
+          if (o.ok && a.ok) {
             const result = await o.json();
+            const assigned = await a.json();
             setOrgs(result.organizations);
             setOrgNext(result.nextOffset);
+            setAssignments(assigned.assignments);
+            setAssignmentNext(assigned.nextOffset);
+            if (assigned.assignments.length) setMode("assigned");
             const preferred = savedOrganization(
               s.accountId,
               result.organizations,
@@ -189,7 +245,7 @@ export default function Proposals() {
         Date.parse(capability.current.expiresAt) <= Date.now()
       ) {
         clearCredential();
-        setNotice("Demo credential expired.");
+        setNotice("Scoped credential expired.");
       }
       if (session && Date.parse(session.expiresAt) <= Date.now()) {
         clearCredential();
@@ -237,7 +293,10 @@ export default function Proposals() {
       taskField.current?.focus({ preventScroll: true });
     }
   }, [ready]);
-  const base = `/organizations/${org}/mandates/${id}`;
+  const base =
+    mode === "assigned"
+      ? `/agent/assignments/${id}`
+      : `/organizations/${org}/mandates/${id}`;
   function resetHistory() {
     historyRequest.current += 1;
     setHistory([]);
@@ -245,6 +304,12 @@ export default function Proposals() {
     setHistoryRetryOffset(0);
     setHistoryError("");
     setHistoryState("idle");
+  }
+  function selectMode(next: MandateMode) {
+    clearCredential();
+    setMode(next);
+    setId("");
+    resetHistory();
   }
   async function loadHistory(offset = 0) {
     const requestId = ++historyRequest.current;
@@ -274,7 +339,9 @@ export default function Proposals() {
   }
   useWorkspaceIdentity(
     session?.accountId,
-    orgs.find((o) => o.id === org)?.name,
+    mode === "assigned"
+      ? (current as Assignment | undefined)?.organizationName
+      : orgs.find((o) => o.id === org)?.name,
   );
   return (
     <main className="workspace">
@@ -293,81 +360,115 @@ export default function Proposals() {
       ) : (
         <>
           <p>Signed in as {session.accountId}</p>
-          <label htmlFor="proposal-org">Organization</label>
-          <select
-            id="proposal-org"
-            value={org}
-            disabled={busy}
-            onChange={(e) => {
-              const next = e.target.value;
-              clearCredential();
-              setOrg(next);
-              setId("");
-              setMandates([]);
-              setMandateNext(null);
-              resetHistory();
-              if (next)
-                void run(async () => {
-                  const result = await request<{
-                    mandates: MandateView[];
-                    nextOffset: number | null;
-                  }>(`/organizations/${next}/mandates`);
-                  setMandates(result.mandates);
-                  setMandateNext(result.nextOffset);
-                });
+          <div
+            role="tablist"
+            aria-label="Mandate source"
+            className="tabs"
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+              event.preventDefault();
+              const next = mode === "assigned" ? "organization" : "assigned";
+              selectMode(next);
+              requestAnimationFrame(() =>
+                document.getElementById(`${next}-mandates-tab`)?.focus(),
+              );
             }}
           >
-            <option value="">Choose an organization</option>
-            {orgs.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
-          {orgNext !== null && (
             <button
+              id="assigned-mandates-tab"
               type="button"
+              role="tab"
+              aria-controls="assigned-mandates-panel"
+              aria-selected={mode === "assigned"}
+              tabIndex={mode === "assigned" ? 0 : -1}
               disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  const r = await request<{
-                    organizations: Org[];
-                    nextOffset: number | null;
-                  }>(`/organizations?offset=${orgNext}`);
-                  setOrgs((prev) => [...prev, ...r.organizations]);
-                  setOrgNext(r.nextOffset);
-                })
-              }
+              onClick={() => selectMode("assigned")}
             >
-              Load more organizations
+              Assigned to me ({assignments.length})
             </button>
-          )}
-          {org && (
-            <>
-              <label htmlFor="proposal-mandate">Mandate</label>
+            <button
+              id="organization-mandates-tab"
+              type="button"
+              role="tab"
+              aria-controls="organization-mandates-panel"
+              aria-selected={mode === "organization"}
+              tabIndex={mode === "organization" ? 0 : -1}
+              disabled={busy}
+              onClick={() => selectMode("organization")}
+            >
+              Organization mandates
+            </button>
+          </div>
+          {mode === "organization" ? (
+            <div
+              id="organization-mandates-panel"
+              role="tabpanel"
+              aria-labelledby="organization-mandates-tab"
+              className="tab-panel"
+            >
+              <label htmlFor="proposal-org">Organization</label>
               <select
-                id="proposal-mandate"
-                value={id}
+                id="proposal-org"
+                value={org}
                 disabled={busy}
                 onChange={(e) => {
+                  const next = e.target.value;
                   clearCredential();
-                  setId(e.target.value);
+                  setOrg(next);
+                  setId("");
+                  setMandates([]);
+                  setMandateNext(null);
                   resetHistory();
+                  if (next)
+                    void run(async () => {
+                      const result = await request<{
+                        mandates: MandateView[];
+                        nextOffset: number | null;
+                      }>(`/organizations/${next}/mandates`);
+                      setMandates(result.mandates);
+                      setMandateNext(result.nextOffset);
+                    });
                 }}
               >
-                <option value="">Choose a mandate</option>
-                {mandates.map((m) => (
-                  <option key={m.policy.mandateId} value={m.policy.mandateId}>
-                    {m.policy.taskReference} —{" "}
-                    {m.consentStatus === "CONSENT_APPROVED_OFFCHAIN"
-                      ? "offchain consent approved"
-                      : m.consentStatus === "CONSENT_REVOKED_OFFCHAIN"
-                        ? "offchain consent revoked"
-                        : "consent not approved"}
+                <option value="">Choose an organization</option>
+                {orgs.map((organization) => (
+                  <option key={organization.id} value={organization.id}>
+                    {organization.name}
                   </option>
                 ))}
               </select>
-              {mandateNext !== null && (
+              {orgNext !== null && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      const r = await request<{
+                        organizations: Org[];
+                        nextOffset: number | null;
+                      }>(`/organizations?offset=${orgNext}`);
+                      setOrgs((previous) => [...previous, ...r.organizations]);
+                      setOrgNext(r.nextOffset);
+                    })
+                  }
+                >
+                  Load more organizations
+                </button>
+              )}
+              {org && (
+                <MandatePicker
+                  busy={busy}
+                  id={id}
+                  label="Mandate"
+                  mandates={mandates}
+                  onChange={(next) => {
+                    clearCredential();
+                    setId(next);
+                    resetHistory();
+                  }}
+                />
+              )}
+              {org && mandateNext !== null && (
                 <button
                   type="button"
                   disabled={busy}
@@ -379,7 +480,7 @@ export default function Proposals() {
                       }>(
                         `/organizations/${org}/mandates?offset=${mandateNext}`,
                       );
-                      setMandates((prev) => [...prev, ...r.mandates]);
+                      setMandates((previous) => [...previous, ...r.mandates]);
                       setMandateNext(r.nextOffset);
                     })
                   }
@@ -387,7 +488,7 @@ export default function Proposals() {
                   Load more mandates
                 </button>
               )}
-              {!mandates.length && (
+              {org && !mandates.length && (
                 <p>
                   No mandates found.{" "}
                   <Link href={`/workspace/mandates?organization=${org}`}>
@@ -396,21 +497,67 @@ export default function Proposals() {
                   .
                 </p>
               )}
-            </>
+            </div>
+          ) : (
+            <div
+              id="assigned-mandates-panel"
+              role="tabpanel"
+              aria-labelledby="assigned-mandates-tab"
+              className="tab-panel"
+            >
+              <MandatePicker
+                busy={busy}
+                id={id}
+                label="Assigned mandate"
+                mandates={assignments}
+                onChange={(next) => {
+                  clearCredential();
+                  setId(next);
+                  resetHistory();
+                }}
+              />
+              {!assignments.length && (
+                <p>No mandates are assigned to this wallet.</p>
+              )}
+              {assignmentNext !== null && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      const result = await request<{
+                        assignments: Assignment[];
+                        nextOffset: number | null;
+                      }>(`/agent/assignments?offset=${assignmentNext}`);
+                      setAssignments((previous) => [
+                        ...previous,
+                        ...result.assignments,
+                      ]);
+                      setAssignmentNext(result.nextOffset);
+                    })
+                  }
+                >
+                  Load more assignments
+                </button>
+              )}
+            </div>
           )}
           {current && (
             <section aria-label="Mandate scope">
               <h2>Exact agent scope</h2>
               {(current.agentDisabled ||
                 current.expired ||
-                current.consentStatus !== "CONSENT_APPROVED_OFFCHAIN") && (
+                current.consentStatus !== "CONSENT_APPROVED_OFFCHAIN" ||
+                !current.verifierPolicyStatus.eligible) && (
                 <p>
                   Demo unavailable:{" "}
                   {current.agentDisabled
                     ? "agent disabled"
                     : current.expired
                       ? "mandate expired"
-                      : "owner consent is not active"}
+                      : !current.verifierPolicyStatus.eligible
+                        ? "verifier policy is unsafe"
+                        : "owner consent is not active"}
                   .
                 </p>
               )}
@@ -465,9 +612,12 @@ export default function Proposals() {
                   ready ||
                   current.expired ||
                   current.agentDisabled ||
+                  !current.verifierPolicyStatus.eligible ||
                   current.consentStatus !== "CONSENT_APPROVED_OFFCHAIN" ||
-                  current.policy.ownerAccount !== session.accountId ||
-                  orgs.find((o) => o.id === org)?.role !== "owner"
+                  (mode === "assigned"
+                    ? current.policy.agentAccount !== session.accountId
+                    : current.policy.ownerAccount !== session.accountId ||
+                      orgs.find((o) => o.id === org)?.role !== "owner")
                 }
                 onClick={() =>
                   void run(async () => {
@@ -477,12 +627,14 @@ export default function Proposals() {
                     });
                     setReady(true);
                     setNotice(
-                      "Demo access enabled for at most 15 minutes. It grants offchain proposal permissions only.",
+                      "Scoped access enabled for at most 15 minutes. It grants offchain proposal permissions only.",
                     );
                   })
                 }
               >
-                Enable scoped demo
+                {mode === "assigned"
+                  ? "Enable scoped proposal access"
+                  : "Enable scoped demo"}
               </button>
               {ready && (
                 <button
@@ -495,12 +647,14 @@ export default function Proposals() {
                       });
                       clearCredential();
                       setNotice(
-                        "Demo credential revoked. Onchain authority is unchanged.",
+                        "Scoped credential revoked. Onchain authority is unchanged.",
                       );
                     })
                   }
                 >
-                  Revoke demo access
+                  {mode === "assigned"
+                    ? "Revoke scoped access"
+                    : "Revoke demo access"}
                 </button>
               )}
               {ready && (
