@@ -26,6 +26,7 @@ export type RpcFailureCategory =
   | "RESPONSE_BODY"
   | "RATE_LIMITED"
   | "TRANSIENT_HTTP"
+  | "HISTORICAL_STATE_UNAVAILABLE"
   | "DEADLINE"
   | "PROVIDERS_EXHAUSTED";
 export interface RpcDiagnostic {
@@ -43,6 +44,11 @@ export interface RpcFailoverOptions {
   perProviderTimeoutMs?: number;
   overallTimeoutMs?: number;
   diagnostic?: (event: RpcDiagnostic) => void;
+  /**
+   * Retry only a strictly recognized, read-only provider response. Returning
+   * false leaves the response untouched for the caller's normal validation.
+   */
+  retryResponse?: (response: Response) => boolean | Promise<boolean>;
 }
 
 export function retryAfterMs(header: string | null, now = Date.now()): number {
@@ -269,6 +275,27 @@ export async function readOnlyRpcFetch(
         }
         stage = "BODY";
         response = await bufferedResponse(response, signal);
+        let retryResponse = false;
+        if (response.ok && options.retryResponse) {
+          try {
+            retryResponse = await options.retryResponse(response.clone());
+          } catch {
+            // The caller remains responsible for parsing the original response.
+            // A retry classifier failure must never enable provider shopping.
+          }
+        }
+        if (retryResponse && index < urls[network].length - 1) {
+          failures.push("HISTORICAL_STATE_UNAVAILABLE");
+          diagnostic({
+            event: "RPC_ATTEMPT_FAILED",
+            network,
+            method,
+            category: "HISTORICAL_STATE_UNAVAILABLE",
+            provider,
+            attempt,
+          });
+          continue;
+        }
         return response;
       } catch (error) {
         if (overallSignal.aborted) {
