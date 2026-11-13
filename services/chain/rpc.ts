@@ -242,6 +242,27 @@ function parseRpcResponse(source: string, expectedId: string) {
   return { error: rpcFailure.data } as const;
 }
 
+function unknownBlockFailure(error: unknown): boolean {
+  return z
+    .object({
+      code: z.literal(-32000),
+      cause: z.object({ name: z.literal("UNKNOWN_BLOCK") }),
+    })
+    .passthrough()
+    .safeParse(error).success;
+}
+
+function historicalPinnedRequest(method: string, params: unknown): boolean {
+  if (!params || typeof params !== "object" || Array.isArray(params))
+    return false;
+  const blockId = (params as Record<string, unknown>).block_id;
+  return (
+    (method === "block" || method === "query") &&
+    typeof blockId === "string" &&
+    chainHash.safeParse(blockId).success
+  );
+}
+
 export class UnknownBlock extends Error {}
 export class NearReader {
   private requestId = 0n;
@@ -277,7 +298,25 @@ export class NearReader {
         };
       response =
         this.endpoint === endpoints[0]
-          ? await readOnlyRpcFetch("testnet", init, this.transport, this.now)
+          ? await readOnlyRpcFetch("testnet", init, this.transport, this.now, {
+              ...(historicalPinnedRequest(method, params)
+                ? {
+                    retryResponse: async (candidate: Response) => {
+                      try {
+                        const parsed = parseRpcResponse(
+                          await candidate.text(),
+                          id,
+                        );
+                        return (
+                          "error" in parsed && unknownBlockFailure(parsed.error)
+                        );
+                      } catch {
+                        return false;
+                      }
+                    },
+                  }
+                : {}),
+            })
           : await this.transport(this.endpoint, init);
     } catch (error) {
       throw transportError(error);
@@ -309,16 +348,18 @@ export class NearReader {
     }
     const body = parseRpcResponse(Buffer.concat(parts).toString("utf8"), id);
     if ("error" in body) {
-      const missing = z
-        .object({ cause: z.object({ name: z.literal("UNKNOWN_BLOCK") }) })
-        .safeParse(body.error);
-      if (method === "block" && missing.success)
+      if (
+        historicalPinnedRequest(method, params) &&
+        unknownBlockFailure(body.error)
+      )
         throw new UnknownBlock("UNKNOWN_BLOCK");
       throw rpcError("RPC_PROVIDER_ERROR");
     }
     return body.result;
   }
   async block(id?: string | number, signal?: AbortSignal) {
+    if (typeof id === "string" && !chainHash.safeParse(id).success)
+      throw rpcError("RPC_BLOCK_INVALID");
     const block = blockSchema.safeParse(
       await this.rpc(
         "block",
@@ -327,6 +368,8 @@ export class NearReader {
       ),
     );
     if (!block.success) throw rpcError("RPC_BLOCK_INVALID");
+    if (typeof id === "string" && block.data.header.hash !== id)
+      throw rpcError("RPC_BLOCK_MISMATCH");
     return block.data;
   }
   async query(
@@ -336,16 +379,27 @@ export class NearReader {
     extra: Record<string, unknown> = {},
     signal?: AbortSignal,
   ) {
-    return this.rpc(
+    if (!chainHash.safeParse(block).success)
+      throw rpcError("RPC_BLOCK_INVALID");
+    const result = await this.rpc(
       "query",
       {
+        ...extra,
         request_type: type,
         account_id: account,
         block_id: block,
-        ...extra,
       },
       signal,
     );
+    if (
+      result &&
+      typeof result === "object" &&
+      !Array.isArray(result) &&
+      typeof (result as Record<string, unknown>).block_hash === "string" &&
+      (result as Record<string, unknown>).block_hash !== block
+    )
+      throw rpcError("RPC_BLOCK_MISMATCH");
+    return result;
   }
   async view(
     account: string,

@@ -679,3 +679,26 @@ leaves the replacement PREPARED without opening a wallet prompt.
 The history action now scrolls to and focuses the existing exact transaction review
 region, respecting reduced-motion preferences. This is navigation and review only;
 it does not begin, sign or report a transaction.
+
+## D039 — Historical hash-pinned reads may fall back to archival RPC
+
+Controlled-recovery availability correction on November 13, 2026: the approved
+non-archival Testnet providers can return a valid `UNKNOWN_BLOCK` error for an old
+intent anchor that the approved archival provider still serves. Read-only routing
+may therefore continue to the next approved provider only when the request is an
+exact valid block-hash-pinned `block` or `query` call and the complete JSON-RPC
+envelope strictly validates as `UNKNOWN_BLOCK`. This supports the immutable
+historical anchor and its block-pinned code, account, access-key and contract-view
+reads without creating or changing an operation.
+
+Malformed or ambiguous envelopes, wrong response IDs, invalid block hashes, other
+JSON-RPC errors and nonretryable HTTP responses do not enable this fallback. The
+accepted archival response still must match the requested block hash, and all
+existing height, network, code-hash, complete key-set, signer nonce/permission,
+storage-credit and accounting-domain checks remain mandatory. Conflicting or
+unavailable archival data fails closed and leaves recovery quarantined.
+
+The fallback remains inside the existing read-only method allowlist and bounded
+per-provider/overall deadlines. Explicit 429 cooldown and request-local transient
+failure behavior from D036–D037 are unchanged. Signed transaction submission is
+not accepted by this routing layer.

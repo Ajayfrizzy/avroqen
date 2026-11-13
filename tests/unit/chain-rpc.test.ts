@@ -294,6 +294,7 @@ it("sanitizes provider errors without exposing their messages", async () => {
 });
 
 it("preserves the explicit unknown-block classification for block scans", async () => {
+  const block = bs58.encode(Buffer.alloc(32, 9));
   const transport: typeof fetch = async (_url, init) =>
     envelope(init, {
       error: {
@@ -302,9 +303,216 @@ it("preserves the explicit unknown-block classification for block scans", async 
         cause: { name: "UNKNOWN_BLOCK" },
       },
     });
-  await expect(new NearReader(undefined, transport).block(123)).rejects.toThrow(
-    "UNKNOWN_BLOCK",
-  );
+  await expect(
+    new NearReader(undefined, transport).block(block),
+  ).rejects.toThrow("UNKNOWN_BLOCK");
+});
+
+it("falls back to the archival provider for a hash-pinned historical block", async () => {
+  const anchor = bs58.encode(Buffer.alloc(32, 9));
+  const previous = bs58.encode(Buffer.alloc(32, 8));
+  const calls: string[] = [];
+  const transport: typeof fetch = async (url, init) => {
+    calls.push(String(url));
+    if (url !== "https://archival-rpc.testnet.near.org")
+      return envelope(init, {
+        error: {
+          code: -32000,
+          message: "unknown block",
+          cause: { name: "UNKNOWN_BLOCK" },
+        },
+      });
+    return envelope(init, {
+      result: {
+        header: {
+          hash: anchor,
+          prev_hash: previous,
+          height: 277_284_348,
+          timestamp_nanosec: "1",
+        },
+        chunks: [],
+      },
+    });
+  };
+  await expect(
+    new NearReader(undefined, transport).block(anchor),
+  ).resolves.toMatchObject({
+    header: { hash: anchor, height: 277_284_348 },
+  });
+  expect(calls).toEqual([
+    "https://rpc.testnet.fastnear.com",
+    "https://rpc.testnet.near.org",
+    "https://archival-rpc.testnet.near.org",
+  ]);
+});
+
+it("falls back to archival state for an exact hash-pinned query", async () => {
+  const anchor = bs58.encode(Buffer.alloc(32, 9));
+  const calls: string[] = [];
+  const transport: typeof fetch = async (url, init) => {
+    calls.push(String(url));
+    if (url !== "https://archival-rpc.testnet.near.org")
+      return envelope(init, {
+        error: {
+          code: -32000,
+          message: "unknown block",
+          cause: { name: "UNKNOWN_BLOCK" },
+        },
+      });
+    return envelope(init, {
+      result: { block_hash: anchor, keys: [] },
+    });
+  };
+  await expect(
+    new NearReader(undefined, transport).query(
+      "view_access_key_list",
+      "owner.testnet",
+      anchor,
+    ),
+  ).resolves.toEqual({ block_hash: anchor, keys: [] });
+  expect(calls).toHaveLength(3);
+});
+
+it.each([
+  [
+    "arbitrary provider error",
+    async (_url: string | URL | Request, init?: RequestInit) =>
+      envelope(init, {
+        error: {
+          code: -32000,
+          message: "other provider error",
+          cause: { name: "UNKNOWN_ACCOUNT" },
+        },
+      }),
+    "RPC_PROVIDER_ERROR",
+    1,
+  ],
+  [
+    "malformed non-archival response",
+    async () => new Response("{"),
+    "RPC_MALFORMED_RESPONSE",
+    1,
+  ],
+  [
+    "lookalike unknown-block error",
+    async (_url: string | URL | Request, init?: RequestInit) =>
+      envelope(init, {
+        error: {
+          code: -32001,
+          message: "not the recognized historical-state error",
+          cause: { name: "UNKNOWN_BLOCK" },
+        },
+      }),
+    "RPC_PROVIDER_ERROR",
+    1,
+  ],
+] as const)(
+  "does not use archival fallback for %s",
+  async (_name, response, code, attempts) => {
+    const anchor = bs58.encode(Buffer.alloc(32, 9));
+    const calls: string[] = [];
+    const transport: typeof fetch = async (url, init) => {
+      calls.push(String(url));
+      return response(url, init);
+    };
+    await expect(
+      new NearReader(undefined, transport).block(anchor),
+    ).rejects.toThrow(code);
+    expect(calls).toHaveLength(attempts);
+  },
+);
+
+it("fails closed when the archival provider cannot serve the historical block", async () => {
+  const anchor = bs58.encode(Buffer.alloc(32, 9));
+  const calls: string[] = [];
+  const transport: typeof fetch = async (url, init) => {
+    calls.push(String(url));
+    if (url === "https://archival-rpc.testnet.near.org")
+      return new Response("", { status: 503 });
+    return envelope(init, {
+      error: {
+        code: -32000,
+        message: "unknown block",
+        cause: { name: "UNKNOWN_BLOCK" },
+      },
+    });
+  };
+  await expect(
+    new NearReader(undefined, transport).block(anchor),
+  ).rejects.toThrow("RPC_PROVIDERS_EXHAUSTED");
+  expect(calls).toHaveLength(3);
+});
+
+it("rejects invalid and inconsistent historical block hashes", async () => {
+  const anchor = bs58.encode(Buffer.alloc(32, 9));
+  const conflicting = bs58.encode(Buffer.alloc(32, 7));
+  const transport: typeof fetch = async (_url, init) =>
+    envelope(init, {
+      result: {
+        header: {
+          hash: conflicting,
+          prev_hash: anchor,
+          height: 277_284_348,
+          timestamp_nanosec: "1",
+        },
+        chunks: [],
+      },
+    });
+  await expect(
+    new NearReader(undefined, transport).block("invalid"),
+  ).rejects.toThrow("RPC_BLOCK_INVALID");
+  await expect(
+    new NearReader(undefined, transport).block(anchor),
+  ).rejects.toThrow("RPC_BLOCK_MISMATCH");
+});
+
+it("rejects inconsistent archival query state after fallback", async () => {
+  const anchor = bs58.encode(Buffer.alloc(32, 9));
+  const conflicting = bs58.encode(Buffer.alloc(32, 7));
+  const transport: typeof fetch = async (url, init) =>
+    url === "https://archival-rpc.testnet.near.org"
+      ? envelope(init, {
+          result: { block_hash: conflicting, keys: [] },
+        })
+      : envelope(init, {
+          error: {
+            code: -32000,
+            message: "unknown block",
+            cause: { name: "UNKNOWN_BLOCK" },
+          },
+        });
+  await expect(
+    new NearReader(undefined, transport).query(
+      "view_access_key_list",
+      "owner.testnet",
+      anchor,
+    ),
+  ).rejects.toThrow("RPC_BLOCK_MISMATCH");
+});
+
+it("does not allow query extras to replace the pinned block or request type", async () => {
+  const anchor = bs58.encode(Buffer.alloc(32, 9));
+  const conflicting = bs58.encode(Buffer.alloc(32, 7));
+  const transport: typeof fetch = async (_url, init) => {
+    const request = JSON.parse(String(init?.body)) as {
+      params: Record<string, unknown>;
+    };
+    expect(request.params).toMatchObject({
+      request_type: "view_access_key_list",
+      block_id: anchor,
+    });
+    return envelope(init, {
+      result: { block_hash: anchor, keys: [] },
+    });
+  };
+  await expect(
+    new NearReader(undefined, transport).query(
+      "view_access_key_list",
+      "owner.testnet",
+      anchor,
+      { request_type: "call_function", block_id: conflicting },
+    ),
+  ).resolves.toMatchObject({ block_hash: anchor });
 });
 
 type DeploymentChange =
