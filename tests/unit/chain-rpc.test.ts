@@ -647,6 +647,77 @@ it("keeps fresh finalized deployment polling off the archival provider", async (
   expect(urls).not.toContain("https://archival-rpc.testnet.near.org");
 });
 
+it("coalesces and briefly caches manifest-bound deployment status only", async () => {
+  const urls: string[] = [];
+  const base = deploymentTransport((BigInt(now) * 1_000_000n).toString());
+  const transport: typeof fetch = async (url, init) => {
+    urls.push(String(url));
+    return base(url, init);
+  };
+  const reader = new NearReader(undefined, transport, () => now);
+  await Promise.all([
+    reader.deploymentStatus(manifest),
+    reader.deploymentStatus(manifest),
+  ]);
+  expect(urls).toHaveLength(6);
+  await reader.deploymentStatus(manifest);
+  expect(urls).toHaveLength(6);
+  await reader.deployment(manifest, undefined, undefined, "interactive");
+  expect(urls).toHaveLength(12);
+});
+
+it("never caches failed deployment status verification", async () => {
+  let unavailable = true;
+  const base = deploymentTransport((BigInt(now) * 1_000_000n).toString());
+  const transport: typeof fetch = async (url, init) =>
+    unavailable ? new Response("", { status: 503 }) : base(url, init);
+  const reader = new NearReader(undefined, transport, () => now);
+  await expect(reader.deploymentStatus(manifest)).rejects.toThrow(
+    "RPC_PROVIDERS_EXHAUSTED",
+  );
+  unavailable = false;
+  await expect(reader.deploymentStatus(manifest)).resolves.toBeDefined();
+});
+
+it("lets one deployment status caller cancel without aborting shared verification", async () => {
+  let release = () => {};
+  let calls = 0;
+  const held = new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+    base = deploymentTransport((BigInt(now) * 1_000_000n).toString()),
+    transport: typeof fetch = async (url, init) => {
+      calls++;
+      if (calls === 1) await held;
+      return base(url, init);
+    },
+    reader = new NearReader(undefined, transport, () => now),
+    controller = new AbortController(),
+    canceled = reader.deploymentStatus(manifest, controller.signal),
+    shared = reader.deploymentStatus(manifest);
+  controller.abort(new DOMException("superseded", "AbortError"));
+  await expect(canceled).rejects.toMatchObject({ name: "AbortError" });
+  release();
+  await expect(shared).resolves.toBeDefined();
+  expect(calls).toBe(6);
+  await expect(reader.deploymentStatus(manifest)).resolves.toBeDefined();
+  expect(calls).toBe(6);
+});
+
+it("does not share deployment status across different manifest bindings", async () => {
+  const base = deploymentTransport((BigInt(now) * 1_000_000n).toString());
+  const transport = vi.fn<typeof fetch>(base);
+  const reader = new NearReader(undefined, transport, () => now);
+  await reader.deploymentStatus(manifest);
+  await expect(
+    reader.deploymentStatus({
+      ...manifest,
+      authorization: "other-approved-ref",
+    }),
+  ).resolves.toBeDefined();
+  expect(transport).toHaveBeenCalledTimes(12);
+});
+
 it("coalesces identical concurrent historical reads", async () => {
   const anchor = bs58.encode(Buffer.alloc(32, 9));
   let release = () => {};

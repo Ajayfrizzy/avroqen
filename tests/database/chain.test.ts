@@ -571,6 +571,59 @@ it.each([
     expect((await prepare()).statusCode).toBe(409);
   },
 );
+it("audits only allowlisted wallet failure diagnostics and keeps UNKNOWN", async () => {
+  const r = await prepare();
+  const id = r.json().id;
+  await post(`/api/chain/intents/${id}/begin`, {});
+  const report = await post(`/api/chain/intents/${id}/report`, {
+    outcome: "SUBMISSION_FAILED",
+    hash: null,
+    failure: {
+      stage: "PROMPT",
+      code: "METEOR_DIRECT_RESPONSE_FAILED",
+      endTags: ["EXT_DIRECT_RESPONSE_FAILED"],
+    },
+  });
+  expect(report.statusCode).toBe(200);
+  expect(report.json().state).toBe("UNKNOWN");
+  const events = await pool.query(
+    "SELECT reason FROM chain_events WHERE intent_id=$1 ORDER BY id",
+    [id],
+  );
+  expect(events.rows.map((event) => event.reason)).toEqual([
+    "UNSIGNED",
+    "WALLET_PROMPT_OPENING",
+    "WALLET_SUBMISSION_FAILED",
+    "WALLET_DIAGNOSTIC_PROMPT_METEOR_DIRECT_RESPONSE_FAILED_EXT_DIRECT_RESPONSE_FAILED",
+  ]);
+  const detail = await app.inject({ url: `${path(mandateId)}/chain`, headers });
+  expect(detail.json().intents[0]).toMatchObject({
+    state: "UNKNOWN",
+    wallet_outcome: "WALLET_SUBMISSION_FAILED",
+    wallet_diagnostic:
+      "WALLET_DIAGNOSTIC_PROMPT_METEOR_DIRECT_RESPONSE_FAILED_EXT_DIRECT_RESPONSE_FAILED",
+  });
+});
+
+it("rejects unallowlisted wallet diagnostics without changing intent state", async () => {
+  const r = await prepare();
+  const id = r.json().id;
+  await post(`/api/chain/intents/${id}/begin`, {});
+  const report = await post(`/api/chain/intents/${id}/report`, {
+    outcome: "SUBMISSION_FAILED",
+    hash: null,
+    failure: {
+      stage: "PROMPT",
+      code: "METEOR_ACTION_FAILED",
+      endTags: ["PRIVATE_PROVIDER_MESSAGE"],
+    },
+  });
+  expect(report.statusCode).toBe(400);
+  expect(
+    (await pool.query("SELECT state FROM chain_intents WHERE id=$1", [id]))
+      .rows[0].state,
+  ).toBe("AWAITING_WALLET");
+});
 it("inspects an open recovery window without creating authorization state", async () => {
   const original = await unknownStorageDeposit();
   recoveryHeadHeight = 89_100;

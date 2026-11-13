@@ -69,6 +69,7 @@ export const FINALIZED_BLOCK_MAX_AGE_MS = 120_000;
 export const FINALIZED_BLOCK_MAX_FUTURE_SKEW_MS = 30_000;
 export const DEPLOYMENT_VERIFICATION_TIMEOUT_MS = 15_000;
 export const HISTORICAL_DEPLOYMENT_VERIFICATION_TIMEOUT_MS = 25_000;
+export const DEPLOYMENT_STATUS_CACHE_TTL_MS = 5_000;
 const RPC_JSON_MAX_DEPTH = 64;
 const RPC_JSON_MAX_NUMBER_LENGTH = 128;
 const TIMESTAMP_NANOSECONDS_MAX_DIGITS = 20;
@@ -290,10 +291,30 @@ function waitForCaller<T>(
 }
 
 export class UnknownBlock extends Error {}
+export interface DeploymentObservation {
+  block: {
+    height: number;
+    hash: string;
+    prev_hash: string;
+    timestamp_nanosec: string;
+  };
+  account: {
+    block_hash: string;
+    code_hash: string;
+    amount: string;
+    storage_usage: number;
+  };
+  accounting: { network: "testnet"; vault: string } & Record<string, unknown>;
+}
 export class NearReader {
   private requestId = 0n;
   private historicalInFlight = new Map<string, Promise<unknown>>();
   private currentPinnedHashes: string[] = [];
+  private statusCache = new Map<
+    string,
+    { expiresAt: number; value: DeploymentObservation }
+  >();
+  private statusInFlight = new Map<string, Promise<DeploymentObservation>>();
   constructor(
     private endpoint: string = endpoints[0],
     private transport: typeof fetch = fetch,
@@ -359,13 +380,13 @@ export class NearReader {
       response =
         this.endpoint === endpoints[0]
           ? await readOnlyRpcFetch("testnet", init, this.transport, this.now, {
+              priority,
               ...(historical
                 ? {
                     perProviderTimeoutMs:
                       HISTORICAL_RPC_PER_PROVIDER_TIMEOUT_MS,
                     overallTimeoutMs: HISTORICAL_RPC_OVERALL_TIMEOUT_MS,
                     preferArchival: true,
-                    priority,
                     retryResponse: async (candidate: Response) => {
                       try {
                         const parsed = parseRpcResponse(
@@ -515,12 +536,50 @@ export class NearReader {
     if (r.block_hash !== block) throw new Error("RPC_BLOCK_MISMATCH");
     return JSON.parse(Buffer.from(r.result).toString("utf8"));
   }
+  async deploymentStatus(
+    manifest: Manifest,
+    parentSignal?: AbortSignal,
+  ): Promise<DeploymentObservation> {
+    const key = fingerprint(
+        JSON.stringify({
+          ...manifest,
+          keyFingerprints: [...manifest.keyFingerprints].sort(),
+        }),
+      ),
+      cached = this.statusCache.get(key);
+    if (cached && cached.expiresAt > this.now()) return cached.value;
+    if (cached) this.statusCache.delete(key);
+    let pending = this.statusInFlight.get(key);
+    if (!pending) {
+      pending = this.deployment(manifest, undefined, undefined, "background");
+      this.statusInFlight.set(key, pending);
+      pending.then(
+        (value) => {
+          this.statusCache.set(key, {
+            expiresAt: this.now() + DEPLOYMENT_STATUS_CACHE_TTL_MS,
+            value,
+          });
+          if (this.statusCache.size > 4)
+            this.statusCache.delete(
+              this.statusCache.keys().next().value as string,
+            );
+          if (this.statusInFlight.get(key) === pending)
+            this.statusInFlight.delete(key);
+        },
+        () => {
+          if (this.statusInFlight.get(key) === pending)
+            this.statusInFlight.delete(key);
+        },
+      );
+    }
+    return waitForCaller(pending, parentSignal);
+  }
   async deployment(
     manifest: Manifest,
     at?: string,
     parentSignal?: AbortSignal,
     priority: RpcReadPriority = "background",
-  ) {
+  ): Promise<DeploymentObservation> {
     const deadline = AbortSignal.timeout(
         at === undefined
           ? DEPLOYMENT_VERIFICATION_TIMEOUT_MS

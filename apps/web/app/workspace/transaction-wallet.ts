@@ -1,5 +1,6 @@
 import type {
   ChainOperation,
+  WalletFailureDiagnostic,
   WalletReport,
 } from "../../../../packages/domain/src/settlement";
 import { loadConnector } from "./wallet-sdk";
@@ -41,19 +42,63 @@ function transactionHash(result: unknown): string | undefined {
     : undefined;
 }
 
-function walletFailure(error: unknown): WalletReport["outcome"] {
+type SafeEndTag = WalletFailureDiagnostic["endTags"][number];
+const safeEndTags = new Set<SafeEndTag>([
+  "USER_CANCELLED",
+  "WINDOW_CLOSED",
+  "INCOMPLETE_ACTION",
+  "EXT_DIRECT_RESPONSE_FAILED",
+]);
+
+function walletFailure(error: unknown): WalletReport {
   if (error instanceof Error && error.message === "Action was cancelled")
-    return "CANCELED";
+    return {
+      outcome: "CANCELED",
+      hash: null,
+      failure: { stage: "PROMPT", code: "ACTION_CANCELLED", endTags: [] },
+    };
   if (error instanceof Error && error.name === "MeteorActionError") {
-    const tags = (error as Error & { _reason?: { endTags?: unknown } })._reason
+    const raw = (error as Error & { _reason?: { endTags?: unknown } })._reason
       ?.endTags;
-    if (Array.isArray(tags) && tags.every((tag) => typeof tag === "string")) {
-      if (tags.includes("USER_CANCELLED") || tags.includes("WINDOW_CLOSED"))
-        return "CANCELED";
-      return "SUBMISSION_FAILED";
+    if (Array.isArray(raw) && raw.every((tag) => typeof tag === "string")) {
+      const endTags = [
+        ...new Set(
+          raw.filter((tag): tag is SafeEndTag =>
+            safeEndTags.has(tag as SafeEndTag),
+          ),
+        ),
+      ];
+      if (
+        endTags.includes("USER_CANCELLED") ||
+        endTags.includes("WINDOW_CLOSED")
+      )
+        return {
+          outcome: "CANCELED",
+          hash: null,
+          failure: { stage: "PROMPT", code: "ACTION_CANCELLED", endTags },
+        };
+      return {
+        outcome: "SUBMISSION_FAILED",
+        hash: null,
+        failure: {
+          stage: "PROMPT",
+          code: endTags.includes("EXT_DIRECT_RESPONSE_FAILED")
+            ? "METEOR_DIRECT_RESPONSE_FAILED"
+            : "METEOR_ACTION_FAILED",
+          endTags,
+        },
+      };
     }
   }
-  return "UNKNOWN";
+  return {
+    outcome: "UNKNOWN",
+    hash: null,
+    failure: {
+      stage: "PROMPT",
+      code: "UNCLASSIFIED_PROMPT_FAILURE",
+      endTags: [],
+    },
+  };
 }
 
 /** All signed transactions remain in the wallet. Never request/add a function-call key. */
@@ -139,9 +184,17 @@ export async function submitOperation(
       const hash = transactionHash(result);
       return hash
         ? { outcome: "BROADCAST", hash }
-        : { outcome: "UNKNOWN", hash: null };
+        : {
+            outcome: "UNKNOWN",
+            hash: null,
+            failure: {
+              stage: "RESULT",
+              code: "RESULT_HASH_MISSING",
+              endTags: [],
+            },
+          };
     } catch (error) {
-      return { outcome: walletFailure(error), hash: null } as WalletReport;
+      return walletFailure(error);
     }
   } finally {
     memory.clear();

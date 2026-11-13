@@ -786,3 +786,34 @@ evidence failures leave the replacement `PREPARED`.
 All routing remains read-only. It cannot submit or retry a signed transaction, and
 the original UNKNOWN intent, atomic duplicate guard and exact-once
 `AWAITING_WALLET` transition are unchanged.
+
+## D043 — Display status is coalesced; transaction authorization remains fresh
+
+Testnet reliability correction on November 13, 2026: concurrent authenticated
+deployment-status reads for the same complete manifest now share one verification,
+and a successful result may be reused for five seconds by non-authorizing status
+views. The cache key binds the complete manifest and failures are never cached.
+Caller cancellation stops only that caller's wait; it cannot turn an incomplete
+shared verification into success. Preparation, `/begin`, guardian verification and
+other security-sensitive transitions continue to call the fresh deployment verifier
+and cannot consume the display cache.
+
+Ordinary current-head RPC work is bounded by one global four-request gate. Future
+interactive work is selected before queued background polling or reconciliation,
+but never bypasses the gate or any JSON-RPC, finalized-head, manifest, access-key,
+accounting or network check. Routine current-head reads use only the approved
+non-archival providers. The archival endpoint remains reserved for genuinely
+historical hash-pinned evidence, under its separate one-request gate and deadlines.
+
+Payments polling is completion-scheduled rather than interval-driven. A selection
+change or newer refresh aborts a superseded request where possible, monotonic request
+versions prevent stale UI writes, and transient unavailability applies bounded
+15/30/60-second backoff plus up to one second of jitter. These controls reduce load;
+they do not convert unavailable evidence into verified deployment status.
+
+Meteor prompt diagnostics use only fixed stage and code enums plus an explicit safe
+end-tag allowlist. Cancellation remains distinct from a prompt failure or missing
+result hash. Raw wallet messages, signed payloads, signatures, transaction arguments
+and unknown tags are neither reported nor persisted. Once a prompt may have opened,
+a cancellation, wallet failure or missing hash still quarantines the intent as
+UNKNOWN and never authorizes automatic replay.

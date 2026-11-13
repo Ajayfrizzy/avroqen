@@ -222,11 +222,42 @@ export const chainParams = z.strictObject({
 });
 export const intentParams = z.strictObject({ intentId: z.uuid() });
 const reportedChainHash = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
+export const walletSafeEndTag = z.enum([
+  "USER_CANCELLED",
+  "WINDOW_CLOSED",
+  "INCOMPLETE_ACTION",
+  "EXT_DIRECT_RESPONSE_FAILED",
+]);
+export const walletFailureDiagnostic = z.strictObject({
+  stage: z.enum(["PROMPT", "RESULT"]),
+  code: z.enum([
+    "ACTION_CANCELLED",
+    "METEOR_ACTION_FAILED",
+    "METEOR_DIRECT_RESPONSE_FAILED",
+    "RESULT_HASH_MISSING",
+    "UNCLASSIFIED_PROMPT_FAILURE",
+  ]),
+  endTags: z
+    .array(walletSafeEndTag)
+    .max(4)
+    .refine((tags) => new Set(tags).size === tags.length),
+});
+export type WalletFailureDiagnostic = z.infer<typeof walletFailureDiagnostic>;
+const failedWalletReport = <
+  T extends "CANCELED" | "SUBMISSION_FAILED" | "UNKNOWN",
+>(
+  outcome: T,
+) =>
+  z.strictObject({
+    outcome: z.literal(outcome),
+    hash: z.null(),
+    failure: walletFailureDiagnostic.optional(),
+  });
 export const walletReport = z.discriminatedUnion("outcome", [
   z.strictObject({ outcome: z.literal("BROADCAST"), hash: reportedChainHash }),
-  z.strictObject({ outcome: z.literal("CANCELED"), hash: z.null() }),
-  z.strictObject({ outcome: z.literal("SUBMISSION_FAILED"), hash: z.null() }),
-  z.strictObject({ outcome: z.literal("UNKNOWN"), hash: z.null() }),
+  failedWalletReport("CANCELED"),
+  failedWalletReport("SUBMISSION_FAILED"),
+  failedWalletReport("UNKNOWN"),
 ]);
 export type WalletReport = z.infer<typeof walletReport>;
 

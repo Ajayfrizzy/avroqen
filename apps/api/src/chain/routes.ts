@@ -146,7 +146,12 @@ export function chainRoutes(
     const manifest = enabled();
     if (data.policy.vaultAccount !== manifest.account)
       return deny(409, "VAULT_MISMATCH");
-    const deployment = await chain.reader.deployment(manifest);
+    const deployment = await chain.reader.deployment(
+      manifest,
+      undefined,
+      undefined,
+      "interactive",
+    );
     return boundMandate(
       await chain.reader.view(
         manifest.account,
@@ -274,7 +279,7 @@ export function chainRoutes(
         submissionEnabled: false,
       };
     try {
-      const d = await chain.reader.deployment(chain.manifest);
+      const d = await chain.reader.deploymentStatus(chain.manifest);
       return {
         status: "VERIFIED",
         network: "testnet",
@@ -303,7 +308,8 @@ export function chainRoutes(
     const intents = await ctx.pool.query(
       `SELECT i.id,i.actor_account,i.canonical_operation,i.state,i.reason,i.verified_hash,i.receipt_ids,i.last_height,i.last_block_hash,i.created_at,i.replacement_authorized_at,
        (SELECT recovery.original_intent_id FROM chain_recoveries recovery WHERE recovery.replacement_intent_id=i.id) AS controlled_replacement_of,
-       (SELECT e.reason FROM chain_events e WHERE e.intent_id=i.id AND e.reason IN ('UNVERIFIED_WALLET_HASH','WALLET_CANCELED','WALLET_SUBMISSION_FAILED','WALLET_OUTCOME_UNKNOWN') ORDER BY e.occurred_at DESC,e.id DESC LIMIT 1) AS wallet_outcome
+       (SELECT e.reason FROM chain_events e WHERE e.intent_id=i.id AND e.reason IN ('UNVERIFIED_WALLET_HASH','WALLET_CANCELED','WALLET_SUBMISSION_FAILED','WALLET_OUTCOME_UNKNOWN') ORDER BY e.occurred_at DESC,e.id DESC LIMIT 1) AS wallet_outcome,
+       (SELECT e.reason FROM chain_events e WHERE e.intent_id=i.id AND e.reason LIKE 'WALLET_DIAGNOSTIC_%' ORDER BY e.occurred_at DESC,e.id DESC LIMIT 1) AS wallet_diagnostic
        FROM chain_intents i WHERE i.org_id=$1 AND i.mandate_id=$2 AND ($3 OR i.actor_account=$4) ORDER BY i.created_at DESC LIMIT 50`,
       [orgId, mandateId, data.owner, data.who.account_id],
     );
@@ -312,7 +318,7 @@ export function chainRoutes(
       block: unknown = null;
     if (chain.manifest && chain.manifest.account === data.policy.vaultAccount) {
       try {
-        const d = await chain.reader.deployment(chain.manifest);
+        const d = await chain.reader.deploymentStatus(chain.manifest);
         const raw = await chain.reader.view(
           chain.manifest.account,
           "get_mandate",
@@ -401,7 +407,12 @@ export function chainRoutes(
     await transaction((db) =>
       operation(db, request, orgId, mandateId, input.operation, guardian),
     );
-    const verified = await chain.reader.deployment(manifest);
+    const verified = await chain.reader.deployment(
+      manifest,
+      undefined,
+      undefined,
+      "interactive",
+    );
     const result = await transaction(async (db) => {
       const data = await operation(
         db,
@@ -868,7 +879,12 @@ export function chainRoutes(
       } else {
         stage = "CURRENT_DEPLOYMENT_VERIFICATION";
         try {
-          await chain.reader.deployment(manifest);
+          await chain.reader.deployment(
+            manifest,
+            undefined,
+            undefined,
+            "interactive",
+          );
         } catch (error) {
           return denyDeploymentVerification(error);
         }
@@ -1019,6 +1035,13 @@ export function chainRoutes(
         "INSERT INTO chain_events(intent_id,state,reason) VALUES($1,$2,$3)",
         [r.id, state, reason],
       );
+      if (input.outcome !== "BROADCAST" && input.failure) {
+        const diagnostic = `WALLET_DIAGNOSTIC_${input.failure.stage}_${input.failure.code}${input.failure.endTags.length ? `_${input.failure.endTags.join("_")}` : ""}`;
+        await db.query(
+          "INSERT INTO chain_events(intent_id,state,reason) VALUES($1,$2,$3)",
+          [r.id, state, diagnostic],
+        );
+      }
       return { state };
     });
   });

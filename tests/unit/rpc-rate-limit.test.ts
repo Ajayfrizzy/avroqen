@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 describe("read-only RPC 429 handling", () => {
-  it("uses the approved archival endpoint after 429, then cools down the primary", async () => {
+  it("uses the secondary current provider after 429, then cools down the primary", async () => {
     const transport = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -200,6 +200,49 @@ describe("read-only RPC 429 handling", () => {
     ]);
   });
 
+  it("bounds all current RPC attempts and prioritizes queued interactive work", async () => {
+    let active = 0;
+    let maximum = 0;
+    const order: string[] = [];
+    const releases: Array<() => void> = [];
+    const transport = vi.fn<typeof fetch>(async (_url, init) => {
+      const marker = JSON.parse(String(init?.body)).marker as string;
+      order.push(marker);
+      active++;
+      maximum = Math.max(maximum, active);
+      await new Promise<void>((resolve) => releases.push(resolve));
+      active--;
+      return new Response("ok");
+    });
+    const call = (marker: string, priority: "interactive" | "background") =>
+      readOnlyRpcFetch(
+        "testnet",
+        {
+          ...request,
+          body: JSON.stringify({ ...JSON.parse(String(request.body)), marker }),
+        },
+        transport,
+        Date.now,
+        { priority, overallTimeoutMs: 3_000 },
+      );
+    const activeCalls = [0, 1, 2, 3].map((index) =>
+      call(`active-${index}`, "background"),
+    );
+    const queuedBackground = call("queued-background", "background");
+    const interactive = call("interactive", "interactive");
+    await vi.waitFor(() => expect(releases).toHaveLength(4));
+    releases.shift()?.();
+    await vi.waitFor(() => expect(order).toContain("interactive"));
+    expect(order).not.toContain("queued-background");
+    while (releases.length) releases.shift()?.();
+    await vi.waitFor(() => expect(order).toContain("queued-background"));
+    while (releases.length) releases.shift()?.();
+    await expect(
+      Promise.all([...activeCalls, queuedBackground, interactive]),
+    ).resolves.toHaveLength(6);
+    expect(maximum).toBe(4);
+  });
+
   it("honors archival Retry-After and retries once within the deadline", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000);
@@ -260,13 +303,15 @@ describe("read-only RPC 429 handling", () => {
     await expect(
       readOnlyRpcFetch("testnet", request, transport),
     ).rejects.toThrow("RPC_PROVIDERS_EXHAUSTED");
-    expect(transport).toHaveBeenCalledTimes(3);
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(transport.mock.calls.map((call) => call[0])).not.toContain(
+      "https://archival-rpc.testnet.near.org",
+    );
   });
 
   it("does not let transient failures block the next independent request", async () => {
     const transport = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response("", { status: 503 }))
       .mockResolvedValueOnce(new Response("", { status: 503 }))
       .mockResolvedValueOnce(new Response("", { status: 503 }))
       .mockResolvedValue(new Response("ok"));
@@ -276,8 +321,8 @@ describe("read-only RPC 429 handling", () => {
     await expect(
       readOnlyRpcFetch("testnet", request, transport),
     ).resolves.toMatchObject({ ok: true });
-    expect(transport).toHaveBeenCalledTimes(4);
-    expect(transport.mock.calls[3]?.[0]).toBe(
+    expect(transport).toHaveBeenCalledTimes(3);
+    expect(transport.mock.calls[2]?.[0]).toBe(
       "https://rpc.testnet.fastnear.com",
     );
   });
@@ -304,7 +349,7 @@ describe("read-only RPC 429 handling", () => {
     await expect(
       readOnlyRpcFetch("testnet", request, httpFailure),
     ).rejects.toThrow("RPC_PROVIDERS_EXHAUSTED");
-    expect(httpFailure).toHaveBeenCalledTimes(3);
+    expect(httpFailure).toHaveBeenCalledTimes(2);
 
     const recovered = vi
       .fn<typeof fetch>()
@@ -392,11 +437,11 @@ describe("read-only RPC 429 handling", () => {
     await expect(
       readOnlyRpcFetch("testnet", request, transport, now),
     ).rejects.toThrow("RPC_RATE_LIMITED");
-    expect(transport).toHaveBeenCalledTimes(3);
+    expect(transport).toHaveBeenCalledTimes(2);
     await expect(
       readOnlyRpcFetch("testnet", request, transport, now),
     ).rejects.toThrow("RPC_RATE_LIMITED");
-    expect(transport).toHaveBeenCalledTimes(3);
+    expect(transport).toHaveBeenCalledTimes(2);
   });
 
   it("rejects RPC mutations and malformed requests before any network I/O", async () => {
