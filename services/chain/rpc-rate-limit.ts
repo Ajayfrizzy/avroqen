@@ -8,8 +8,9 @@ const MAX_COOLDOWN_MS = 120_000;
 export const READ_ONLY_RPC_PER_PROVIDER_TIMEOUT_MS = 3_500;
 export const READ_ONLY_RPC_OVERALL_TIMEOUT_MS = 9_000;
 export const HISTORICAL_RPC_PER_PROVIDER_TIMEOUT_MS = 6_000;
-export const HISTORICAL_RPC_OVERALL_TIMEOUT_MS = 8_000;
+export const HISTORICAL_RPC_OVERALL_TIMEOUT_MS = 20_000;
 export const READ_ONLY_RPC_RESPONSE_LIMIT = 4 * 1024 * 1024;
+export const ARCHIVAL_RPC_MAX_CONCURRENCY = 1;
 const urls = {
   testnet: [
     "https://rpc.testnet.fastnear.com",
@@ -42,8 +43,13 @@ export type RpcFailureCategory =
   | "HISTORICAL_STATE_UNAVAILABLE"
   | "DEADLINE"
   | "PROVIDERS_EXHAUSTED";
+export type RpcReadPriority = "interactive" | "background";
 export interface RpcDiagnostic {
-  event: "RPC_ATTEMPT_FAILED" | "RPC_PROVIDER_SKIPPED" | "RPC_EXHAUSTED";
+  event:
+    | "RPC_ATTEMPT_FAILED"
+    | "RPC_PROVIDER_DELAYED"
+    | "RPC_PROVIDER_SKIPPED"
+    | "RPC_EXHAUSTED";
   network: "testnet" | "mainnet";
   method: string;
   category: RpcFailureCategory;
@@ -52,6 +58,7 @@ export interface RpcDiagnostic {
   status?: number;
   attemptedProviders?: number;
   rateLimitedProviders?: number;
+  waitMs?: number;
 }
 export interface RpcFailoverOptions {
   perProviderTimeoutMs?: number;
@@ -64,6 +71,85 @@ export interface RpcFailoverOptions {
   retryResponse?: (response: Response) => boolean | Promise<boolean>;
   /** Use only the approved providers, with archival endpoints attempted first. */
   preferArchival?: boolean;
+  /** Interactive evidence checks are queued before future background reads. */
+  priority?: RpcReadPriority;
+}
+
+type GateWaiter = {
+  priority: RpcReadPriority;
+  resolve: (release: () => void) => void;
+  reject: (reason: unknown) => void;
+  signal: AbortSignal;
+};
+const archivalGate = {
+  active: 0,
+  interactive: [] as GateWaiter[],
+  background: [] as GateWaiter[],
+};
+
+function drainArchivalGate(): void {
+  while (archivalGate.active < ARCHIVAL_RPC_MAX_CONCURRENCY) {
+    const waiter =
+      archivalGate.interactive.shift() ?? archivalGate.background.shift();
+    if (!waiter) return;
+    if (waiter.signal.aborted) continue;
+    archivalGate.active++;
+    let released = false;
+    waiter.resolve(() => {
+      if (released) return;
+      released = true;
+      archivalGate.active--;
+      drainArchivalGate();
+    });
+  }
+}
+
+function acquireArchival(
+  priority: RpcReadPriority,
+  signal: AbortSignal,
+): Promise<() => void> {
+  return new Promise((resolve, reject) => {
+    const waiter: GateWaiter = { priority, resolve, reject, signal };
+    const queue = archivalGate[priority];
+    const aborted = () => {
+      const index = queue.indexOf(waiter);
+      if (index !== -1) queue.splice(index, 1);
+      reject(abortReason(signal));
+    };
+    if (signal.aborted) return aborted();
+    signal.addEventListener("abort", aborted, { once: true });
+    const wrappedResolve = waiter.resolve;
+    waiter.resolve = (release) => {
+      signal.removeEventListener("abort", aborted);
+      wrappedResolve(release);
+    };
+    queue.push(waiter);
+    drainArchivalGate();
+  });
+}
+
+function wait(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(done, ms);
+    function done() {
+      signal.removeEventListener("abort", aborted);
+      resolve();
+    }
+    function aborted() {
+      clearTimeout(timer);
+      reject(abortReason(signal));
+    }
+    if (signal.aborted) {
+      clearTimeout(timer);
+      aborted();
+      return;
+    }
+    signal.addEventListener("abort", aborted, { once: true });
+  });
+}
+
+function archival(endpoint: string): boolean {
+  return publicProvider(endpoint).startsWith("archival-rpc.");
 }
 
 export function retryAfterMs(header: string | null, now = Date.now()): number {
@@ -229,119 +315,152 @@ export async function readOnlyRpcFetch(
       ? historicalUrls[network]
       : urls[network];
     for (const [index, endpoint] of providers.entries()) {
-      if (overallSignal.aborted) throw abortReason(overallSignal);
       const provider = publicProvider(endpoint),
-        attempt = index + 1,
-        cooldown = rateLimitCooldowns.get(endpoint);
-      if (cooldown && cooldown > now()) {
-        rateLimitedProviders++;
-        failures.push("RATE_LIMITED");
-        diagnostic({
-          event: "RPC_PROVIDER_SKIPPED",
-          network,
-          method,
-          category: "RATE_LIMITED",
-          provider,
-          attempt,
-        });
-        continue;
-      }
-      attemptedProviders++;
-      const attemptController = new AbortController(),
-        attemptTimer = setTimeout(
-          () => attemptController.abort(timeoutError()),
-          Math.min(perProviderTimeoutMs, overallTimeoutMs),
-        ),
-        signal = AbortSignal.any([overallSignal, attemptController.signal]);
-      let stage: "FETCH" | "BODY" = "FETCH";
-      try {
-        let response = await withAbort(signal, () =>
-          transport(endpoint, { ...init, signal }),
-        );
-        if (response.status === 429) {
-          rateLimitCooldowns.set(
-            endpoint,
-            now() + retryAfterMs(response.headers.get("retry-after"), now()),
-          );
+        waitForRateLimit = options.preferArchival && archival(endpoint);
+      let rateLimitRetries = 0;
+      while (true) {
+        if (overallSignal.aborted) throw abortReason(overallSignal);
+        const cooldown = rateLimitCooldowns.get(endpoint);
+        if (cooldown && cooldown > now()) {
+          const waitMs = cooldown - now();
           rateLimitedProviders++;
-          failures.push("RATE_LIMITED");
+          if (!waitForRateLimit) {
+            failures.push("RATE_LIMITED");
+            diagnostic({
+              event: "RPC_PROVIDER_SKIPPED",
+              network,
+              method,
+              category: "RATE_LIMITED",
+              provider,
+              attempt: index + 1,
+            });
+            break;
+          }
           diagnostic({
-            event: "RPC_ATTEMPT_FAILED",
+            event: "RPC_PROVIDER_DELAYED",
             network,
             method,
             category: "RATE_LIMITED",
             provider,
-            attempt,
-            status: response.status,
+            attempt: attemptedProviders + 1,
+            waitMs,
           });
-          await response.body?.cancel().catch(() => {});
+          await wait(waitMs, overallSignal);
+        }
+        const release = waitForRateLimit
+          ? await acquireArchival(
+              options.priority ?? "background",
+              overallSignal,
+            )
+          : () => {};
+        const queuedCooldown = rateLimitCooldowns.get(endpoint);
+        if (queuedCooldown && queuedCooldown > now()) {
+          release();
           continue;
         }
-        if (transientStatus(response.status)) {
-          failures.push("TRANSIENT_HTTP");
-          diagnostic({
-            event: "RPC_ATTEMPT_FAILED",
-            network,
-            method,
-            category: "TRANSIENT_HTTP",
-            provider,
-            attempt,
-            status: response.status,
-          });
-          await response.body?.cancel().catch(() => {});
-          continue;
-        }
-        stage = "BODY";
-        response = await bufferedResponse(response, signal);
-        let retryResponse = false;
-        if (response.ok && options.retryResponse) {
-          try {
-            retryResponse = await options.retryResponse(response.clone());
-          } catch {
-            // The caller remains responsible for parsing the original response.
-            // A retry classifier failure must never enable provider shopping.
+        attemptedProviders++;
+        const attempt = attemptedProviders,
+          attemptController = new AbortController(),
+          attemptTimer = setTimeout(
+            () => attemptController.abort(timeoutError()),
+            Math.min(perProviderTimeoutMs, overallTimeoutMs),
+          ),
+          signal = AbortSignal.any([overallSignal, attemptController.signal]);
+        let stage: "FETCH" | "BODY" = "FETCH";
+        try {
+          let response = await withAbort(signal, () =>
+            transport(endpoint, { ...init, signal }),
+          );
+          if (response.status === 429) {
+            const waitMs = retryAfterMs(
+              response.headers.get("retry-after"),
+              now(),
+            );
+            rateLimitCooldowns.set(endpoint, now() + waitMs);
+            rateLimitedProviders++;
+            failures.push("RATE_LIMITED");
+            diagnostic({
+              event: "RPC_ATTEMPT_FAILED",
+              network,
+              method,
+              category: "RATE_LIMITED",
+              provider,
+              attempt,
+              status: response.status,
+              waitMs,
+            });
+            await response.body?.cancel().catch(() => {});
+            if (waitForRateLimit && rateLimitRetries++ < 1) continue;
+            break;
           }
-        }
-        if (retryResponse && index < providers.length - 1) {
-          failures.push("HISTORICAL_STATE_UNAVAILABLE");
+          if (transientStatus(response.status)) {
+            failures.push("TRANSIENT_HTTP");
+            diagnostic({
+              event: "RPC_ATTEMPT_FAILED",
+              network,
+              method,
+              category: "TRANSIENT_HTTP",
+              provider,
+              attempt,
+              status: response.status,
+            });
+            await response.body?.cancel().catch(() => {});
+            break;
+          }
+          stage = "BODY";
+          response = await bufferedResponse(response, signal);
+          let retryResponse = false;
+          if (response.ok && options.retryResponse) {
+            try {
+              retryResponse = await options.retryResponse(response.clone());
+            } catch {
+              // The caller remains responsible for parsing the original response.
+              // A retry classifier failure must never enable provider shopping.
+            }
+          }
+          if (retryResponse && index < providers.length - 1) {
+            failures.push("HISTORICAL_STATE_UNAVAILABLE");
+            diagnostic({
+              event: "RPC_ATTEMPT_FAILED",
+              network,
+              method,
+              category: "HISTORICAL_STATE_UNAVAILABLE",
+              provider,
+              attempt,
+            });
+            break;
+          }
+          return response;
+        } catch (error) {
+          if (overallSignal.aborted) {
+            diagnostic({
+              event: "RPC_ATTEMPT_FAILED",
+              network,
+              method,
+              category: "DEADLINE",
+              provider,
+              attempt,
+            });
+            throw abortReason(overallSignal);
+          }
+          const category =
+            stage === "BODY" && errorCategory(error) === "TRANSPORT"
+              ? "RESPONSE_BODY"
+              : errorCategory(error);
+          failures.push(category);
           diagnostic({
             event: "RPC_ATTEMPT_FAILED",
             network,
             method,
-            category: "HISTORICAL_STATE_UNAVAILABLE",
+            category,
             provider,
             attempt,
           });
-          continue;
+          break;
+        } finally {
+          clearTimeout(attemptTimer);
+          release();
         }
-        return response;
-      } catch (error) {
-        if (overallSignal.aborted) {
-          diagnostic({
-            event: "RPC_ATTEMPT_FAILED",
-            network,
-            method,
-            category: "DEADLINE",
-            provider,
-            attempt,
-          });
-          throw abortReason(overallSignal);
-        }
-        const category =
-          stage === "BODY" && errorCategory(error) === "TRANSPORT"
-            ? "RESPONSE_BODY"
-            : errorCategory(error);
-        failures.push(category);
-        diagnostic({
-          event: "RPC_ATTEMPT_FAILED",
-          network,
-          method,
-          category,
-          provider,
-          attempt,
-        });
-      } finally {
-        clearTimeout(attemptTimer);
       }
     }
   } finally {
@@ -368,4 +487,7 @@ export async function readOnlyRpcFetch(
 /** Test-only reset for deterministic cooldown isolation. */
 export function clearRpcCooldownForTests(): void {
   rateLimitCooldowns.clear();
+  archivalGate.interactive.splice(0);
+  archivalGate.background.splice(0);
+  archivalGate.active = 0;
 }

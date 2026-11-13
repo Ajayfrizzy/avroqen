@@ -752,3 +752,37 @@ including provider bodies, RPC parameters, accounts, keys or signatures. Payment
 shows that server response instead of reporting wallet cancellation. The Meteor
 transaction action is still prompted only after the database commits exactly one
 `AWAITING_WALLET` transition; read-only failover never signs, retries or broadcasts.
+
+## D042 — Archival reads are coalesced and authorized anchor evidence is reusable
+
+Testnet correction on November 13, 2026: fresh deployment verification pins code,
+account, deployment keys and accounting to the finalized head, but those pinned
+queries were previously classified as historical solely because they used a block
+hash. Payments refreshes status and mandate state every 15 seconds while an intent
+is unresolved, so one browser could send about eight fresh-head queries to the
+archival provider per interval. Recovery inspection, challenge, completion and
+`/begin` also repeated the genuinely historical anchor reads. This exhausted the
+public archival endpoint before the interactive wallet-start check.
+
+Hashes returned directly by a finalized-head read are now retained in a bounded
+per-reader set and their immediately pinned queries use the ordinary provider pool.
+Identical concurrent genuinely historical reads are coalesced. Archival access is
+limited to one request at a time; interactive recovery work is queued before future
+background work. A 429 response records the bounded provider cooldown, honors a
+bounded `Retry-After`, and permits one archival retry within the strict 20-second
+historical deadline before normal fail-closed fallback. Diagnostics expose only the
+method, provider hostname, fixed category, attempt and numeric wait.
+
+The immutable recovery evidence stored after repeated chain verification and owner
+NEP-413 authorization may seed the historical anchor portion after a restart. Reuse
+requires the immutable recovery relationship, exact original/replacement operation,
+current manifest equality, valid evidence schema, exact anchor height/hash and at
+least the 90,000-block recorded distance. Only the anchor deployment identity,
+anchor signer-key digest and null anchor storage credit are reused. A fresh finalized
+deployment, complete signer-key digest and storage credit are still read and checked
+on every `/begin`; current-head evidence is never cached. Invalid bindings or fresh
+evidence failures leave the replacement `PREPARED`.
+
+All routing remains read-only. It cannot submit or retry a signed transaction, and
+the original UNKNOWN intent, atomic duplicate guard and exact-once
+`AWAITING_WALLET` transition are unchanged.
