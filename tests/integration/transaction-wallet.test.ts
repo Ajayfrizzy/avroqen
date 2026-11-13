@@ -105,6 +105,11 @@ it("classifies wallet cancellation without retrying", async () => {
   await expect(submitOperation(operation, begin)).resolves.toEqual({
     outcome: "CANCELED",
     hash: null,
+    failure: {
+      stage: "PROMPT",
+      code: "ACTION_CANCELLED",
+      endTags: [],
+    },
   });
   expect(f.sign).toHaveBeenCalledOnce();
   expect(begin).toHaveBeenCalledOnce();
@@ -114,6 +119,11 @@ it("keeps a missing transaction hash unknown", async () => {
   await expect(submitOperation(operation, async () => {})).resolves.toEqual({
     outcome: "UNKNOWN",
     hash: null,
+    failure: {
+      stage: "RESULT",
+      code: "RESULT_HASH_MISSING",
+      endTags: [],
+    },
   });
 });
 it("accepts Meteor's exported hash-only broadcast response", async () => {
@@ -142,6 +152,11 @@ it("quarantines conflicting hashes instead of choosing one", async () => {
   await expect(submitOperation(operation, async () => {})).resolves.toEqual({
     outcome: "UNKNOWN",
     hash: null,
+    failure: {
+      stage: "RESULT",
+      code: "RESULT_HASH_MISSING",
+      endTags: [],
+    },
   });
 });
 it("quarantines a malformed identifier beside a valid hash", async () => {
@@ -149,6 +164,11 @@ it("quarantines a malformed identifier beside a valid hash", async () => {
   await expect(submitOperation(operation, async () => {})).resolves.toEqual({
     outcome: "UNKNOWN",
     hash: null,
+    failure: {
+      stage: "RESULT",
+      code: "RESULT_HASH_MISSING",
+      endTags: [],
+    },
   });
 });
 it("distinguishes an explicit Meteor submission failure", async () => {
@@ -161,6 +181,47 @@ it("distinguishes an explicit Meteor submission failure", async () => {
   await expect(submitOperation(operation, async () => {})).resolves.toEqual({
     outcome: "SUBMISSION_FAILED",
     hash: null,
+    failure: {
+      stage: "PROMPT",
+      code: "METEOR_DIRECT_RESPONSE_FAILED",
+      endTags: ["EXT_DIRECT_RESPONSE_FAILED"],
+    },
+  });
+});
+it("drops unknown Meteor tags while preserving a sanitized failure", async () => {
+  const error = new Error("sensitive wallet detail") as Error & {
+    _reason: { endTags: string[] };
+  };
+  error.name = "MeteorActionError";
+  error._reason = {
+    endTags: ["EXT_DIRECT_RESPONSE_FAILED", "PRIVATE_PROVIDER_MESSAGE"],
+  };
+  f.sign.mockRejectedValue(error);
+  await expect(submitOperation(operation, async () => {})).resolves.toEqual({
+    outcome: "SUBMISSION_FAILED",
+    hash: null,
+    failure: {
+      stage: "PROMPT",
+      code: "METEOR_DIRECT_RESPONSE_FAILED",
+      endTags: ["EXT_DIRECT_RESPONSE_FAILED"],
+    },
+  });
+});
+it("keeps an allowlisted Meteor cancellation distinct while dropping unknown tags", async () => {
+  const error = new Error("sensitive wallet detail") as Error & {
+    _reason: { endTags: string[] };
+  };
+  error.name = "MeteorActionError";
+  error._reason = { endTags: ["USER_CANCELLED", "PRIVATE_PROVIDER_MESSAGE"] };
+  f.sign.mockRejectedValue(error);
+  await expect(submitOperation(operation, async () => {})).resolves.toEqual({
+    outcome: "CANCELED",
+    hash: null,
+    failure: {
+      stage: "PROMPT",
+      code: "ACTION_CANCELLED",
+      endTags: ["USER_CANCELLED"],
+    },
   });
 });
 it("a canceled emergency pause remains an attempted unknown outcome and is never retried", async () => {
@@ -177,7 +238,15 @@ it("a canceled emergency pause remains an attempted unknown outcome and is never
       },
       begin,
     ),
-  ).resolves.toEqual({ outcome: "CANCELED", hash: null });
+  ).resolves.toEqual({
+    outcome: "CANCELED",
+    hash: null,
+    failure: {
+      stage: "PROMPT",
+      code: "ACTION_CANCELLED",
+      endTags: [],
+    },
+  });
   expect(begin).toHaveBeenCalledOnce();
   expect(f.sign).toHaveBeenCalledOnce();
 });

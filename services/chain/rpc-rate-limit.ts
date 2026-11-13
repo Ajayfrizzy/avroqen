@@ -10,17 +10,11 @@ export const READ_ONLY_RPC_OVERALL_TIMEOUT_MS = 9_000;
 export const HISTORICAL_RPC_PER_PROVIDER_TIMEOUT_MS = 6_000;
 export const HISTORICAL_RPC_OVERALL_TIMEOUT_MS = 20_000;
 export const READ_ONLY_RPC_RESPONSE_LIMIT = 4 * 1024 * 1024;
+export const READ_ONLY_RPC_MAX_CONCURRENCY = 4;
 export const ARCHIVAL_RPC_MAX_CONCURRENCY = 1;
 const urls = {
-  testnet: [
-    "https://rpc.testnet.fastnear.com",
-    "https://rpc.testnet.near.org",
-    "https://archival-rpc.testnet.near.org",
-  ],
-  mainnet: [
-    "https://rpc.mainnet.near.org",
-    "https://archival-rpc.mainnet.near.org",
-  ],
+  testnet: ["https://rpc.testnet.fastnear.com", "https://rpc.testnet.near.org"],
+  mainnet: ["https://rpc.mainnet.near.org"],
 } as const;
 const historicalUrls = {
   testnet: [
@@ -81,36 +75,40 @@ type GateWaiter = {
   reject: (reason: unknown) => void;
   signal: AbortSignal;
 };
-const archivalGate = {
-  active: 0,
-  interactive: [] as GateWaiter[],
-  background: [] as GateWaiter[],
+type Gate = {
+  active: number;
+  interactive: GateWaiter[];
+  background: GateWaiter[];
 };
+const gate = (): Gate => ({ active: 0, interactive: [], background: [] });
+const rpcGate = gate();
+const archivalGate = gate();
 
-function drainArchivalGate(): void {
-  while (archivalGate.active < ARCHIVAL_RPC_MAX_CONCURRENCY) {
-    const waiter =
-      archivalGate.interactive.shift() ?? archivalGate.background.shift();
+function drainGate(target: Gate, limit: number): void {
+  while (target.active < limit) {
+    const waiter = target.interactive.shift() ?? target.background.shift();
     if (!waiter) return;
     if (waiter.signal.aborted) continue;
-    archivalGate.active++;
+    target.active++;
     let released = false;
     waiter.resolve(() => {
       if (released) return;
       released = true;
-      archivalGate.active--;
-      drainArchivalGate();
+      target.active--;
+      drainGate(target, limit);
     });
   }
 }
 
-function acquireArchival(
+function acquireGate(
+  target: Gate,
+  limit: number,
   priority: RpcReadPriority,
   signal: AbortSignal,
 ): Promise<() => void> {
   return new Promise((resolve, reject) => {
     const waiter: GateWaiter = { priority, resolve, reject, signal };
-    const queue = archivalGate[priority];
+    const queue = target[priority];
     const aborted = () => {
       const index = queue.indexOf(waiter);
       if (index !== -1) queue.splice(index, 1);
@@ -124,7 +122,7 @@ function acquireArchival(
       wrappedResolve(release);
     };
     queue.push(waiter);
-    drainArchivalGate();
+    drainGate(target, limit);
   });
 }
 
@@ -347,15 +345,27 @@ export async function readOnlyRpcFetch(
           });
           await wait(waitMs, overallSignal);
         }
-        const release = waitForRateLimit
-          ? await acquireArchival(
+        const archivalRelease = waitForRateLimit
+          ? await acquireGate(
+              archivalGate,
+              ARCHIVAL_RPC_MAX_CONCURRENCY,
               options.priority ?? "background",
               overallSignal,
             )
           : () => {};
+        const release = await acquireGate(
+          rpcGate,
+          READ_ONLY_RPC_MAX_CONCURRENCY,
+          options.priority ?? "background",
+          overallSignal,
+        ).catch((error) => {
+          archivalRelease();
+          throw error;
+        });
         const queuedCooldown = rateLimitCooldowns.get(endpoint);
         if (queuedCooldown && queuedCooldown > now()) {
           release();
+          archivalRelease();
           continue;
         }
         attemptedProviders++;
@@ -460,6 +470,7 @@ export async function readOnlyRpcFetch(
         } finally {
           clearTimeout(attemptTimer);
           release();
+          archivalRelease();
         }
       }
     }
@@ -487,7 +498,9 @@ export async function readOnlyRpcFetch(
 /** Test-only reset for deterministic cooldown isolation. */
 export function clearRpcCooldownForTests(): void {
   rateLimitCooldowns.clear();
-  archivalGate.interactive.splice(0);
-  archivalGate.background.splice(0);
-  archivalGate.active = 0;
+  for (const target of [rpcGate, archivalGate]) {
+    target.interactive.splice(0);
+    target.background.splice(0);
+    target.active = 0;
+  }
 }

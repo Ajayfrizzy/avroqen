@@ -19,6 +19,18 @@ JSON-RPC, chain identity, freshness and deployment checks run on the bounded
 response. Deployment selects one finalized block and pins every subsequent provider
 read to that exact hash; inconsistent fallback data fails closed.
 
+Routine current-head reads use only the approved non-archival providers and share a
+global four-request concurrency gate. Interactive verification is selected ahead of
+queued background polling and reconciliation, but it cannot exceed that capacity or
+skip any evidence check. The archival provider is reserved for genuinely historical
+hash-pinned evidence and remains under its separate single-request gate.
+
+Authenticated display-only deployment status calls for the same complete manifest
+are single-flight coalesced and may reuse a successful result for five seconds.
+Failures are never cached, and the complete manifest is part of the cache identity.
+This cache is not an authorization source: preparation, `/begin`, guardian checks
+and every financial state transition call the fresh bounded deployment verifier.
+
 A hash obtained directly from a fresh finalized-block read is treated as current
 for its bounded pinned deployment queries, so periodic status refreshes do not send
 fresh-head code, account, key and accounting reads to the archival endpoint.
@@ -76,6 +88,13 @@ eligible for exact-operation scanning from its pre-prompt anchor. No timeout rel
 creates another transaction or authorizes a blind retry. Reconciliation is
 read-only, idempotent and restartable; unavailable/pruned history, ambiguous matches
 or missing receipt bodies remain unresolved. It cannot repair contract state.
+
+Client reports may attach only fixed Meteor diagnostic stages/codes and explicitly
+allowlisted non-sensitive end tags. Unknown tags and raw wallet messages are dropped;
+signed messages, signatures, transaction arguments, payloads and secrets must never
+enter reports, logs or audit rows. User cancellation remains distinguishable from a
+prompt failure or missing result hash, while all post-prompt uncertain outcomes keep
+the same UNKNOWN quarantine and no-replay rule.
 
 ## Controlled replacement of a historical hashless storage deposit
 

@@ -100,11 +100,13 @@ async function api<T>(
   path: string,
   session?: Session,
   body?: object,
+  signal?: AbortSignal,
 ): Promise<T> {
   const r = await fetch(`/api${path}`, {
     method: body ? "POST" : "GET",
     credentials: "same-origin",
     cache: "no-store",
+    ...(signal ? { signal } : {}),
     headers: {
       ...(body ? { "Content-Type": "application/json" } : {}),
       ...(session ? { "X-CSRF-Token": session.csrfToken } : {}),
@@ -154,6 +156,7 @@ export default function Settlement() {
     operationAllowed =
       !unsafePolicy && (!expired || expiryRecoveryOperations.includes(kind));
   const refreshVersion = useRef(0);
+  const refreshController = useRef<AbortController>(null);
   const recoveryVersion = useRef(0);
   const reviewPanel = useRef<HTMLElement>(null);
   const requestedReview = useRef<string | null>(null);
@@ -174,8 +177,11 @@ export default function Settlement() {
     const frame = requestAnimationFrame(focusReview);
     return () => cancelAnimationFrame(frame);
   }, [prepared, focusReview]);
-  const refresh = useCallback(async () => {
-    if (!session) return;
+  const refresh = useCallback(async (): Promise<boolean | null> => {
+    if (!session) return null;
+    refreshController.current?.abort();
+    const controller = new AbortController();
+    refreshController.current = controller;
     const version = ++refreshVersion.current;
     setCurrentState(false);
     setEnabled(false);
@@ -185,13 +191,15 @@ export default function Settlement() {
         deploymentVerified: boolean;
         submissionEnabled: boolean;
         status: string;
-      }>("/chain/status", session);
-      if (version !== refreshVersion.current) return;
+      }>("/chain/status", session, undefined, controller.signal);
+      if (version !== refreshVersion.current) return null;
       setDeployment(status.status);
       if (policy) {
         const result = await api<Detail>(
           `/organizations/${policy.organizationId}/mandates/${policy.mandateId}/chain`,
           session,
+          undefined,
+          controller.signal,
         );
         if (
           version === refreshVersion.current &&
@@ -208,13 +216,19 @@ export default function Settlement() {
             setKind("PAUSE");
         }
       }
-    } catch (error) {
+      return true;
+    } catch {
+      if (controller.signal.aborted || version !== refreshVersion.current)
+        return null;
       if (version === refreshVersion.current) {
         setEnabled(false);
         setCurrentState(false);
         setDeployment("Unavailable — previous observations are not current");
-        throw error;
       }
+      return false;
+    } finally {
+      if (refreshController.current === controller)
+        refreshController.current = null;
     }
   }, [session, policy]);
   useEffect(() => {
@@ -253,10 +267,17 @@ export default function Settlement() {
     };
   }, []);
   useEffect(() => {
-    void refresh().catch(() =>
-      setMessage("Chain state unavailable. No success is inferred."),
-    );
+    void refresh().then((result) => {
+      if (result === false)
+        setMessage("Chain state unavailable. No success is inferred.");
+    });
   }, [refresh]);
+  useEffect(
+    () => () => {
+      refreshController.current?.abort();
+    },
+    [],
+  );
   useEffect(() => {
     if (
       !detail?.intents.some((i) =>
@@ -270,14 +291,31 @@ export default function Settlement() {
       )
     )
       return;
-    const timer = setInterval(() => {
-      void refresh().catch(() =>
-        setMessage(
-          "Reconciliation is pending; chain state is currently unavailable.",
-        ),
-      );
-    }, 15000);
-    return () => clearInterval(timer);
+    let active = true;
+    let failures = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      const delay =
+        Math.min(60_000, 15_000 * 2 ** failures) +
+        Math.floor(Math.random() * 1_001);
+      timer = setTimeout(() => {
+        void refresh().then((result) => {
+          if (!active) return;
+          if (result === false) {
+            failures = Math.min(2, failures + 1);
+            setMessage(
+              "Reconciliation is pending; chain state is currently unavailable.",
+            );
+          } else if (result === true) failures = 0;
+          schedule();
+        });
+      }, delay);
+    };
+    schedule();
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
   }, [detail, refresh]);
   async function prepare() {
     if (!session || !policy || !enabled || !currentState || !operationAllowed)
@@ -618,6 +656,7 @@ export default function Settlement() {
               value={selected}
               disabled={busy}
               onChange={(e) => {
+                refreshController.current?.abort();
                 refreshVersion.current++;
                 setSelected(e.target.value);
                 setKind(
@@ -1055,7 +1094,9 @@ export default function Settlement() {
                   type="button"
                   disabled={busy}
                   onClick={() =>
-                    void refresh().catch(() => setMessage("State unavailable."))
+                    void refresh().then((result) => {
+                      if (result === false) setMessage("State unavailable.");
+                    })
                   }
                 >
                   Refresh verified state
