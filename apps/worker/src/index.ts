@@ -1,6 +1,8 @@
 import { createServer } from "node:http";
 import pg from "pg";
+import { NearReader } from "../../../services/chain/rpc.js";
 import { runOnce } from "../../../services/chain/worker.js";
+import { shouldRunMonitoringProbe } from "../../../services/chain/worker-schedule.js";
 import {
   heartbeat,
   monitorOnce,
@@ -32,6 +34,11 @@ monitoringPool.on("error", () =>
 let lastMonitoring = 0;
 let stopping = false,
   lastCycle = 0;
+let reconciliationActive = false,
+  reconciliationIdle = true,
+  monitoringRpcActive = false;
+const reconciliationReader = new NearReader();
+const monitoringReader = new NearReader();
 const enabled = true; // Read-only reconciliation continues even when new submissions are disabled.
 const server = createServer(async (req, res) => {
   if (req.url === "/health") {
@@ -65,17 +72,25 @@ server.listen(
 );
 async function loop() {
   while (!stopping) {
+    if (monitoringRpcActive) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      continue;
+    }
+    reconciliationActive = true;
     try {
-      await runOnce(pool);
+      reconciliationIdle = !(await runOnce(pool, reconciliationReader));
       lastCycle = Date.now();
       // A monitoring heartbeat write must not gate financial reconciliation.
       try {
         await heartbeat(pool, "reconciliation");
       } catch {}
     } catch {
+      reconciliationIdle = false;
       console.error(
         "Reconciliation unavailable; obligations remain unresolved",
       );
+    } finally {
+      reconciliationActive = false;
     }
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
@@ -102,10 +117,23 @@ async function monitoringLoop() {
     } catch {
       console.error("Security monitoring unavailable");
     }
-    if (Date.now() >= nextProbe) {
-      nextProbe = Date.now() + 60000;
+    const now = Date.now();
+    if (
+      shouldRunMonitoringProbe(
+        now,
+        nextProbe,
+        reconciliationActive,
+        reconciliationIdle,
+      )
+    ) {
+      nextProbe = now + 60000;
+      monitoringRpcActive = true;
       try {
-        await probeDeployment(monitoringPool, monitoringManifest(process.env));
+        await probeDeployment(
+          monitoringPool,
+          monitoringManifest(process.env),
+          monitoringReader,
+        );
       } catch {
         console.error("Deployment monitoring unavailable");
         try {
@@ -118,6 +146,8 @@ async function monitoringLoop() {
         } catch {
           /* Database outage remains visible through readiness. */
         }
+      } finally {
+        monitoringRpcActive = false;
       }
     }
     await new Promise((resolve) => setTimeout(resolve, 5000));

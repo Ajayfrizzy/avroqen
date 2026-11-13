@@ -817,3 +817,39 @@ result hash. Raw wallet messages, signed payloads, signatures, transaction argum
 and unknown tags are neither reported nor persisted. Once a prompt may have opened,
 a cancellation, wallet failure or missing hash still quarantines the intent as
 UNKNOWN and never authorizes automatic replay.
+
+## D044 — Hashless reconciliation is paced and uses immutable historical reads
+
+Testnet worker correction on November 13, 2026: two hashless UNKNOWN intents were
+being scanned by one serial worker. A failed chunk aborted the complete 12-block
+batch, preserved the prior checkpoint correctly, and then retried from that same
+checkpoint after a fixed 15 seconds. The worker's independent minute deployment
+probe could overlap those reads. FastNEAR 429 responses and NEAR.org timeouts thus
+caused repeated chunk exhaustion approximately every 30–35 seconds without unsafe
+checkpoint advancement.
+
+Hashless `RPC_RATE_LIMITED`, `RPC_TIMEOUT`, `RPC_DEADLINE` and
+`RPC_PROVIDERS_EXHAUSTED` outcomes now receive reason-tiered 60–300 second delay
+with bounded jitter. A verified scan-height advance immediately restores the
+15-second cadence. Known-hash finality checks retain that short cadence and are
+leased before ordinary hashless work, while a hashless intent overdue by five
+minutes is promoted ahead of known hashes to prevent starvation. The scheduling
+decision is committed atomically with the observation and logs only fixed intent
+class, safe reason, fixed decision and numeric delay.
+
+Scanner-owned chunk hashes use an explicit historical RPC route under the existing
+archival single-request gate, `Retry-After`, cooldown and overall deadline. A chunk
+is usable only when its parsed header contains the exact requested hash. Exact
+hash-pinned blocks and scanner chunks may enter a per-reader success-only LRU cache
+bounded to 32 entries and eight MiB, with identical concurrent reads single-flight
+coalesced. Errors, mismatches, current-head reads and complete deployment
+verification are never cached. Returned values are cloned so caller mutation cannot
+poison retained evidence.
+
+The worker retains one reconciliation reader across iterations so immutable cache
+entries survive a retry. The security monitor retains a separate reader and starts
+its RPC probe only in a reconciliation-idle window, except that a five-minute
+maximum deferral guarantees monitoring continues. While that probe runs, the next
+reconciliation iteration waits; database health projection remains independent.
+Neither path signs, broadcasts, changes UNKNOWN to a terminal outcome, or advances
+a scan checkpoint before the complete linked block/chunk batch validates.

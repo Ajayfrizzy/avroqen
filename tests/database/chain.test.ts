@@ -327,6 +327,17 @@ async function unknownStorageDeposit() {
   ).toBe(200);
   return { id, operation: prepared.json().operation };
 }
+async function cloneKnownHashIntent(sourceId: string) {
+  const id = randomUUID();
+  const actor = `known-${id.slice(0, 8)}.testnet`;
+  await pool.query(
+    `INSERT INTO chain_intents(id,org_id,mandate_id,actor_account,network,vault_account,idempotency_key,canonical_operation,state,manifest,anchor_height,anchor_hash,scan_height,scan_hash,reported_hash,reason,next_check)
+     SELECT $2,org_id,mandate_id,$3,network,vault_account,$4,jsonb_set(canonical_operation::jsonb,'{signerId}',to_jsonb($3::text))::text,'BROADCAST_REPORTED',manifest,anchor_height,anchor_hash,scan_height,scan_hash,$5,'UNVERIFIED_WALLET_HASH',clock_timestamp()-interval '1 minute'
+     FROM chain_intents WHERE id=$1`,
+    [sourceId, id, actor, randomUUID(), bs58.encode(Buffer.alloc(32, 6))],
+  );
+  return id;
+}
 async function recoveryChallenge(id: string) {
   return post(`/api/chain/intents/${id}/recovery/challenge`, {});
 }
@@ -538,6 +549,122 @@ it("never opens the same intent twice; missing wallet result stays quarantined a
     (await pool.query("SELECT state FROM chain_intents WHERE id=$1", [id]))
       .rows[0].state,
   ).toBe("UNKNOWN");
+});
+it("backs off a failed hashless chunk batch without advancing its checkpoint", async () => {
+  const unresolved = await unknownStorageDeposit();
+  const before = (
+    await pool.query(
+      "SELECT scan_height,scan_hash FROM chain_intents WHERE id=$1",
+      [unresolved.id],
+    )
+  ).rows[0];
+  const hash = (height: number) => bs58.encode(Buffer.alloc(32, height));
+  class FailingChunkReader extends NearReader {
+    chunks: number[] = [];
+    override async deployment() {
+      return {
+        block: {
+          height: 102,
+          hash: hash(102),
+          prev_hash: hash(101),
+          timestamp_nanosec: "1",
+        },
+        account: {
+          block_hash: hash(102),
+          code_hash: hash(3),
+          amount: "1",
+          storage_usage: 1,
+        },
+        accounting: { network: "testnet" as const, vault: "vault.testnet" },
+      };
+    }
+    override async block(id?: string | number) {
+      const anchorHeight = Number(before.scan_height);
+      const height = typeof id === "string" ? anchorHeight : Number(id);
+      return {
+        header: {
+          height,
+          hash: typeof id === "string" ? id : hash(height),
+          prev_hash:
+            height === anchorHeight + 1 ? before.scan_hash : hash(height - 1),
+          timestamp_nanosec: "1",
+        },
+        chunks: [{ chunk_hash: hash(height) }],
+      };
+    }
+    override async historicalChunk(chunkHash: string) {
+      const height = bs58.decode(chunkHash)[0] ?? 0;
+      this.chunks.push(height);
+      if (height === 102) throw new Error("RPC_PROVIDERS_EXHAUSTED");
+      return {
+        header: { chunk_hash: chunkHash, height_included: height },
+        transactions: [],
+      };
+    }
+  }
+  const failing = new FailingChunkReader();
+  await pool.query(
+    "UPDATE chain_intents SET next_check=clock_timestamp() WHERE id=$1",
+    [unresolved.id],
+  );
+  await runOnce(pool, failing, () => 0);
+  const after = (
+    await pool.query(
+      "SELECT state,reason,scan_height,scan_hash,extract(epoch FROM (next_check-updated_at)) AS delay FROM chain_intents WHERE id=$1",
+      [unresolved.id],
+    )
+  ).rows[0];
+  expect(failing.chunks).toEqual([101, 102]);
+  expect(after).toMatchObject({
+    state: "UNKNOWN",
+    reason: "RPC_PROVIDERS_EXHAUSTED",
+    scan_height: before.scan_height,
+    scan_hash: before.scan_hash,
+  });
+  expect(Number(after.delay)).toBeGreaterThanOrEqual(119);
+  expect(Number(after.delay)).toBeLessThanOrEqual(121);
+});
+
+it("leases a due known hash before a non-aged hashless intent", async () => {
+  const hashless = await unknownStorageDeposit();
+  const known = await cloneKnownHashIntent(hashless.id);
+  await pool.query(
+    "UPDATE chain_intents SET next_check=clock_timestamp()-interval '2 minutes' WHERE id=$1",
+    [hashless.id],
+  );
+  rpcDown = true;
+  await runOnce(pool, reader, () => 0);
+  const rows = await pool.query(
+    "SELECT id,reason FROM chain_intents WHERE id=ANY($1::uuid[]) ORDER BY id",
+    [[hashless.id, known]],
+  );
+  expect(rows.rows.find((row) => row.id === known)?.reason).toBe(
+    "RPC_OR_EVIDENCE_UNAVAILABLE",
+  );
+  expect(rows.rows.find((row) => row.id === hashless.id)?.reason).toBe(
+    "WALLET_OUTCOME_UNKNOWN",
+  );
+});
+
+it("promotes an aged hashless intent ahead of known hashes", async () => {
+  const hashless = await unknownStorageDeposit();
+  const known = await cloneKnownHashIntent(hashless.id);
+  await pool.query(
+    "UPDATE chain_intents SET next_check=clock_timestamp()-interval '6 minutes' WHERE id=$1",
+    [hashless.id],
+  );
+  rpcDown = true;
+  await runOnce(pool, reader, () => 0);
+  const rows = await pool.query(
+    "SELECT id,reason FROM chain_intents WHERE id=ANY($1::uuid[]) ORDER BY id",
+    [[hashless.id, known]],
+  );
+  expect(rows.rows.find((row) => row.id === hashless.id)?.reason).toBe(
+    "RPC_OR_EVIDENCE_UNAVAILABLE",
+  );
+  expect(rows.rows.find((row) => row.id === known)?.reason).toBe(
+    "UNVERIFIED_WALLET_HASH",
+  );
 });
 it.each([
   ["CANCELED", "WALLET_CANCELED"],

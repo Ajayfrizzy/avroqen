@@ -33,6 +33,7 @@ export interface Intent {
   last_height: string | null;
   last_block_hash: string | null;
   state: IntentState;
+  reason: string;
 }
 export interface Observation {
   state: IntentState;
@@ -93,12 +94,7 @@ export async function observe(
       if (b.header.prev_hash !== previous)
         throw new Error("MISSING_BLOCK_HISTORY");
       for (const chunk of b.chunks) {
-        const c = z
-          .object({
-            header: z.object({ height_included: z.number().int().safe() }),
-            transactions: z.array(z.unknown()),
-          })
-          .parse(await reader.rpc("chunk", { chunk_id: chunk.chunk_hash }));
+        const c = await reader.historicalChunk(chunk.chunk_hash);
         if (c.header.height_included !== height) continue;
         for (const tx of c.transactions) {
           if (matchesOperation(tx, op))

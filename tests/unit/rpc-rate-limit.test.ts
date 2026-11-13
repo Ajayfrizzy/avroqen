@@ -270,6 +270,54 @@ describe("read-only RPC 429 handling", () => {
     vi.useRealTimers();
   });
 
+  it("labels scanner-owned archival chunk cooldown diagnostics", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const diagnostics: RpcDiagnostic[] = [];
+    const chunkRequest: RequestInit = {
+      method: "POST",
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "chunk-test",
+        method: "chunk",
+        params: { chunk_id: "public-chunk-hash" },
+      }),
+    };
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response("", {
+          status: 429,
+          headers: { "Retry-After": "1" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("ok"));
+    const pending = readOnlyRpcFetch(
+      "testnet",
+      chunkRequest,
+      transport,
+      Date.now,
+      {
+        preferArchival: true,
+        perProviderTimeoutMs: 1_000,
+        overallTimeoutMs: 5_000,
+        diagnostic: (event) => diagnostics.push(event),
+      },
+    );
+    await vi.waitFor(() => expect(transport).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(pending).resolves.toMatchObject({ ok: true });
+    expect(diagnostics[0]).toMatchObject({
+      event: "RPC_ATTEMPT_FAILED",
+      method: "chunk",
+      route: "HISTORICAL",
+      category: "RATE_LIMITED",
+      waitMs: 1_000,
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain("public-chunk-hash");
+    vi.useRealTimers();
+  });
+
   it.each([
     ["network failure", () => Promise.reject(new TypeError("offline"))],
     ["HTTP 500", () => Promise.resolve(new Response("", { status: 500 }))],

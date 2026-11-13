@@ -7,6 +7,7 @@ import {
   FINALIZED_BLOCK_MAX_FUTURE_SKEW_MS,
   financialSubmissionEnabled,
   fingerprint,
+  IMMUTABLE_RPC_CACHE_MAX_ENTRIES,
   NearReader,
   readOnlyDeploymentConfig,
 } from "../../services/chain/rpc.js";
@@ -334,12 +335,131 @@ it("prioritizes the archival provider for a hash-pinned historical block", async
       },
     });
   };
-  await expect(
-    new NearReader(undefined, transport).block(anchor),
-  ).resolves.toMatchObject({
+  const reader = new NearReader(undefined, transport);
+  await expect(reader.block(anchor)).resolves.toMatchObject({
+    header: { hash: anchor, height: 277_284_348 },
+  });
+  await expect(reader.block(anchor)).resolves.toMatchObject({
     header: { hash: anchor, height: 277_284_348 },
   });
   expect(calls).toEqual(["https://archival-rpc.testnet.near.org"]);
+});
+
+it("routes scanner chunks through archival RPC and caches only identity-bound success", async () => {
+  const chunk = bs58.encode(Buffer.alloc(32, 7));
+  const calls: string[] = [];
+  const transport = vi.fn<typeof fetch>(async (url, init) => {
+    calls.push(String(url));
+    return envelope(init, {
+      result: {
+        header: { chunk_hash: chunk, height_included: 277_541_501 },
+        transactions: [],
+      },
+    });
+  });
+  const reader = new NearReader(undefined, transport);
+  const first = await reader.historicalChunk(chunk);
+  first.transactions.push({ untrusted: true });
+  await expect(reader.historicalChunk(chunk)).resolves.toEqual({
+    header: { chunk_hash: chunk, height_included: 277_541_501 },
+    transactions: [],
+  });
+  expect(calls).toEqual(["https://archival-rpc.testnet.near.org"]);
+});
+
+it("single-flight coalesces concurrent scanner chunk reads", async () => {
+  const chunk = bs58.encode(Buffer.alloc(32, 7));
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const transport = vi.fn<typeof fetch>(async (_url, init) => {
+    await held;
+    return envelope(init, {
+      result: {
+        header: { chunk_hash: chunk, height_included: 277_541_501 },
+        transactions: [],
+      },
+    });
+  });
+  const reader = new NearReader(undefined, transport);
+  const reads = [reader.historicalChunk(chunk), reader.historicalChunk(chunk)];
+  await vi.waitFor(() => expect(transport).toHaveBeenCalledOnce());
+  release();
+  await expect(Promise.all(reads)).resolves.toHaveLength(2);
+  expect(transport).toHaveBeenCalledOnce();
+});
+
+it("never caches a mismatched historical chunk response", async () => {
+  const chunk = bs58.encode(Buffer.alloc(32, 7));
+  const wrong = bs58.encode(Buffer.alloc(32, 8));
+  let mismatch = true;
+  const transport = vi.fn<typeof fetch>(async (_url, init) =>
+    envelope(init, {
+      result: {
+        header: {
+          chunk_hash: mismatch ? wrong : chunk,
+          height_included: 277_541_501,
+        },
+        transactions: [],
+      },
+    }),
+  );
+  const reader = new NearReader(undefined, transport);
+  await expect(reader.historicalChunk(chunk)).rejects.toThrow(
+    "RPC_CHUNK_MISMATCH",
+  );
+  mismatch = false;
+  await expect(reader.historicalChunk(chunk)).resolves.toBeDefined();
+  expect(transport).toHaveBeenCalledTimes(2);
+});
+
+it("fails closed when every historical provider lacks a scanner chunk", async () => {
+  const chunk = bs58.encode(Buffer.alloc(32, 7));
+  const calls: string[] = [];
+  const transport = vi.fn<typeof fetch>(async (url, init) => {
+    calls.push(String(url));
+    return envelope(init, {
+      error: {
+        code: -32000,
+        message: "unknown chunk",
+        cause: { name: "UNKNOWN_CHUNK" },
+      },
+    });
+  });
+  await expect(
+    new NearReader(undefined, transport).historicalChunk(chunk),
+  ).rejects.toThrow("HISTORICAL_CHUNK_UNAVAILABLE");
+  expect(calls).toEqual([
+    "https://archival-rpc.testnet.near.org",
+    "https://rpc.testnet.fastnear.com",
+    "https://rpc.testnet.near.org",
+  ]);
+});
+
+it("evicts the oldest immutable read after the bounded cache limit", async () => {
+  const transport = vi.fn<typeof fetch>(async (_url, init) => {
+    const request = JSON.parse(String(init?.body)) as {
+      params: { chunk_id: string };
+    };
+    return envelope(init, {
+      result: {
+        header: {
+          chunk_hash: request.params.chunk_id,
+          height_included: 277_541_501,
+        },
+        transactions: [],
+      },
+    });
+  });
+  const reader = new NearReader(undefined, transport);
+  const hashes = Array.from(
+    { length: IMMUTABLE_RPC_CACHE_MAX_ENTRIES + 1 },
+    (_, index) => bs58.encode(Buffer.alloc(32, index + 1)),
+  );
+  for (const hash of hashes) await reader.historicalChunk(hash);
+  await reader.historicalChunk(hashes[0] as string);
+  expect(transport).toHaveBeenCalledTimes(IMMUTABLE_RPC_CACHE_MAX_ENTRIES + 2);
 });
 
 it("prioritizes archival state for an exact hash-pinned query", async () => {
