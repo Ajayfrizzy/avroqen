@@ -3,6 +3,8 @@ import bs58 from "bs58";
 import { z } from "zod";
 import { nearAccount } from "../../packages/domain/src/index.js";
 import {
+  HISTORICAL_RPC_OVERALL_TIMEOUT_MS,
+  HISTORICAL_RPC_PER_PROVIDER_TIMEOUT_MS,
   READ_ONLY_RPC_OVERALL_TIMEOUT_MS,
   READ_ONLY_RPC_RESPONSE_LIMIT,
   readOnlyRpcFetch,
@@ -65,6 +67,7 @@ const endpoints = [
 export const FINALIZED_BLOCK_MAX_AGE_MS = 120_000;
 export const FINALIZED_BLOCK_MAX_FUTURE_SKEW_MS = 30_000;
 export const DEPLOYMENT_VERIFICATION_TIMEOUT_MS = 15_000;
+export const HISTORICAL_DEPLOYMENT_VERIFICATION_TIMEOUT_MS = 25_000;
 const RPC_JSON_MAX_DEPTH = 64;
 const RPC_JSON_MAX_NUMBER_LENGTH = 128;
 const TIMESTAMP_NANOSECONDS_MAX_DIGITS = 20;
@@ -281,6 +284,7 @@ export class NearReader {
   ): Promise<unknown> {
     if (!rpcMethods.has(method)) throw new Error("READ_ONLY_RPC");
     const id = `m6-${++this.requestId}`;
+    const historical = historicalPinnedRequest(method, params);
     let response: Response;
     try {
       const requestSignal = AbortSignal.timeout(
@@ -299,8 +303,12 @@ export class NearReader {
       response =
         this.endpoint === endpoints[0]
           ? await readOnlyRpcFetch("testnet", init, this.transport, this.now, {
-              ...(historicalPinnedRequest(method, params)
+              ...(historical
                 ? {
+                    perProviderTimeoutMs:
+                      HISTORICAL_RPC_PER_PROVIDER_TIMEOUT_MS,
+                    overallTimeoutMs: HISTORICAL_RPC_OVERALL_TIMEOUT_MS,
+                    preferArchival: true,
                     retryResponse: async (candidate: Response) => {
                       try {
                         const parsed = parseRpcResponse(
@@ -439,8 +447,19 @@ export class NearReader {
     if (r.block_hash !== block) throw new Error("RPC_BLOCK_MISMATCH");
     return JSON.parse(Buffer.from(r.result).toString("utf8"));
   }
-  async deployment(manifest: Manifest, at?: string) {
-    const signal = AbortSignal.timeout(DEPLOYMENT_VERIFICATION_TIMEOUT_MS);
+  async deployment(
+    manifest: Manifest,
+    at?: string,
+    parentSignal?: AbortSignal,
+  ) {
+    const deadline = AbortSignal.timeout(
+        at === undefined
+          ? DEPLOYMENT_VERIFICATION_TIMEOUT_MS
+          : HISTORICAL_DEPLOYMENT_VERIFICATION_TIMEOUT_MS,
+      ),
+      signal = parentSignal
+        ? AbortSignal.any([parentSignal, deadline])
+        : deadline;
     const status = z
       .object({ chain_id: z.literal("testnet") })
       .parse(await this.rpc("status", [], signal));

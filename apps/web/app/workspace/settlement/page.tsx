@@ -131,6 +131,10 @@ async function api<T>(
         "Onchain storage credit changed after the original attempt. Reconcile the original operation before any replacement.",
       RECOVERY_EVIDENCE_UNAVAILABLE:
         "Independent recovery evidence is currently unavailable. The original operation remains quarantined.",
+      RECOVERY_HISTORICAL_STATE_UNAVAILABLE:
+        "The approved providers could not retrieve the exact historical recovery state. The original operation remains quarantined.",
+      RECOVERY_EVIDENCE_INCONSISTENT:
+        "Historical recovery providers returned inconsistent pinned evidence. The original operation remains quarantined; do not continue.",
       RPC_TIMEOUT:
         "The blockchain evidence check timed out. The original operation remains quarantined; retry the read-only check later.",
       RECOVERY_NOT_ELIGIBLE:

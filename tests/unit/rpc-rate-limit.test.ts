@@ -87,6 +87,35 @@ describe("read-only RPC 429 handling", () => {
     expect(signals[1]?.aborted).toBe(false);
   });
 
+  it("bounds archival-first historical fallback exhaustion", async () => {
+    const calls: string[] = [];
+    const transport = vi.fn<typeof fetch>(async (url, init) => {
+      calls.push(String(url));
+      if (url === "https://rpc.testnet.fastnear.com")
+        return new Response("UNKNOWN_BLOCK");
+      const signal = init?.signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) =>
+        signal.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        }),
+      );
+    });
+    await expect(
+      readOnlyRpcFetch("testnet", request, transport, Date.now, {
+        preferArchival: true,
+        perProviderTimeoutMs: 20,
+        overallTimeoutMs: 35,
+        retryResponse: async (response) =>
+          (await response.text()) === "UNKNOWN_BLOCK",
+      }),
+    ).rejects.toMatchObject({ name: "TimeoutError" });
+    expect(calls).toEqual([
+      "https://archival-rpc.testnet.near.org",
+      "https://rpc.testnet.fastnear.com",
+      "https://rpc.testnet.near.org",
+    ]);
+  });
+
   it.each([
     ["network failure", () => Promise.reject(new TypeError("offline"))],
     ["HTTP 500", () => Promise.resolve(new Response("", { status: 500 }))],

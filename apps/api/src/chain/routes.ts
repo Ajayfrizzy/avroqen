@@ -495,6 +495,22 @@ export function chainRoutes(
       return deny(409, "INTENT_CONFIGURATION_CHANGED");
     return op;
   }
+  function denyRecoveryEvidence(error: unknown) {
+    if (error instanceof Error) {
+      if (error.message === "RPC_TIMEOUT") return deny(503, "RPC_TIMEOUT");
+      if (error.message === "UNKNOWN_BLOCK")
+        return deny(503, "RECOVERY_HISTORICAL_STATE_UNAVAILABLE");
+      if (
+        [
+          "RPC_BLOCK_MISMATCH",
+          "CONFLICTING_INTENT_ANCHOR",
+          "CONFLICTING_RPC",
+        ].includes(error.message)
+      )
+        return deny(503, "RECOVERY_EVIDENCE_INCONSISTENT");
+    }
+    return deny(503, "RECOVERY_EVIDENCE_UNAVAILABLE");
+  }
   async function recoveryEvidence(r: Record<string, unknown>) {
     try {
       return await replacementEvidenceFor(
@@ -512,7 +528,7 @@ export function chainRoutes(
         ].includes(error.message)
       )
         return deny(409, error.message);
-      return deny(503, "RECOVERY_EVIDENCE_UNAVAILABLE");
+      return denyRecoveryEvidence(error);
     }
   }
   async function historicalStorageDeposit(
@@ -553,9 +569,7 @@ export function chainRoutes(
           r as unknown as import("../../../../services/chain/reconcile.js").Intent,
         );
       } catch (error) {
-        if (error instanceof Error && error.message === "RPC_TIMEOUT")
-          return deny(503, "RPC_TIMEOUT");
-        return deny(503, "RECOVERY_EVIDENCE_UNAVAILABLE");
+        return denyRecoveryEvidence(error);
       }
     },
   );

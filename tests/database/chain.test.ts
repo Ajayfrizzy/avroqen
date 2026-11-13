@@ -45,11 +45,13 @@ let recoveryHeadHeight: number | undefined;
 let recoveryNonce = "7";
 let recoveryCredit: unknown = null;
 let recoveryRpcError = "outage";
+let historicalRpcError: string | undefined;
 class FixtureReader extends NearReader {
   override async deployment(_manifest?: unknown, at?: string) {
     if (rpcDown) throw new Error(recoveryRpcError);
     await duringDeployment?.();
     const anchor = at === bs58.encode(Buffer.alloc(32, 1));
+    if (anchor && historicalRpcError) throw new Error(historicalRpcError);
     const height = anchor
       ? 100
       : recoveryHeadHeight !== undefined
@@ -265,6 +267,7 @@ beforeEach(async () => {
   recoveryNonce = "7";
   recoveryCredit = null;
   recoveryRpcError = "outage";
+  historicalRpcError = undefined;
   hook = undefined;
   keyAllowed = true;
   unavailable = false;
@@ -655,6 +658,16 @@ it.each([
 
 it.each([
   ["RPC timeout", "RPC_TIMEOUT", "RPC_TIMEOUT"],
+  [
+    "missing historical state",
+    "UNKNOWN_BLOCK",
+    "RECOVERY_HISTORICAL_STATE_UNAVAILABLE",
+  ],
+  [
+    "inconsistent historical state",
+    "RPC_BLOCK_MISMATCH",
+    "RECOVERY_EVIDENCE_INCONSISTENT",
+  ],
   ["unavailable evidence", "outage", "RECOVERY_EVIDENCE_UNAVAILABLE"],
 ] as const)(
   "keeps inspection read-only during %s",
@@ -850,6 +863,36 @@ it("rechecks fresh chain evidence before opening an authorized replacement walle
     ).rows[0].state,
   ).toBe("PREPARED");
 });
+
+it.each([
+  ["RPC_TIMEOUT", "RPC_TIMEOUT"],
+  ["UNKNOWN_BLOCK", "RECOVERY_HISTORICAL_STATE_UNAVAILABLE"],
+  ["RPC_BLOCK_MISMATCH", "RECOVERY_EVIDENCE_INCONSISTENT"],
+] as const)(
+  "keeps the replacement prepared when begin historical evidence fails with %s",
+  async (failure, expected) => {
+    const original = await unknownStorageDeposit();
+    recoveryHeadHeight = 90_100;
+    const challenge = await recoveryChallenge(original.id);
+    expect(
+      (await completeRecovery(original.id, challenge.json())).statusCode,
+    ).toBe(201);
+    historicalRpcError = failure;
+    const begin = await post(
+      `/api/chain/intents/${challenge.json().replacementIntentId}/begin`,
+      {},
+    );
+    expect(begin.statusCode).toBe(503);
+    expect(begin.json().error).toBe(expected);
+    expect(
+      (
+        await pool.query("SELECT state FROM chain_intents WHERE id=$1", [
+          challenge.json().replacementIntentId,
+        ])
+      ).rows[0].state,
+    ).toBe("PREPARED");
+  },
+);
 
 it("does not disclose or authorize recovery to a different signer", async () => {
   const original = await unknownStorageDeposit();

@@ -49,6 +49,8 @@ type ReaderOptions = {
   evidenceCredit?: unknown;
   queryBlockHash?: string;
   fail?: boolean;
+  signals?: AbortSignal[];
+  historicalDelayMs?: number;
 };
 const fullAccessKey = (nonce: string | number = "7") => ({
   public_key: `ed25519:${bs58.encode(Buffer.alloc(32, 3))}`,
@@ -58,7 +60,16 @@ function reader(options: ReaderOptions = {}): NearReader {
   const anchorKeys = options.anchorKeys ?? [fullAccessKey()];
   const evidenceKeys = options.evidenceKeys ?? [fullAccessKey()];
   return {
-    deployment: async (_manifest: Manifest, at?: string) => {
+    deployment: async (
+      _manifest: Manifest,
+      at?: string,
+      signal?: AbortSignal,
+    ) => {
+      if (signal) options.signals?.push(signal);
+      if (at !== undefined && options.historicalDelayMs)
+        await new Promise((resolve) =>
+          setTimeout(resolve, options.historicalDelayMs),
+        );
       if (options.fail) throw new Error("RPC_TIMEOUT");
       const anchor = at !== undefined;
       return {
@@ -68,19 +79,39 @@ function reader(options: ReaderOptions = {}): NearReader {
         },
       };
     },
-    query: async (_type: string, _account: string, block: string) => ({
-      block_hash: options.queryBlockHash ?? block,
-      keys: block === anchorHash ? anchorKeys : evidenceKeys,
-    }),
+    query: async (
+      _type: string,
+      _account: string,
+      block: string,
+      _extra: Record<string, unknown>,
+      signal?: AbortSignal,
+    ) => {
+      if (signal) options.signals?.push(signal);
+      if (block === anchorHash && options.historicalDelayMs)
+        await new Promise((resolve) =>
+          setTimeout(resolve, options.historicalDelayMs),
+        );
+      return {
+        block_hash: options.queryBlockHash ?? block,
+        keys: block === anchorHash ? anchorKeys : evidenceKeys,
+      };
+    },
     view: async (
       _account: string,
       _method: string,
       _args: Record<string, unknown>,
       block: string,
-    ) =>
-      block === anchorHash
+      signal?: AbortSignal,
+    ) => {
+      if (signal) options.signals?.push(signal);
+      if (block === anchorHash && options.historicalDelayMs)
+        await new Promise((resolve) =>
+          setTimeout(resolve, options.historicalDelayMs),
+        );
+      return block === anchorHash
         ? (options.anchorCredit ?? null)
-        : (options.evidenceCredit ?? null),
+        : (options.evidenceCredit ?? null);
+    },
   } as unknown as NearReader;
 }
 
@@ -98,6 +129,25 @@ describe("controlled replacement evidence", () => {
     });
     expect(result.signerKeysDigest).toMatch(/^[0-9a-f]{64}$/);
   });
+
+  it("bounds the complete evidence pass with one shared deadline signal", async () => {
+    const signals: AbortSignal[] = [];
+    await replacementEvidenceFor(reader({ signals }), intent());
+    expect(signals).toHaveLength(6);
+    expect(signals.every((signal) => signal === signals[0])).toBe(true);
+    expect(signals[0]?.aborted).toBe(false);
+  });
+
+  it("completes pre-wallet evidence when archival block and pinned state each take 3983 ms", async () => {
+    await expect(
+      replacementEvidenceFor(reader({ historicalDelayMs: 3_983 }), intent()),
+    ).resolves.toMatchObject({
+      anchorHeight: "100",
+      anchorHash,
+      evidenceHeight: "90100",
+      evidenceHash,
+    });
+  }, 12_000);
 
   it("keeps the intent quarantined while the transaction validity window is open", async () => {
     await expect(
