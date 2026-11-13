@@ -169,6 +169,15 @@ export function chainRoutes(
       (d.row.status !== "CONSENT_APPROVED_OFFCHAIN" || d.row.disabled_at)
     )
       return deny(409, "CONSENT_OR_AGENT_UNAVAILABLE");
+    const now = BigInt(
+      (
+        await db.query(
+          "SELECT trunc(extract(epoch FROM clock_timestamp())*1000000000)::text AS ns",
+        )
+      ).rows[0].ns,
+    );
+    if (!emergency && BigInt(d.policy.expiresAtNs) <= now)
+      return deny(409, "OPERATION_NOT_ALLOWED");
     let proposal:
       | import("../../../../packages/domain/src/proposals.js").ProposalInput
       | undefined;
@@ -187,13 +196,6 @@ export function chainRoutes(
       if (canonicalProposal(proposal) !== row.canonical_payload)
         return deny(503, "PROPOSAL_INTEGRITY_FAILED");
     }
-    const now = BigInt(
-      (
-        await db.query(
-          "SELECT trunc(extract(epoch FROM clock_timestamp())*1000000000)::text AS ns",
-        )
-      ).rows[0].ns,
-    );
     if (input.kind === "ATTEST") {
       const r = (
         await db.query(
@@ -279,6 +281,7 @@ export function chainRoutes(
     );
     const intents = await ctx.pool.query(
       `SELECT i.id,i.actor_account,i.canonical_operation,i.state,i.reason,i.verified_hash,i.receipt_ids,i.last_height,i.last_block_hash,i.created_at,i.replacement_authorized_at,
+       (SELECT recovery.original_intent_id FROM chain_recoveries recovery WHERE recovery.replacement_intent_id=i.id) AS controlled_replacement_of,
        (SELECT e.reason FROM chain_events e WHERE e.intent_id=i.id AND e.reason IN ('UNVERIFIED_WALLET_HASH','WALLET_CANCELED','WALLET_SUBMISSION_FAILED','WALLET_OUTCOME_UNKNOWN') ORDER BY e.occurred_at DESC,e.id DESC LIMIT 1) AS wallet_outcome
        FROM chain_intents i WHERE i.org_id=$1 AND i.mandate_id=$2 AND ($3 OR i.actor_account=$4) ORDER BY i.created_at DESC LIMIT 50`,
       [orgId, mandateId, data.owner, data.who.account_id],
@@ -757,7 +760,7 @@ export function chainRoutes(
           id: inspected.challenge.replacement_intent_id,
           operation: op,
           state: "PREPARED",
-          recoveryOf: r.id,
+          controlled_replacement_of: r.id,
         };
       });
       return reply.code(201).send(result);
@@ -766,13 +769,31 @@ export function chainRoutes(
   app.post("/api/chain/intents/:intentId/begin", async (request) => {
     const manifest = enabled();
     await chain.reader.deployment(manifest);
-    const initial = await transaction((db) => owned(db, request));
-    if (initial.state !== "PREPARED")
+    const initial = await transaction(async (db) => {
+      const intent = await owned(db, request);
+      const recoveryOriginal = (
+        await db.query(
+          `SELECT original.*
+           FROM chain_recoveries recovery
+           JOIN chain_intents original ON original.id=recovery.original_intent_id
+           WHERE recovery.replacement_intent_id=$1`,
+          [intent.id],
+        )
+      ).rows[0];
+      return { intent, recoveryOriginal };
+    });
+    if (initial.intent.state !== "PREPARED")
       return deny(409, "INTENT_ALREADY_ATTEMPTED");
+    if (initial.recoveryOriginal)
+      await recoveryEvidence(initial.recoveryOriginal);
     const guardian =
-      (JSON.parse(initial.canonical_operation) as ChainOperation).kind ===
-      "PAUSE"
-        ? await verifiedGuardian(request, initial.org_id, initial.mandate_id)
+      (JSON.parse(initial.intent.canonical_operation) as ChainOperation)
+        .kind === "PAUSE"
+        ? await verifiedGuardian(
+            request,
+            initial.intent.org_id,
+            initial.intent.mandate_id,
+          )
         : null;
     return transaction(async (db) => {
       const r = await owned(db, request);
@@ -787,6 +808,8 @@ export function chainRoutes(
           [r.id],
         )
       ).rows[0];
+      if (Boolean(recoveryOriginal) !== Boolean(initial.recoveryOriginal))
+        return deny(409, "INTENT_CONFIGURATION_CHANGED");
       if (
         recoveryOriginal &&
         (recoveryOriginal.state !== "UNKNOWN" ||

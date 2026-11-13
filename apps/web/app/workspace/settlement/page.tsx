@@ -17,6 +17,7 @@ import {
   operationInput,
   RECOVERY_VALIDITY_BLOCKS,
   type ReplacementInspection,
+  rebuildHistoricalStorageDeposit,
   type WalletReport,
 } from "../../../../../packages/domain/src/settlement";
 import type { VaultMandate } from "../../../../../packages/domain/src/vault";
@@ -33,6 +34,7 @@ type Intent = {
   reason: string;
   wallet_outcome: string | null;
   replacement_authorized_at: string | null;
+  controlled_replacement_of: string | null;
   operation: ChainOperation;
   explorerUrl: string | null;
 };
@@ -181,6 +183,25 @@ export default function Settlement() {
       !unsafePolicy && (!expired || expiryRecoveryOperations.includes(kind));
   const refreshVersion = useRef(0);
   const recoveryVersion = useRef(0);
+  const reviewPanel = useRef<HTMLElement>(null);
+  const requestedReview = useRef<string | null>(null);
+  const focusReview = useCallback(() => {
+    const panel = reviewPanel.current;
+    if (!panel) return;
+    panel.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "start",
+    });
+    panel.focus({ preventScroll: true });
+  }, []);
+  useEffect(() => {
+    if (!prepared || requestedReview.current !== prepared.id) return;
+    requestedReview.current = null;
+    const frame = requestAnimationFrame(focusReview);
+    return () => cancelAnimationFrame(frame);
+  }, [prepared, focusReview]);
   const refresh = useCallback(async () => {
     if (!session) return;
     const version = ++refreshVersion.current;
@@ -357,13 +378,18 @@ export default function Settlement() {
     }
   }
   async function sign() {
+    const controlledReplacement =
+      prepared?.operation.kind === "STORAGE_DEPOSIT" &&
+      Boolean(prepared.controlled_replacement_of);
     if (
       !session ||
       !prepared ||
       !enabled ||
       !currentState ||
       unsafePolicy ||
-      (expired && !expiryRecoveryOperations.includes(prepared.operation.kind))
+      (expired &&
+        !controlledReplacement &&
+        !expiryRecoveryOperations.includes(prepared.operation.kind))
     )
       return;
     setBusy(true);
@@ -409,15 +435,21 @@ export default function Settlement() {
       )
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
-      const expected = buildOperation(input, {
-        policy,
-        policyDigest: digest,
-        actor: session.accountId,
-        now: BigInt(Date.now()) * 1000000n,
-        guardian: detail?.onchain?.guardian ?? null,
-        ...(proposal ? { proposal } : {}),
-        ...(review ? { evidence: review.payload } : {}),
-      });
+      const expected = controlledReplacement
+        ? rebuildHistoricalStorageDeposit(op, {
+            policy,
+            policyDigest: digest,
+            actor: session.accountId,
+          })
+        : buildOperation(input, {
+            policy,
+            policyDigest: digest,
+            actor: session.accountId,
+            now: BigInt(Date.now()) * 1000000n,
+            guardian: detail?.onchain?.guardian ?? null,
+            ...(proposal ? { proposal } : {}),
+            ...(review ? { evidence: review.payload } : {}),
+          });
       if (JSON.stringify(expected) !== JSON.stringify(op))
         throw new Error("Transaction binding mismatch");
       walletOutcome = await submitOperation(prepared.operation, async () => {
@@ -960,6 +992,8 @@ export default function Settlement() {
               </section>
               {prepared && (
                 <section
+                  ref={reviewPanel}
+                  tabIndex={-1}
                   className="transaction-review"
                   aria-label="Exact transaction review"
                 >
@@ -1022,6 +1056,10 @@ export default function Settlement() {
                       !enabled ||
                       unsafePolicy ||
                       (expired &&
+                        !(
+                          prepared.operation.kind === "STORAGE_DEPOSIT" &&
+                          prepared.controlled_replacement_of
+                        ) &&
                         !expiryRecoveryOperations.includes(
                           prepared.operation.kind,
                         ))
@@ -1112,7 +1150,11 @@ export default function Settlement() {
                         <button
                           type="button"
                           disabled={busy || unsafePolicy}
-                          onClick={() => setPrepared(i)}
+                          onClick={() => {
+                            requestedReview.current = i.id;
+                            if (prepared?.id === i.id) focusReview();
+                            else setPrepared(i);
+                          }}
                         >
                           Review unsigned operation
                         </button>

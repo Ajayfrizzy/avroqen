@@ -10,6 +10,7 @@ const controlledIntent = (replacementAuthorizedAt: string | null = null) => ({
   reason: "HASH_NOT_RECOVERED",
   wallet_outcome: "WALLET_OUTCOME_UNKNOWN",
   replacement_authorized_at: replacementAuthorizedAt,
+  controlled_replacement_of: null,
   operation: {
     network: "testnet",
     signerId: policy.ownerAccount,
@@ -356,6 +357,24 @@ test("completed controlled replacement remains clearly visible", async ({
     page.getByRole("button", { name: "Review controlled replacement" }),
   ).toHaveCount(0);
 });
+test("review unsigned operation scrolls to and focuses the signing review", async ({
+  page,
+}) => {
+  const prepared = {
+    ...controlledIntent(),
+    id: "33333333-3333-4333-8333-333333333333",
+    state: "PREPARED",
+    reason: "UNSIGNED",
+  };
+  await setupControlledPage(page, async () => false, [prepared]);
+  await page.getByRole("button", { name: "Review unsigned operation" }).click();
+  const review = page.getByRole("region", { name: "Exact transaction review" });
+  await expect(review).toBeFocused();
+  await expect(review).toBeInViewport();
+  await expect(
+    review.getByRole("heading", { name: "Review before signing" }),
+  ).toBeVisible();
+});
 test("controlled replacement cancellation leaves UNKNOWN and never opens a transaction action", async ({
   page,
 }) => {
@@ -515,6 +534,33 @@ test("expired and unsafe historical mandates stay readable but cannot authorize"
     );
     if (!selected)
       return route.fulfill({ status: 404, json: { error: "NOT_FOUND" } });
+    const intents =
+      selected === expired
+        ? [
+            {
+              ...controlledIntent(),
+              id: "33333333-3333-4333-8333-333333333333",
+              state: "PREPARED",
+              reason: "CONTROLLED_REPLACEMENT_PREPARED",
+              controlled_replacement_of: "44444444-4444-4444-8444-444444444444",
+              operation: {
+                ...controlledIntent().operation,
+                mandateId: selected.mandateId,
+              },
+            },
+          ]
+        : [
+            {
+              id: `history-${selected.mandateId}`,
+              state: "UNKNOWN",
+              reason: "HISTORICAL_RECORD",
+              operation: {
+                methodName: "submit_proposal",
+                signerId: selected.agentAccount,
+              },
+              explorerUrl: null,
+            },
+          ];
     return route.fulfill({
       json: {
         policy: selected,
@@ -528,18 +574,7 @@ test("expired and unsafe historical mandates stay readable but cannot authorize"
           },
         ],
         reviews: [],
-        intents: [
-          {
-            id: `history-${selected.mandateId}`,
-            state: "UNKNOWN",
-            reason: "HISTORICAL_RECORD",
-            operation: {
-              methodName: "submit_proposal",
-              signerId: selected.agentAccount,
-            },
-            explorerUrl: null,
-          },
-        ],
+        intents,
       },
     });
   });
@@ -561,6 +596,10 @@ test("expired and unsafe historical mandates stay readable but cannot authorize"
   await expect(warning).toContainText("This mandate expired at");
   await expect(warning).not.toContainText("Unsafe historical verifier policy");
   await expect(prepare).toBeDisabled();
+  await page.getByRole("button", { name: "Review unsigned operation" }).click();
+  await expect(
+    page.getByRole("button", { name: "Open wallet and authorize" }),
+  ).toBeEnabled();
 
   await selector.selectOption(unsafe.mandateId);
   await expect(warning).toContainText("Unsafe historical verifier policy");
