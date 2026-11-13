@@ -59,7 +59,23 @@ provider head as current.
 
 The receipt verifier matches signer, receiver, one exact FunctionCall, argument bytes, gas and deposit; requires `FINAL` and a complete, nonduplicated descendant outcome graph. For native transfers it requires the dispatch's exact returned callback, private predecessor/receiver bindings, matching transfer amount/recipient, callback data dependency, finalized transfer outcome, successful callback result and matching contract execution/withdrawal state. Failed callbacks quarantine funds even if a recipient received a transfer. `SuccessReceiptId` is a promise reference, not an immediate success value. Failure before dispatch is a confirmed rejection; transfer failure is terminal only after a successful false callback and `ConfirmedFailed` state.
 
-The worker scans finalized blocks/chunks for exact operation matches when a wallet hash is lost. It advances only a contiguous verified block chain, at most 12 heights per cycle. Multiple candidates remain ambiguous. Explicit UNKNOWN_BLOCK heights can be skipped only while preserving the previous block hash; the next actual block must link to that hash. Other outages stop the cursor. Pruned/missing existing blocks cannot be silently bypassed because the next previous-hash link will disagree. Unavailable history requires provider investigation, never a transfer retry. Normal hash-based reconciliation is unaffected. The public provider may prune historical transactions or omit receipts from untracked shards; unavailable historical code/keys/receipt bodies leave UNKNOWN. The archival testnet endpoint is allowlisted for a separately reviewed provider switch, not automatically trusted as a consensus override.
+The worker scans finalized blocks/chunks for exact operation matches when a wallet hash is lost. It advances only a contiguous verified block chain, at most 12 heights per cycle. Multiple candidates remain ambiguous. Explicit UNKNOWN_BLOCK heights can be skipped only while preserving the previous block hash; the next actual block must link to that hash. Other outages stop the cursor. Pruned/missing existing blocks cannot be silently bypassed because the next previous-hash link will disagree. Unavailable history requires provider investigation, never a transfer retry. Normal hash-based reconciliation is unaffected. The public provider may prune historical transactions or omit receipts from untracked shards; unavailable historical code/keys/receipt bodies leave UNKNOWN. The archival endpoint remains a trusted HTTPS provider, not a consensus override.
+
+Scanner-owned chunk hashes use the historical archival-first route. The response
+must bind its parsed chunk header to the exact requested hash before any transaction
+matching or cache retention. Exact hash-pinned blocks and validated chunks may be
+retained only in the worker's 32-entry/eight-MiB success cache; identical concurrent
+reads coalesce. Failures, mismatches, height-only blocks, current finalized heads and
+deployment verification are never cached. A process restart simply loses this
+optimization and repeats the normal verification.
+
+Known-hash intents are leased before ordinary hashless scans and retain a bounded
+15-second finality cadence. A hashless intent overdue by five minutes is promoted to
+prevent starvation. Hashless rate-limit, timeout, deadline and provider-exhaustion
+failures use a jittered 60–300 second delay; verified checkpoint progress restores
+the normal cadence. No delay proves failure or releases UNKNOWN. The periodic
+deployment monitor waits for a reconciliation-idle window, with a five-minute
+maximum deferral so monitoring cannot be disabled by a continuous scan backlog.
 
 No indexer can undo a NEAR transfer, repair an irrecoverably missing callback or force contract reserve release. Retained deployment keys can replace code between checks; pinned current and receipt-block inspections reduce accidental mismatch but do not make mutable deployment governance immutable.
 

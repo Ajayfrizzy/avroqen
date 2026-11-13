@@ -35,12 +35,15 @@ const intent: Intent = {
   last_height: null,
   last_block_hash: null,
   state: "UNKNOWN",
+  reason: "WALLET_OUTCOME_UNKNOWN",
 };
 class ScanReader extends NearReader {
   multiple = false;
   outage = false;
   conflict = false;
   found = false;
+  chunkOutageAt: number | undefined;
+  chunkCalls: number[] = [];
   override async deployment() {
     return {
       block: { height: 3, hash: h(3), prev_hash: h(2), timestamp_nanosec: "3" },
@@ -67,56 +70,58 @@ class ScanReader extends NearReader {
       chunks: [{ chunk_hash: h(height) }],
     };
   }
-  override async rpc(method: string, params: unknown) {
-    if (method === "chunk") {
-      const height = bs58.decode((params as { chunk_id: string }).chunk_id)[0];
-      return {
-        header: { height_included: height },
-        transactions:
-          this.found && height === 2
-            ? [
-                {
-                  hash: h(7),
-                  signer_id: op.signerId,
-                  receiver_id: op.receiverId,
-                  actions: [
-                    {
-                      FunctionCall: {
-                        method_name: op.methodName,
-                        args: Buffer.from(JSON.stringify(op.args)).toString(
-                          "base64",
-                        ),
-                        gas: op.gas,
-                        deposit: op.deposit,
-                      },
+  override async historicalChunk(chunkHash: string) {
+    const height = bs58.decode(chunkHash)[0] ?? 0;
+    this.chunkCalls.push(height);
+    if (height === this.chunkOutageAt) throw new Error("chunk outage");
+    return {
+      header: { chunk_hash: chunkHash, height_included: height },
+      transactions:
+        this.found && height === 2
+          ? [
+              {
+                hash: h(7),
+                signer_id: op.signerId,
+                receiver_id: op.receiverId,
+                actions: [
+                  {
+                    FunctionCall: {
+                      method_name: op.methodName,
+                      args: Buffer.from(JSON.stringify(op.args)).toString(
+                        "base64",
+                      ),
+                      gas: op.gas,
+                      deposit: op.deposit,
                     },
-                  ],
-                },
-                ...(this.multiple
-                  ? [
-                      {
-                        hash: h(8),
-                        signer_id: op.signerId,
-                        receiver_id: op.receiverId,
-                        actions: [
-                          {
-                            FunctionCall: {
-                              method_name: op.methodName,
-                              args: Buffer.from(
-                                JSON.stringify(op.args),
-                              ).toString("base64"),
-                              gas: op.gas,
-                              deposit: op.deposit,
-                            },
+                  },
+                ],
+              },
+              ...(this.multiple
+                ? [
+                    {
+                      hash: h(8),
+                      signer_id: op.signerId,
+                      receiver_id: op.receiverId,
+                      actions: [
+                        {
+                          FunctionCall: {
+                            method_name: op.methodName,
+                            args: Buffer.from(JSON.stringify(op.args)).toString(
+                              "base64",
+                            ),
+                            gas: op.gas,
+                            deposit: op.deposit,
                           },
-                        ],
-                      },
-                    ]
-                  : []),
-              ]
-            : [],
-      };
-    }
+                        },
+                      ],
+                    },
+                  ]
+                : []),
+            ]
+          : [],
+    };
+  }
+  override async rpc() {
     return {
       final_execution_status: "INCLUDED",
       transaction: {
@@ -179,6 +184,13 @@ it("does not advance the scan through missing or conflicting history", async () 
   await expect(observe(r, intent)).rejects.toThrow("MISSING_BLOCK_HISTORY");
   r.outage = true;
   await expect(observe(r, intent)).rejects.toThrow("outage");
+});
+it("retries the same batch after a chunk failure without returning a checkpoint", async () => {
+  const r = new ScanReader();
+  r.chunkOutageAt = 3;
+  await expect(observe(r, intent)).rejects.toThrow("chunk outage");
+  await expect(observe(r, intent)).rejects.toThrow("chunk outage");
+  expect(r.chunkCalls).toEqual([2, 3, 2, 3]);
 });
 it("rejects stale or same-height conflicting finalized projections", async () => {
   await expect(

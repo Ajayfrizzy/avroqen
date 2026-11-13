@@ -41,6 +41,7 @@ const intent = (change: Partial<Intent> = {}): Intent => ({
   last_height: null,
   last_block_hash: null,
   state: "UNKNOWN",
+  reason: "HASH_NOT_RECOVERED",
   ...change,
 });
 

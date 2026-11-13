@@ -70,6 +70,8 @@ export const FINALIZED_BLOCK_MAX_FUTURE_SKEW_MS = 30_000;
 export const DEPLOYMENT_VERIFICATION_TIMEOUT_MS = 15_000;
 export const HISTORICAL_DEPLOYMENT_VERIFICATION_TIMEOUT_MS = 25_000;
 export const DEPLOYMENT_STATUS_CACHE_TTL_MS = 5_000;
+export const IMMUTABLE_RPC_CACHE_MAX_ENTRIES = 32;
+export const IMMUTABLE_RPC_CACHE_MAX_BYTES = 8 * 1024 * 1024;
 const RPC_JSON_MAX_DEPTH = 64;
 const RPC_JSON_MAX_NUMBER_LENGTH = 128;
 const TIMESTAMP_NANOSECONDS_MAX_DIGITS = 20;
@@ -257,6 +259,20 @@ function unknownBlockFailure(error: unknown): boolean {
     .safeParse(error).success;
 }
 
+function unknownChunkFailure(error: unknown): boolean {
+  return z
+    .object({
+      code: z.literal(-32000),
+      cause: z.object({ name: z.literal("UNKNOWN_CHUNK") }),
+    })
+    .passthrough()
+    .safeParse(error).success;
+}
+
+function historicalUnavailableFailure(error: unknown): boolean {
+  return unknownBlockFailure(error) || unknownChunkFailure(error);
+}
+
 function historicalPinnedRequest(method: string, params: unknown): boolean {
   if (!params || typeof params !== "object" || Array.isArray(params))
     return false;
@@ -291,6 +307,7 @@ function waitForCaller<T>(
 }
 
 export class UnknownBlock extends Error {}
+export class HistoricalChunkUnavailable extends Error {}
 export interface DeploymentObservation {
   block: {
     height: number;
@@ -310,6 +327,12 @@ export class NearReader {
   private requestId = 0n;
   private historicalInFlight = new Map<string, Promise<unknown>>();
   private currentPinnedHashes: string[] = [];
+  private immutableCache = new Map<
+    string,
+    { value: unknown; serializedBytes: number }
+  >();
+  private immutableCacheBytes = 0;
+  private immutableInFlight = new Map<string, Promise<unknown>>();
   private statusCache = new Map<
     string,
     { expiresAt: number; value: DeploymentObservation }
@@ -339,6 +362,14 @@ export class NearReader {
         !this.currentPinnedHashes.includes(String(blockId));
     if (!historical)
       return this.rpcRequest(method, params, parentSignal, false, priority);
+    return this.historicalRpc(method, params, parentSignal, priority);
+  }
+  private historicalRpc(
+    method: string,
+    params: unknown,
+    parentSignal: AbortSignal | undefined,
+    priority: RpcReadPriority,
+  ): Promise<unknown> {
     const key = JSON.stringify([method, params]);
     let pending = this.historicalInFlight.get(key);
     if (!pending) {
@@ -351,6 +382,58 @@ export class NearReader {
       pending.then(clear, clear);
     }
     return waitForCaller(pending, parentSignal);
+  }
+  private immutableRead<T>(
+    key: string,
+    load: () => Promise<T>,
+    parentSignal?: AbortSignal,
+  ): Promise<T> {
+    const cached = this.immutableCache.get(key);
+    if (cached !== undefined) {
+      this.immutableCache.delete(key);
+      this.immutableCache.set(key, cached);
+      return Promise.resolve(structuredClone(cached.value) as T);
+    }
+    let pending = this.immutableInFlight.get(key) as Promise<T> | undefined;
+    if (!pending) {
+      pending = load();
+      this.immutableInFlight.set(key, pending);
+      pending.then(
+        (value) => {
+          const serialized = JSON.stringify(value);
+          const serializedBytes =
+            typeof serialized === "string"
+              ? Buffer.byteLength(serialized)
+              : IMMUTABLE_RPC_CACHE_MAX_BYTES + 1;
+          if (serializedBytes <= IMMUTABLE_RPC_CACHE_MAX_BYTES) {
+            this.immutableCache.set(key, {
+              value: structuredClone(value),
+              serializedBytes,
+            });
+            this.immutableCacheBytes += serializedBytes;
+          }
+          while (
+            this.immutableCache.size > IMMUTABLE_RPC_CACHE_MAX_ENTRIES ||
+            this.immutableCacheBytes > IMMUTABLE_RPC_CACHE_MAX_BYTES
+          ) {
+            const oldest = this.immutableCache.keys().next().value;
+            if (typeof oldest !== "string") break;
+            const removed = this.immutableCache.get(oldest);
+            this.immutableCache.delete(oldest);
+            this.immutableCacheBytes -= removed?.serializedBytes ?? 0;
+          }
+          if (this.immutableInFlight.get(key) === pending)
+            this.immutableInFlight.delete(key);
+        },
+        () => {
+          if (this.immutableInFlight.get(key) === pending)
+            this.immutableInFlight.delete(key);
+        },
+      );
+    }
+    return waitForCaller(pending, parentSignal).then((value) =>
+      structuredClone(value),
+    );
   }
   private async rpcRequest(
     method: string,
@@ -394,7 +477,8 @@ export class NearReader {
                           id,
                         );
                         return (
-                          "error" in parsed && unknownBlockFailure(parsed.error)
+                          "error" in parsed &&
+                          historicalUnavailableFailure(parsed.error)
                         );
                       } catch {
                         return false;
@@ -436,6 +520,8 @@ export class NearReader {
     if ("error" in body) {
       if (historical && unknownBlockFailure(body.error))
         throw new UnknownBlock("UNKNOWN_BLOCK");
+      if (historical && unknownChunkFailure(body.error))
+        throw new HistoricalChunkUnavailable("HISTORICAL_CHUNK_UNAVAILABLE");
       throw rpcError("RPC_PROVIDER_ERROR");
     }
     return body.result;
@@ -447,6 +533,19 @@ export class NearReader {
   ) {
     if (typeof id === "string" && !chainHash.safeParse(id).success)
       throw rpcError("RPC_BLOCK_INVALID");
+    if (typeof id === "string")
+      return this.immutableRead(
+        `block:${id}`,
+        () => this.readBlock(id, undefined, priority),
+        signal,
+      );
+    return this.readBlock(id, signal, priority);
+  }
+  private async readBlock(
+    id: string | number | undefined,
+    signal: AbortSignal | undefined,
+    priority: RpcReadPriority,
+  ) {
     const block = blockSchema.safeParse(
       await this.rpc(
         "block",
@@ -464,6 +563,30 @@ export class NearReader {
         this.currentPinnedHashes.shift();
     }
     return block.data;
+  }
+  async historicalChunk(
+    chunkHash: string,
+    signal?: AbortSignal,
+    priority: RpcReadPriority = "background",
+  ) {
+    chainHash.parse(chunkHash);
+    return this.immutableRead(
+      `chunk:${chunkHash}`,
+      async () => {
+        const chunk = historicalChunkSchema.parse(
+          await this.historicalRpc(
+            "chunk",
+            { chunk_id: chunkHash },
+            undefined,
+            priority,
+          ),
+        );
+        if (chunk.header.chunk_hash !== chunkHash)
+          throw rpcError("RPC_CHUNK_MISMATCH");
+        return chunk;
+      },
+      signal,
+    );
   }
   async query(
     type: string,
@@ -733,4 +856,11 @@ export const blockSchema = z.object({
     timestamp_nanosec: timestampNanoseconds,
   }),
   chunks: z.array(z.object({ chunk_hash: chainHash })),
+});
+const historicalChunkSchema = z.object({
+  header: z.object({
+    chunk_hash: chainHash,
+    height_included: z.number().int().nonnegative().safe(),
+  }),
+  transactions: z.array(z.unknown()),
 });

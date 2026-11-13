@@ -46,6 +46,7 @@ export interface RpcDiagnostic {
     | "RPC_EXHAUSTED";
   network: "testnet" | "mainnet";
   method: string;
+  route: "CURRENT" | "HISTORICAL";
   category: RpcFailureCategory;
   provider?: string;
   attempt?: number;
@@ -284,6 +285,7 @@ export async function readOnlyRpcFetch(
   )
     throw new Error("READ_ONLY_RPC_REQUIRED");
   const method = String(body.method);
+  const route = options.preferArchival ? "HISTORICAL" : "CURRENT";
 
   const perProviderTimeoutMs = timeout(
       options.perProviderTimeoutMs,
@@ -328,6 +330,7 @@ export async function readOnlyRpcFetch(
               event: "RPC_PROVIDER_SKIPPED",
               network,
               method,
+              route,
               category: "RATE_LIMITED",
               provider,
               attempt: index + 1,
@@ -338,6 +341,7 @@ export async function readOnlyRpcFetch(
             event: "RPC_PROVIDER_DELAYED",
             network,
             method,
+            route,
             category: "RATE_LIMITED",
             provider,
             attempt: attemptedProviders + 1,
@@ -393,6 +397,7 @@ export async function readOnlyRpcFetch(
               event: "RPC_ATTEMPT_FAILED",
               network,
               method,
+              route,
               category: "RATE_LIMITED",
               provider,
               attempt,
@@ -409,6 +414,7 @@ export async function readOnlyRpcFetch(
               event: "RPC_ATTEMPT_FAILED",
               network,
               method,
+              route,
               category: "TRANSIENT_HTTP",
               provider,
               attempt,
@@ -434,6 +440,7 @@ export async function readOnlyRpcFetch(
               event: "RPC_ATTEMPT_FAILED",
               network,
               method,
+              route,
               category: "HISTORICAL_STATE_UNAVAILABLE",
               provider,
               attempt,
@@ -447,6 +454,7 @@ export async function readOnlyRpcFetch(
               event: "RPC_ATTEMPT_FAILED",
               network,
               method,
+              route,
               category: "DEADLINE",
               provider,
               attempt,
@@ -462,6 +470,7 @@ export async function readOnlyRpcFetch(
             event: "RPC_ATTEMPT_FAILED",
             network,
             method,
+            route,
             category,
             provider,
             attempt,
@@ -487,6 +496,7 @@ export async function readOnlyRpcFetch(
     event: "RPC_EXHAUSTED",
     network,
     method,
+    route,
     category: rateLimited ? "RATE_LIMITED" : "PROVIDERS_EXHAUSTED",
     attemptedProviders,
     rateLimitedProviders,
