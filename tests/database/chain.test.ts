@@ -46,8 +46,10 @@ let recoveryNonce = "7";
 let recoveryCredit: unknown = null;
 let recoveryRpcError = "outage";
 let historicalRpcError: string | undefined;
+let deploymentCalls = 0;
 class FixtureReader extends NearReader {
   override async deployment(_manifest?: unknown, at?: string) {
+    deploymentCalls++;
     if (rpcDown) throw new Error(recoveryRpcError);
     await duringDeployment?.();
     const anchor = at === bs58.encode(Buffer.alloc(32, 1));
@@ -268,6 +270,7 @@ beforeEach(async () => {
   recoveryCredit = null;
   recoveryRpcError = "outage";
   historicalRpcError = undefined;
+  deploymentCalls = 0;
   hook = undefined;
   keyAllowed = true;
   unavailable = false;
@@ -831,6 +834,23 @@ it("authorizes an exact storage replacement after the historical mandate expires
       ])
     ).rows[0].state,
   ).toBe("PREPARED");
+  deploymentCalls = 0;
+  const begin = await post(
+    `/api/chain/intents/${challenge.json().replacementIntentId}/begin`,
+    {},
+  );
+  expect(begin.statusCode).toBe(200);
+  // Historical and current deployment verification are both required, but a
+  // redundant current pass must not consume the archival recovery deadline.
+  expect(deploymentCalls).toBe(2);
+  expect(
+    (
+      await pool.query(
+        "SELECT count(*)::int AS n FROM chain_events WHERE intent_id=$1 AND state='AWAITING_WALLET'",
+        [challenge.json().replacementIntentId],
+      )
+    ).rows[0].n,
+  ).toBe(1);
   expect(
     (
       await post(
@@ -838,7 +858,7 @@ it("authorizes an exact storage replacement after the historical mandate expires
         {},
       )
     ).statusCode,
-  ).toBe(200);
+  ).toBe(409);
 });
 
 it("rechecks fresh chain evidence before opening an authorized replacement wallet prompt", async () => {
@@ -884,6 +904,7 @@ it.each([
     );
     expect(begin.statusCode).toBe(503);
     expect(begin.json().error).toBe(expected);
+    expect(begin.headers["x-correlation-id"]).toEqual(expect.any(String));
     expect(
       (
         await pool.query("SELECT state FROM chain_intents WHERE id=$1", [
@@ -891,6 +912,39 @@ it.each([
         ])
       ).rows[0].state,
     ).toBe("PREPARED");
+  },
+);
+
+it.each([
+  ["RPC_TIMEOUT", "DEPLOYMENT_VERIFICATION_TIMEOUT"],
+  ["RPC_PROVIDERS_EXHAUSTED", "DEPLOYMENT_VERIFICATION_UNAVAILABLE"],
+  ["DEPLOYMENT_CODE_MISMATCH", "DEPLOYMENT_VERIFICATION_INCONSISTENT"],
+] as const)(
+  "classifies current deployment failure %s before wallet handoff and keeps PREPARED",
+  async (failure, expected) => {
+    const prepared = await prepare();
+    const id = prepared.json().id as string;
+    rpcDown = true;
+    recoveryRpcError = failure;
+    const begin = await post(`/api/chain/intents/${id}/begin`, {});
+    expect(begin.statusCode).toBe(503);
+    expect(begin.json()).toMatchObject({
+      error: expected,
+    });
+    expect(begin.headers["x-correlation-id"]).toEqual(expect.any(String));
+    expect(
+      (
+        await pool.query(
+          "SELECT state,reason,reported_hash,verified_hash FROM chain_intents WHERE id=$1",
+          [id],
+        )
+      ).rows[0],
+    ).toMatchObject({
+      state: "PREPARED",
+      reason: "UNSIGNED",
+      reported_hash: null,
+      verified_hash: null,
+    });
   },
 );
 
@@ -1043,6 +1097,7 @@ it("RPC outage prevents preparation without fabricating deployment status", asyn
   const r = await app.inject({ url: "/api/chain/status", headers });
   expect(r.json()).toMatchObject({
     status: "UNAVAILABLE",
+    deploymentConfigured: true,
     deploymentVerified: false,
     submissionEnabled: true,
   });
