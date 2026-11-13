@@ -310,6 +310,20 @@ const prepare = (
     { idempotencyKey: key, operation },
     h,
   );
+const prepareFor = (
+  id: string,
+  operation: object,
+  key = randomUUID(),
+  h = headers,
+) => post(`${path(id)}/chain/intents`, { idempotencyKey: key, operation }, h);
+async function approvedMandate(change = {}) {
+  const created = await draft(change);
+  const id = created.policy.mandateId as string;
+  expect((await post(`${path(id)}/verify`, await proof(id))).statusCode).toBe(
+    200,
+  );
+  return id;
+}
 async function unknownStorageDeposit() {
   const prepared = await prepare({ kind: "STORAGE_DEPOSIT", amount: "1" });
   expect(prepared.statusCode).toBe(201);
@@ -456,6 +470,161 @@ it("serializes duplicate and concurrent preparations without duplicate financial
   expect(r.map((x) => x.statusCode)).toEqual([201, 201]);
   expect(required(r[0]).json().id).toBe(required(r[1]).json().id);
   expect((await prepare()).statusCode).toBe(409);
+});
+it("allows an independent mandate registration while preserving a hashless UNKNOWN registration", async () => {
+  const original = await prepare({
+    kind: "REGISTER",
+    storageLimit: "100",
+    guardian: null,
+  });
+  expect(original.statusCode).toBe(201);
+  const originalId = original.json().id as string;
+  expect(
+    (await post(`/api/chain/intents/${originalId}/begin`, {})).statusCode,
+  ).toBe(200);
+  expect(
+    (
+      await post(`/api/chain/intents/${originalId}/report`, {
+        outcome: "UNKNOWN",
+        hash: null,
+      })
+    ).statusCode,
+  ).toBe(200);
+
+  const independentMandate = await approvedMandate({
+    taskReference: "Independent registration",
+  });
+  const independent = await prepareFor(independentMandate, {
+    kind: "REGISTER",
+    storageLimit: "100",
+    guardian: null,
+  });
+  expect(independent.statusCode).toBe(201);
+  expect(
+    (await post(`/api/chain/intents/${independent.json().id}/begin`, {}))
+      .statusCode,
+  ).toBe(200);
+  expect(
+    (
+      await post(`/api/chain/intents/${independent.json().id}/report`, {
+        outcome: "BROADCAST",
+        hash: bs58.encode(Buffer.alloc(32, 5)),
+      })
+    ).statusCode,
+  ).toBe(200);
+  await pool.query(
+    "UPDATE chain_intents SET next_check=clock_timestamp()+interval '1 hour' WHERE id=$1",
+    [originalId],
+  );
+  rpcResult = finalizedFixture(independent.json().operation);
+  await runOnce(pool, reader);
+  expect(
+    (
+      await pool.query("SELECT state FROM chain_intents WHERE id=$1", [
+        independent.json().id,
+      ])
+    ).rows[0].state,
+  ).toBe("CONFIRMED_SUCCESS");
+  expect(
+    (
+      await pool.query(
+        "SELECT state,reported_hash,verified_hash FROM chain_intents WHERE id=$1",
+        [originalId],
+      )
+    ).rows[0],
+  ).toMatchObject({
+    state: "UNKNOWN",
+    reported_hash: null,
+    verified_hash: null,
+  });
+});
+it("allows distinct idempotent preparations across mandates but only one unresolved intent per mandate", async () => {
+  const independentMandate = await approvedMandate({
+    taskReference: "Concurrent independent registration",
+  });
+  const sameMandate = await Promise.all([
+    prepareFor(mandateId, {
+      kind: "REGISTER",
+      storageLimit: "100",
+      guardian: null,
+    }),
+    prepareFor(mandateId, {
+      kind: "REGISTER",
+      storageLimit: "200",
+      guardian: null,
+    }),
+  ]);
+  expect(sameMandate.map((result) => result.statusCode).sort()).toEqual([
+    201, 409,
+  ]);
+  expect(
+    (
+      await prepareFor(independentMandate, {
+        kind: "REGISTER",
+        storageLimit: "100",
+        guardian: null,
+      })
+    ).statusCode,
+  ).toBe(201);
+  expect(
+    (
+      await pool.query(
+        "SELECT count(*)::int AS n FROM chain_intents WHERE mandate_id=$1 AND replacement_authorized_at IS NULL",
+        [mandateId],
+      )
+    ).rows[0].n,
+  ).toBe(1);
+});
+it("serializes active wallet prompts without restoring a permanent wallet lock", async () => {
+  const independentMandate = await approvedMandate({
+    taskReference: "Prompt isolation",
+  });
+  const a = await prepare({
+    kind: "REGISTER",
+    storageLimit: "100",
+    guardian: null,
+  });
+  const b = await prepareFor(independentMandate, {
+    kind: "REGISTER",
+    storageLimit: "100",
+    guardian: null,
+  });
+  const begun = await Promise.all([
+    post(`/api/chain/intents/${a.json().id}/begin`, {}),
+    post(`/api/chain/intents/${b.json().id}/begin`, {}),
+  ]);
+  expect(begun.map((result) => result.statusCode).sort()).toEqual([200, 409]);
+  expect(begun.find((result) => result.statusCode === 409)?.json().error).toBe(
+    "WALLET_PROMPT_ACTIVE",
+  );
+  const active = begun[0]?.statusCode === 200 ? a : b;
+  const waiting = active === a ? b : a;
+  expect(
+    (
+      await post(`/api/chain/intents/${active.json().id}/report`, {
+        outcome: "UNKNOWN",
+        hash: null,
+      })
+    ).statusCode,
+  ).toBe(200);
+  expect(
+    (await post(`/api/chain/intents/${waiting.json().id}/begin`, {}))
+      .statusCode,
+  ).toBe(200);
+});
+it("keeps account-level storage operations exclusive across mandates", async () => {
+  const independentMandate = await approvedMandate({
+    taskReference: "Storage resource isolation",
+  });
+  expect(
+    (await prepare({ kind: "STORAGE_DEPOSIT", amount: "1" })).statusCode,
+  ).toBe(201);
+  const conflict = await prepareFor(independentMandate, {
+    kind: "WITHDRAW_STORAGE",
+    amount: "1",
+  });
+  expect(conflict.statusCode).toBe(409);
+  expect(conflict.json().error).toBe("UNRESOLVED_OPERATION");
 });
 it("rejects conflicting idempotency terms", async () => {
   const key = randomUUID();
@@ -961,6 +1130,43 @@ it("prepares one exact replacement while preserving the historical UNKNOWN inten
       ])
     ).rows[0].state,
   ).toBe("UNKNOWN");
+});
+
+it("keeps controlled storage recovery isolated from an unrelated mandate registration", async () => {
+  const original = await unknownStorageDeposit();
+  const independentMandate = await approvedMandate({
+    taskReference: "Recovery isolation",
+  });
+  const registration = await prepareFor(independentMandate, {
+    kind: "REGISTER",
+    storageLimit: "100",
+    guardian: null,
+  });
+  expect(registration.statusCode).toBe(201);
+  recoveryHeadHeight = 90_100;
+  const challenge = await recoveryChallenge(original.id);
+  expect(challenge.statusCode).toBe(200);
+  const completed = await completeRecovery(original.id, challenge.json());
+  expect(completed.statusCode).toBe(201);
+  const preserved = (
+    await pool.query(
+      "SELECT state,reported_hash,verified_hash,replacement_authorized_at FROM chain_intents WHERE id=$1",
+      [original.id],
+    )
+  ).rows[0];
+  expect(preserved).toMatchObject({
+    state: "UNKNOWN",
+    reported_hash: null,
+    verified_hash: null,
+  });
+  expect(preserved.replacement_authorized_at).not.toBeNull();
+  expect(
+    (
+      await pool.query("SELECT state FROM chain_intents WHERE id=$1", [
+        registration.json().id,
+      ])
+    ).rows[0].state,
+  ).toBe("PREPARED");
 });
 
 it("authorizes an exact storage replacement after the historical mandate expires", async () => {

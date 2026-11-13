@@ -58,6 +58,15 @@ export interface OperationContext {
   evidence?: Map1;
   guardian?: string | null;
 }
+export const accountStorageOperationKinds = [
+  "STORAGE_DEPOSIT",
+  "WITHDRAW_STORAGE",
+] as const;
+export function isAccountStorageOperation(
+  kind: ChainOperation["kind"],
+): boolean {
+  return accountStorageOperationKinds.some((value) => value === kind);
+}
 function buildOperationInternal(
   input: unknown,
   c: OperationContext,

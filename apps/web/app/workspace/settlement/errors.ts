@@ -7,7 +7,9 @@ const messages: Record<string, string> = {
   DEPLOYMENT_VERIFICATION_INCONSISTENT:
     "Current deployment verification did not match the authorized manifest. The unsigned operation remains blocked.",
   UNRESOLVED_OPERATION:
-    "This wallet has an unresolved operation. Reconcile it before preparing another.",
+    "A conflicting operation for this mandate or account-level storage resource is unresolved. Independently authorized mandates remain available.",
+  WALLET_PROMPT_ACTIVE:
+    "Another transaction prompt is active for this wallet. Finish or close it before opening this reviewed operation.",
   OPERATION_NOT_ALLOWED:
     "This operation is not permitted by the mandate or signing identity.",
   CONSENT_OR_AGENT_UNAVAILABLE: "Consent or agent access is unavailable.",
