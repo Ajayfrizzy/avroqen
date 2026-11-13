@@ -55,6 +55,27 @@ type HistoricalStorageIntent = {
   actor_account: string;
   canonical_operation: string;
 };
+const beginPublicErrors = new Set([
+  "DEPLOYMENT_NOT_AUTHORIZED",
+  "DEPLOYMENT_VERIFICATION_INCONSISTENT",
+  "DEPLOYMENT_VERIFICATION_TIMEOUT",
+  "DEPLOYMENT_VERIFICATION_UNAVAILABLE",
+  "INTENT_ALREADY_ATTEMPTED",
+  "INTENT_CONFIGURATION_CHANGED",
+  "RECOVERY_EVIDENCE_INCONSISTENT",
+  "RECOVERY_EVIDENCE_UNAVAILABLE",
+  "RECOVERY_HISTORICAL_STATE_UNAVAILABLE",
+  "RECOVERY_NOT_ELIGIBLE",
+  "RECOVERY_SIGNER_NONCE_CHANGED",
+  "RECOVERY_STORAGE_CREDIT_CHANGED",
+  "RECOVERY_VALIDITY_WINDOW_OPEN",
+  "RPC_TIMEOUT",
+]);
+function beginFailureCategory(error: unknown): string {
+  return error instanceof Error && beginPublicErrors.has(error.message)
+    ? error.message
+    : "SERVICE_UNAVAILABLE";
+}
 export function chainRoutes(
   app: FastifyInstance,
   ctx: Context,
@@ -531,6 +552,23 @@ export function chainRoutes(
       return denyRecoveryEvidence(error);
     }
   }
+  function denyDeploymentVerification(error: unknown): never {
+    if (error instanceof Error) {
+      if (error.message === "RPC_TIMEOUT")
+        return deny(503, "DEPLOYMENT_VERIFICATION_TIMEOUT");
+      if (
+        [
+          "DEPLOYMENT_CODE_MISMATCH",
+          "DEPLOYMENT_KEY_MISMATCH",
+          "DEPLOYMENT_DOMAIN_MISMATCH",
+          "NETWORK_MISMATCH",
+          "RPC_BLOCK_MISMATCH",
+        ].includes(error.message)
+      )
+        return deny(503, "DEPLOYMENT_VERIFICATION_INCONSISTENT");
+    }
+    return deny(503, "DEPLOYMENT_VERIFICATION_UNAVAILABLE");
+  }
   async function historicalStorageDeposit(
     db: pg.PoolClient,
     request: FastifyRequest,
@@ -781,117 +819,159 @@ export function chainRoutes(
     },
   );
   app.post("/api/chain/intents/:intentId/begin", async (request) => {
-    const manifest = enabled();
-    await chain.reader.deployment(manifest);
-    const initial = await transaction(async (db) => {
-      const intent = await owned(db, request);
-      const recoveryOriginal = (
-        await db.query(
-          `SELECT original.*
-           FROM chain_recoveries recovery
-           JOIN chain_intents original ON original.id=recovery.original_intent_id
-           WHERE recovery.replacement_intent_id=$1`,
-          [intent.id],
-        )
-      ).rows[0];
-      return { intent, recoveryOriginal };
-    });
-    if (initial.intent.state !== "PREPARED")
-      return deny(409, "INTENT_ALREADY_ATTEMPTED");
-    if (initial.recoveryOriginal)
-      await recoveryEvidence(initial.recoveryOriginal);
-    const guardian =
-      (JSON.parse(initial.intent.canonical_operation) as ChainOperation)
-        .kind === "PAUSE"
-        ? await verifiedGuardian(
-            request,
-            initial.intent.org_id,
-            initial.intent.mandate_id,
+    const startedAt = Date.now();
+    let stage = "CONFIGURATION_GATE";
+    try {
+      const manifest = enabled();
+      stage = "LOAD_AUTHORIZED_INTENT";
+      const initial = await transaction(async (db) => {
+        const intent = await owned(db, request);
+        const recoveryOriginal = (
+          await db.query(
+            `SELECT original.*
+             FROM chain_recoveries recovery
+             JOIN chain_intents original ON original.id=recovery.original_intent_id
+             WHERE recovery.replacement_intent_id=$1`,
+            [intent.id],
           )
-        : null;
-    return transaction(async (db) => {
-      const r = await owned(db, request);
-      if (r.state !== "PREPARED") return deny(409, "INTENT_ALREADY_ATTEMPTED");
-      const recoveryOriginal = (
-        await db.query(
-          `SELECT original.*
+        ).rows[0];
+        return { intent, recoveryOriginal };
+      });
+      if (initial.intent.state !== "PREPARED")
+        return deny(409, "INTENT_ALREADY_ATTEMPTED");
+      if (initial.recoveryOriginal) {
+        stage = "HISTORICAL_RECOVERY_EVIDENCE";
+        // Recovery evidence verifies the exact historical deployment and a
+        // fresh finalized deployment. Do not make a redundant current-state
+        // deployment pass first and consume the archival workflow deadline.
+        await recoveryEvidence(initial.recoveryOriginal);
+      } else {
+        stage = "CURRENT_DEPLOYMENT_VERIFICATION";
+        try {
+          await chain.reader.deployment(manifest);
+        } catch (error) {
+          return denyDeploymentVerification(error);
+        }
+      }
+      stage = "GUARDIAN_AUTHORIZATION";
+      const guardian =
+        (JSON.parse(initial.intent.canonical_operation) as ChainOperation)
+          .kind === "PAUSE"
+          ? await verifiedGuardian(
+              request,
+              initial.intent.org_id,
+              initial.intent.mandate_id,
+            )
+          : null;
+      stage = "FINAL_BINDING_AND_STATE_TRANSITION";
+      const result = await transaction(async (db) => {
+        const r = await owned(db, request);
+        if (r.state !== "PREPARED")
+          return deny(409, "INTENT_ALREADY_ATTEMPTED");
+        const recoveryOriginal = (
+          await db.query(
+            `SELECT original.*
            FROM chain_recoveries recovery
            JOIN chain_intents original ON original.id=recovery.original_intent_id
            WHERE recovery.replacement_intent_id=$1
            FOR UPDATE OF original`,
-          [r.id],
-        )
-      ).rows[0];
-      if (Boolean(recoveryOriginal) !== Boolean(initial.recoveryOriginal))
-        return deny(409, "INTENT_CONFIGURATION_CHANGED");
-      if (
-        recoveryOriginal &&
-        (recoveryOriginal.state !== "UNKNOWN" ||
-          recoveryOriginal.reported_hash ||
-          recoveryOriginal.verified_hash)
-      )
-        return deny(409, "RECOVERY_NOT_ELIGIBLE");
-      // Rebuild the original operation from immutable inputs; stale app authority cannot open a prompt.
-      const op = JSON.parse(r.canonical_operation) as ChainOperation;
-      let built: ChainOperation;
-      if (recoveryOriginal) {
-        if (recoveryOriginal.canonical_operation !== r.canonical_operation)
-          return deny(409, "INTENT_CONFIGURATION_CHANGED");
-        built = await historicalStorageDeposit(db, request, r, manifest);
-      } else {
-        const input: Record<string, unknown> = { kind: op.kind };
-        if (["FUND", "STORAGE_DEPOSIT"].includes(op.kind))
-          input.amount = op.deposit;
-        if (["WITHDRAW", "WITHDRAW_STORAGE"].includes(op.kind))
-          input.amount = op.args.amount;
-        if (op.kind === "REGISTER") {
-          input.storageLimit = op.args.storage_limit;
-          input.guardian = op.args.guardian;
-        }
-        if (["PROPOSE", "EXECUTE"].includes(op.kind))
-          input.proposalId = op.args.proposal_id;
-        if (op.kind === "ATTEST") {
-          const e = map1.parse(op.args.evidence);
-          const review = (
-            await db.query(
-              "SELECT id FROM evidence_reviews WHERE actor_account=$1 AND attestation_nonce=$2",
-              [op.signerId, e.nonce],
-            )
-          ).rows[0];
-          if (!review) return deny(403, "VERIFIED_REVIEW_REQUIRED");
-          input.reviewId = review.id;
-        }
-        built = (
-          await operation(
-            db,
-            request,
-            r.org_id,
-            r.mandate_id,
-            intentInput.shape.operation.parse(input),
-            guardian,
+            [r.id],
           )
-        ).built;
-      }
-      if (
-        JSON.stringify(built) !== r.canonical_operation ||
-        r.manifest.wasmSha256 !== manifest.wasmSha256 ||
-        r.manifest.authorization !== manifest.authorization ||
-        r.manifest.account !== manifest.account ||
-        r.manifest.network !== manifest.network ||
-        JSON.stringify([...r.manifest.keyFingerprints].sort()) !==
-          JSON.stringify([...manifest.keyFingerprints].sort())
-      )
-        return deny(409, "INTENT_CONFIGURATION_CHANGED");
-      await db.query(
-        "UPDATE chain_intents SET state='AWAITING_WALLET',reason='WALLET_PROMPT_OPENING',updated_at=clock_timestamp() WHERE id=$1",
-        [r.id],
+        ).rows[0];
+        if (Boolean(recoveryOriginal) !== Boolean(initial.recoveryOriginal))
+          return deny(409, "INTENT_CONFIGURATION_CHANGED");
+        if (
+          recoveryOriginal &&
+          (recoveryOriginal.state !== "UNKNOWN" ||
+            recoveryOriginal.reported_hash ||
+            recoveryOriginal.verified_hash)
+        )
+          return deny(409, "RECOVERY_NOT_ELIGIBLE");
+        // Rebuild the original operation from immutable inputs; stale app authority cannot open a prompt.
+        const op = JSON.parse(r.canonical_operation) as ChainOperation;
+        let built: ChainOperation;
+        if (recoveryOriginal) {
+          if (recoveryOriginal.canonical_operation !== r.canonical_operation)
+            return deny(409, "INTENT_CONFIGURATION_CHANGED");
+          built = await historicalStorageDeposit(db, request, r, manifest);
+        } else {
+          const input: Record<string, unknown> = { kind: op.kind };
+          if (["FUND", "STORAGE_DEPOSIT"].includes(op.kind))
+            input.amount = op.deposit;
+          if (["WITHDRAW", "WITHDRAW_STORAGE"].includes(op.kind))
+            input.amount = op.args.amount;
+          if (op.kind === "REGISTER") {
+            input.storageLimit = op.args.storage_limit;
+            input.guardian = op.args.guardian;
+          }
+          if (["PROPOSE", "EXECUTE"].includes(op.kind))
+            input.proposalId = op.args.proposal_id;
+          if (op.kind === "ATTEST") {
+            const e = map1.parse(op.args.evidence);
+            const review = (
+              await db.query(
+                "SELECT id FROM evidence_reviews WHERE actor_account=$1 AND attestation_nonce=$2",
+                [op.signerId, e.nonce],
+              )
+            ).rows[0];
+            if (!review) return deny(403, "VERIFIED_REVIEW_REQUIRED");
+            input.reviewId = review.id;
+          }
+          built = (
+            await operation(
+              db,
+              request,
+              r.org_id,
+              r.mandate_id,
+              intentInput.shape.operation.parse(input),
+              guardian,
+            )
+          ).built;
+        }
+        if (
+          JSON.stringify(built) !== r.canonical_operation ||
+          r.manifest.wasmSha256 !== manifest.wasmSha256 ||
+          r.manifest.authorization !== manifest.authorization ||
+          r.manifest.account !== manifest.account ||
+          r.manifest.network !== manifest.network ||
+          JSON.stringify([...r.manifest.keyFingerprints].sort()) !==
+            JSON.stringify([...manifest.keyFingerprints].sort())
+        )
+          return deny(409, "INTENT_CONFIGURATION_CHANGED");
+        await db.query(
+          "UPDATE chain_intents SET state='AWAITING_WALLET',reason='WALLET_PROMPT_OPENING',updated_at=clock_timestamp() WHERE id=$1",
+          [r.id],
+        );
+        await db.query(
+          "INSERT INTO chain_events(intent_id,state,reason) VALUES($1,'AWAITING_WALLET','WALLET_PROMPT_OPENING')",
+          [r.id],
+        );
+        return { id: r.id, operation: built, state: "AWAITING_WALLET" };
+      });
+      console.info(
+        "CHAIN_BEGIN",
+        JSON.stringify({
+          event: "READY_FOR_WALLET",
+          correlationId: request.id,
+          stage,
+          controlledReplacement: Boolean(initial.recoveryOriginal),
+          elapsedMs: Date.now() - startedAt,
+        }),
       );
-      await db.query(
-        "INSERT INTO chain_events(intent_id,state,reason) VALUES($1,'AWAITING_WALLET','WALLET_PROMPT_OPENING')",
-        [r.id],
+      return result;
+    } catch (error) {
+      console.info(
+        "CHAIN_BEGIN",
+        JSON.stringify({
+          event: "PRE_WALLET_FAILED",
+          correlationId: request.id,
+          stage,
+          category: beginFailureCategory(error),
+          elapsedMs: Date.now() - startedAt,
+        }),
       );
-      return { id: r.id, operation: built, state: "AWAITING_WALLET" };
-    });
+      throw error;
+    }
   });
   app.post("/api/chain/intents/:intentId/report", async (request) => {
     const input = walletReport.parse(request.body);

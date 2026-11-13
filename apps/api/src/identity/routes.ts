@@ -243,12 +243,15 @@ export async function identityRoutes(
       status = 503;
       code = "SERVICE_UNAVAILABLE";
     }
-    reply.code(status).send({
-      error: code,
-      ...(status === 409 && error instanceof Denied && error.agentId
-        ? { agentId: error.agentId }
-        : {}),
-    });
+    reply
+      .header("X-Correlation-Id", request.id)
+      .code(status)
+      .send({
+        error: code,
+        ...(status === 409 && error instanceof Denied && error.agentId
+          ? { agentId: error.agentId }
+          : {}),
+      });
   });
   async function transaction<T>(
     work: (db: pg.PoolClient) => Promise<T>,

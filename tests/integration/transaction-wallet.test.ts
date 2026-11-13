@@ -88,11 +88,15 @@ it("does not begin or sign for a substituted wallet", async () => {
   expect(f.sign).not.toHaveBeenCalled();
 });
 it("does not sign after database begin fails", async () => {
-  await expect(
-    submitOperation(operation, async () => {
-      throw new Error("database outage");
-    }),
-  ).rejects.toThrow();
+  const begin = vi.fn(async () => {
+    throw new Error(
+      "Current deployment verification timed out before the wallet prompt opened.",
+    );
+  });
+  await expect(submitOperation(operation, begin)).rejects.toThrow(
+    "timed out before the wallet prompt opened",
+  );
+  expect(begin).toHaveBeenCalledOnce();
   expect(f.sign).not.toHaveBeenCalled();
 });
 it("classifies wallet cancellation without retrying", async () => {

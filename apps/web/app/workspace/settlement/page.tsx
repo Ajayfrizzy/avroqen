@@ -26,6 +26,7 @@ import { Badge, PageHeader, TransactionSummary } from "../../components/ui";
 import { submitOperation } from "../transaction-wallet";
 import { type Challenge, signChallenge } from "../wallet";
 import { WalletSignInError } from "../wallet-errors";
+import { settlementRequestError } from "./errors";
 
 type Session = { accountId: string; csrfToken: string };
 type Intent = {
@@ -112,44 +113,11 @@ async function api<T>(
   });
   if (!r.ok) {
     const e = await r.json().catch(() => ({}));
-    const messages: Record<string, string> = {
-      DEPLOYMENT_NOT_AUTHORIZED: "Live transactions are not authorized.",
-      UNRESOLVED_OPERATION:
-        "This wallet has an unresolved operation. Reconcile it before preparing another.",
-      OPERATION_NOT_ALLOWED:
-        "This operation is not permitted by the mandate or signing identity.",
-      CONSENT_OR_AGENT_UNAVAILABLE: "Consent or agent access is unavailable.",
-      OWNER_REQUIRED: "Only the original owner may perform this action.",
-      VAULT_MISMATCH: "This mandate targets a different vault.",
-      INTENT_ALREADY_ATTEMPTED:
-        "The wallet prompt was already attempted. Do not retry a transaction with an uncertain outcome.",
-      RECOVERY_VALIDITY_WINDOW_OPEN:
-        "The original transaction is still within its possible validity window. It remains quarantined and cannot be replaced yet.",
-      RECOVERY_SIGNER_NONCE_CHANGED:
-        "The signing account changed after the original attempt, so non-broadcast cannot be established safely.",
-      RECOVERY_STORAGE_CREDIT_CHANGED:
-        "Onchain storage credit changed after the original attempt. Reconcile the original operation before any replacement.",
-      RECOVERY_EVIDENCE_UNAVAILABLE:
-        "Independent recovery evidence is currently unavailable. The original operation remains quarantined.",
-      RECOVERY_HISTORICAL_STATE_UNAVAILABLE:
-        "The approved providers could not retrieve the exact historical recovery state. The original operation remains quarantined.",
-      RECOVERY_EVIDENCE_INCONSISTENT:
-        "Historical recovery providers returned inconsistent pinned evidence. The original operation remains quarantined; do not continue.",
-      RPC_TIMEOUT:
-        "The blockchain evidence check timed out. The original operation remains quarantined; retry the read-only check later.",
-      RECOVERY_NOT_ELIGIBLE:
-        "This operation is not eligible for controlled replacement.",
-      RECOVERY_CHALLENGE_EXISTS:
-        "A recovery authorization is already pending. Wait for it to expire before requesting another.",
-      INVALID_PROOF:
-        "The recovery authorization could not be verified. No replacement was prepared.",
-    };
-    throw new Error(
-      messages[e.error] ??
-        (r.status === 401
-          ? "Sign in again to continue."
-          : "Request unavailable. Refresh state before retrying."),
-    );
+    const correlationId = r.headers.get("X-Correlation-Id");
+    throw settlementRequestError(r.status, {
+      ...(e && typeof e === "object" ? e : {}),
+      ...(correlationId ? { correlationId } : {}),
+    });
   }
   return r.json();
 }
@@ -463,7 +431,7 @@ export default function Settlement() {
       await api(`/chain/intents/${prepared.id}/report`, session, walletOutcome);
       setMessage(walletOutcomeMessage[walletOutcome.outcome]);
       setPrepared(undefined);
-    } catch {
+    } catch (error) {
       if (began) {
         // Never replace a known wallet hash with a null report. If reporting
         // failed, the AWAITING_WALLET intent is still scanned independently.
@@ -480,7 +448,9 @@ export default function Settlement() {
         );
       } else
         setMessage(
-          "Wallet connection canceled or unavailable, or preparation is no longer valid. No transaction prompt was opened by this attempt. Refresh before continuing.",
+          error instanceof Error
+            ? error.message
+            : "Wallet connection canceled or unavailable. No transaction prompt was opened by this attempt.",
         );
     } finally {
       setBusy(false);

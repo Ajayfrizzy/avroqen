@@ -715,8 +715,9 @@ existing 3.5-second provider and nine-second overall limits from D036–D037.
 Historical deployment verification has a 25-second ceiling, and the complete
 anchor/head/key/storage evidence pass shares one 35-second deadline signal. This
 allows an archival block read followed by parallel pinned state reads without an
-unbounded workflow. `/begin` retains its separate current-deployment verification
-before that evidence pass, so failure at either stage prevents the wallet prompt.
+unbounded workflow. D041 removes the redundant current-deployment pass that was
+originally retained before this evidence workflow; the workflow's own fresh-head
+deployment verification remains mandatory before the wallet prompt.
 
 Provider timeout, validated `UNKNOWN_BLOCK` and conflicting block data remain
 distinct failures (`RPC_TIMEOUT`, historical state unavailable and
@@ -725,3 +726,29 @@ broadcast. Every archival result still passes exact anchor hash/height, network,
 code, complete deployment-key, signer-key/nonce/permission, storage-credit and
 accounting-domain checks. The approved provider list, 429 cooldown behavior,
 read-only method allowlist and signed-transaction prohibition are unchanged.
+
+## D041 — Replacement begin reuses the complete recovery evidence pass
+
+Testnet correction on November 13, 2026: controlled-replacement `/begin` first ran
+a complete current deployment verification and then ran the bounded recovery pass,
+which itself verifies the exact historical deployment and a fresh current
+deployment. The redundant first pass added up to 15 seconds and another set of
+public-provider reads before the 35-second historical evidence workflow. Under
+normal Testnet latency this could return 503 before the transaction prompt even
+though configuration remained authorized and no wallet transaction had started.
+
+Replacement `/begin` now uses the recovery pass as its deployment verification:
+one exact historical deployment and one fresh finalized deployment remain
+mandatory. Ordinary intents retain their current deployment verification. The
+recovery deadline, archival routing, block pinning, manifest/code/key/accounting
+checks, signer-state and storage-credit equality, immutable operation rebuilding,
+owner authorization and atomic duplicate guard are unchanged. A failed check leaves
+the replacement `PREPARED` and records no `AWAITING_WALLET` event.
+
+Pre-wallet failures emit a sanitized request correlation identifier, fixed workflow
+stage and fixed failure category. API responses distinguish configuration disabled,
+deployment timeout, unavailable evidence and deployment inconsistency without
+including provider bodies, RPC parameters, accounts, keys or signatures. Payments
+shows that server response instead of reporting wallet cancellation. The Meteor
+transaction action is still prompted only after the database commits exactly one
+`AWAITING_WALLET` transition; read-only failover never signs, retries or broadcasts.

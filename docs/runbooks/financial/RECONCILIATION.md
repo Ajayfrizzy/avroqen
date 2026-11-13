@@ -107,6 +107,16 @@ If an original transaction later appears after replacement authorization, halt t
 replacement before wallet approval when possible, preserve both records and perform
 incident reconciliation; do not create a second replacement.
 
+At replacement `/begin`, the bounded recovery pass supplies both required
+deployment observations: the exact historical anchor deployment and a fresh
+finalized current deployment. The API does not run a redundant current deployment
+pass before it. A failure is logged only as a correlation identifier, fixed stage
+and fixed category, and leaves the unsigned replacement `PREPARED` with no wallet
+attempt event. The Payments page distinguishes timeout, unavailable evidence and
+manifest inconsistency from wallet cancellation. Ordinary non-replacement intents
+still perform their current deployment verification before entering
+`AWAITING_WALLET`.
+
 ## Manifest and immutable operation boundary
 
 Submission is disabled by default. A complete manifest may be configured for
