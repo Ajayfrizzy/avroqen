@@ -7,11 +7,13 @@ import {
 } from "../../../services/chain/rpc.js";
 import { buildApi } from "./app.js";
 import { databaseConfig } from "./db/config.js";
+import { migrateAtStartup } from "./db/startup.js";
 import { identityConfig } from "./identity/config.js";
 import { fullAccessVerifier } from "./identity/crypto.js";
 
 async function main() {
   const config = readApiConfig(process.env);
+  await migrateAtStartup(process.env);
   const pool = new pg.Pool({
     ...databaseConfig(process.env),
     max: 4,
