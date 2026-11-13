@@ -692,7 +692,7 @@ it("prepares one exact replacement while preserving the historical UNKNOWN inten
     id: challenge.json().replacementIntentId,
     operation: original.operation,
     state: "PREPARED",
-    recoveryOf: original.id,
+    controlled_replacement_of: original.id,
   });
   const rows = await pool.query(
     "SELECT id,state,reason,replacement_authorized_at,canonical_operation FROM chain_intents ORDER BY created_at",
@@ -722,6 +722,27 @@ it("prepares one exact replacement while preserving the historical UNKNOWN inten
     (await pool.query("SELECT count(*)::int AS n FROM chain_recoveries"))
       .rows[0].n,
   ).toBe(1);
+  const detail = await app.inject({ url: `${path(mandateId)}/chain`, headers });
+  expect(
+    detail
+      .json()
+      .intents.find(
+        (intent: { id: string }) =>
+          intent.id === challenge.json().replacementIntentId,
+      ).controlled_replacement_of,
+  ).toBe(original.id);
+  await expect(
+    pool.query("UPDATE chain_intents SET canonical_operation=$2 WHERE id=$1", [
+      challenge.json().replacementIntentId,
+      JSON.stringify({ ...original.operation, deposit: "2" }),
+    ]),
+  ).rejects.toThrow();
+  await expect(
+    pool.query(
+      "UPDATE chain_recoveries SET evidence='{}'::jsonb WHERE replacement_intent_id=$1",
+      [challenge.json().replacementIntentId],
+    ),
+  ).rejects.toThrow("immutable");
   expect(
     (await prepare({ kind: "STORAGE_DEPOSIT", amount: "1" })).statusCode,
   ).toBe(409);
@@ -765,6 +786,9 @@ it("authorizes an exact storage replacement after the historical mandate expires
     { kind: "REGISTER", storageLimit: "1", guardian: null },
     { kind: "FUND", amount: "1" },
     { kind: "STORAGE_DEPOSIT", amount: "1" },
+    { kind: "PROPOSE", proposalId: randomUUID() },
+    { kind: "ATTEST", reviewId: randomUUID() },
+    { kind: "EXECUTE", proposalId: randomUUID() },
   ]) {
     const rejected = await prepare(operation);
     expect(rejected.statusCode).toBe(409);
@@ -778,7 +802,7 @@ it("authorizes an exact storage replacement after the historical mandate expires
   expect(completed.json()).toMatchObject({
     operation: original.operation,
     state: "PREPARED",
-    recoveryOf: original.id,
+    controlled_replacement_of: original.id,
   });
   expect(
     (
@@ -802,6 +826,29 @@ it("authorizes an exact storage replacement after the historical mandate expires
       )
     ).statusCode,
   ).toBe(200);
+});
+
+it("rechecks fresh chain evidence before opening an authorized replacement wallet prompt", async () => {
+  const original = await unknownStorageDeposit();
+  recoveryHeadHeight = 90_100;
+  const challenge = await recoveryChallenge(original.id);
+  expect(
+    (await completeRecovery(original.id, challenge.json())).statusCode,
+  ).toBe(201);
+  recoveryCredit = "1";
+  const begin = await post(
+    `/api/chain/intents/${challenge.json().replacementIntentId}/begin`,
+    {},
+  );
+  expect(begin.statusCode).toBe(409);
+  expect(begin.json().error).toBe("RECOVERY_STORAGE_CREDIT_CHANGED");
+  expect(
+    (
+      await pool.query("SELECT state FROM chain_intents WHERE id=$1", [
+        challenge.json().replacementIntentId,
+      ])
+    ).rows[0].state,
+  ).toBe("PREPARED");
 });
 
 it("does not disclose or authorize recovery to a different signer", async () => {

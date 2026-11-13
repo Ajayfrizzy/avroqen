@@ -656,3 +656,26 @@ request IDs, account/key data, credentials or response content are logged. Netwo
 freshness, block pinning, contract hash, complete access-key and accounting checks
 remain unchanged. The read-only method allowlist still excludes signed-transaction
 broadcast, and unavailable evidence still disables every financial operation.
+
+## D038 — Expired-mandate replacement signing requires a durable recovery binding
+
+Controlled-replacement signing correction on November 13, 2026: a prepared
+replacement is identified only by its immutable `chain_recoveries` relationship,
+not by its operation kind, a client flag or the original intent's timestamp marker.
+The settlement read model exposes that server-derived relationship so the owner can
+review the exact historical storage deposit after mandate expiry. Ordinary storage
+deposits, registration, funding, proposals, attestations and execution are rejected
+at authorization before operation-specific records are loaded.
+
+Opening the replacement wallet prompt repeats finalized recovery evidence checks,
+including the 90,000-block distance, complete signer key/permission/nonce equality,
+null storage credit and approved deployment. The transaction is reconstructed only
+through the exact historical `STORAGE_DEPOSIT` equality path and must equal both the
+original UNKNOWN operation and the immutable prepared replacement. Current owner
+membership, signer, consent, enabled-agent, manifest and duplicate-prevention gates
+still apply. The original remains UNKNOWN, and any changed chain evidence or binding
+leaves the replacement PREPARED without opening a wallet prompt.
+
+The history action now scrolls to and focuses the existing exact transaction review
+region, respecting reduced-motion preferences. This is navigation and review only;
+it does not begin, sign or report a transaction.
