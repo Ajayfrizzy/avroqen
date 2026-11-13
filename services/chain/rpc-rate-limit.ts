@@ -7,6 +7,8 @@ const DEFAULT_COOLDOWN_MS = 15_000;
 const MAX_COOLDOWN_MS = 120_000;
 export const READ_ONLY_RPC_PER_PROVIDER_TIMEOUT_MS = 3_500;
 export const READ_ONLY_RPC_OVERALL_TIMEOUT_MS = 9_000;
+export const HISTORICAL_RPC_PER_PROVIDER_TIMEOUT_MS = 6_000;
+export const HISTORICAL_RPC_OVERALL_TIMEOUT_MS = 8_000;
 export const READ_ONLY_RPC_RESPONSE_LIMIT = 4 * 1024 * 1024;
 const urls = {
   testnet: [
@@ -17,6 +19,17 @@ const urls = {
   mainnet: [
     "https://rpc.mainnet.near.org",
     "https://archival-rpc.mainnet.near.org",
+  ],
+} as const;
+const historicalUrls = {
+  testnet: [
+    "https://archival-rpc.testnet.near.org",
+    "https://rpc.testnet.fastnear.com",
+    "https://rpc.testnet.near.org",
+  ],
+  mainnet: [
+    "https://archival-rpc.mainnet.near.org",
+    "https://rpc.mainnet.near.org",
   ],
 } as const;
 
@@ -49,6 +62,8 @@ export interface RpcFailoverOptions {
    * false leaves the response untouched for the caller's normal validation.
    */
   retryResponse?: (response: Response) => boolean | Promise<boolean>;
+  /** Use only the approved providers, with archival endpoints attempted first. */
+  preferArchival?: boolean;
 }
 
 export function retryAfterMs(header: string | null, now = Date.now()): number {
@@ -210,7 +225,10 @@ export async function readOnlyRpcFetch(
   let rateLimitedProviders = 0;
   try {
     if (overallSignal.aborted) throw abortReason(overallSignal);
-    for (const [index, endpoint] of urls[network].entries()) {
+    const providers = options.preferArchival
+      ? historicalUrls[network]
+      : urls[network];
+    for (const [index, endpoint] of providers.entries()) {
       if (overallSignal.aborted) throw abortReason(overallSignal);
       const provider = publicProvider(endpoint),
         attempt = index + 1,
@@ -284,7 +302,7 @@ export async function readOnlyRpcFetch(
             // A retry classifier failure must never enable provider shopping.
           }
         }
-        if (retryResponse && index < urls[network].length - 1) {
+        if (retryResponse && index < providers.length - 1) {
           failures.push("HISTORICAL_STATE_UNAVAILABLE");
           diagnostic({
             event: "RPC_ATTEMPT_FAILED",

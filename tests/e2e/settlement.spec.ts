@@ -264,6 +264,16 @@ for (const [name, code, message] of [
     "RECOVERY_EVIDENCE_UNAVAILABLE",
     "Independent recovery evidence is currently unavailable.",
   ],
+  [
+    "missing historical state",
+    "RECOVERY_HISTORICAL_STATE_UNAVAILABLE",
+    "could not retrieve the exact historical recovery state",
+  ],
+  [
+    "inconsistent historical state",
+    "RECOVERY_EVIDENCE_INCONSISTENT",
+    "returned inconsistent pinned evidence",
+  ],
 ] as const)
   test(`recovery inspection shows ${name}`, async ({ page }) => {
     await setupControlledPage(page, async (path, route) => {

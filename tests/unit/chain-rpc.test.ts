@@ -308,7 +308,7 @@ it("preserves the explicit unknown-block classification for block scans", async 
   ).rejects.toThrow("UNKNOWN_BLOCK");
 });
 
-it("falls back to the archival provider for a hash-pinned historical block", async () => {
+it("prioritizes the archival provider for a hash-pinned historical block", async () => {
   const anchor = bs58.encode(Buffer.alloc(32, 9));
   const previous = bs58.encode(Buffer.alloc(32, 8));
   const calls: string[] = [];
@@ -339,14 +339,10 @@ it("falls back to the archival provider for a hash-pinned historical block", asy
   ).resolves.toMatchObject({
     header: { hash: anchor, height: 277_284_348 },
   });
-  expect(calls).toEqual([
-    "https://rpc.testnet.fastnear.com",
-    "https://rpc.testnet.near.org",
-    "https://archival-rpc.testnet.near.org",
-  ]);
+  expect(calls).toEqual(["https://archival-rpc.testnet.near.org"]);
 });
 
-it("falls back to archival state for an exact hash-pinned query", async () => {
+it("prioritizes archival state for an exact hash-pinned query", async () => {
   const anchor = bs58.encode(Buffer.alloc(32, 9));
   const calls: string[] = [];
   const transport: typeof fetch = async (url, init) => {
@@ -370,8 +366,55 @@ it("falls back to archival state for an exact hash-pinned query", async () => {
       anchor,
     ),
   ).resolves.toEqual({ block_hash: anchor, keys: [] });
-  expect(calls).toHaveLength(3);
+  expect(calls).toEqual(["https://archival-rpc.testnet.near.org"]);
 });
+
+it.each([
+  { latency: 3_983, kind: "block" },
+  { latency: 5_000, kind: "query" },
+] as const)(
+  "accepts a valid archival $kind response after $latency ms",
+  async ({ latency, kind }) => {
+    const anchor = bs58.encode(Buffer.alloc(32, 9));
+    const previous = bs58.encode(Buffer.alloc(32, 8));
+    const calls: string[] = [];
+    const transport: typeof fetch = async (url, init) => {
+      calls.push(String(url));
+      await new Promise((resolve) => setTimeout(resolve, latency));
+      return kind === "block"
+        ? envelope(init, {
+            result: {
+              header: {
+                hash: anchor,
+                prev_hash: previous,
+                height: 277_284_348,
+                timestamp_nanosec: "1",
+              },
+              chunks: [],
+            },
+          })
+        : envelope(init, {
+            result: { block_hash: anchor, keys: [] },
+          });
+    };
+    if (kind === "block")
+      await expect(
+        new NearReader(undefined, transport).block(anchor),
+      ).resolves.toMatchObject({
+        header: { hash: anchor, height: 277_284_348 },
+      });
+    else
+      await expect(
+        new NearReader(undefined, transport).query(
+          "view_access_key_list",
+          "owner.testnet",
+          anchor,
+        ),
+      ).resolves.toEqual({ block_hash: anchor, keys: [] });
+    expect(calls).toEqual(["https://archival-rpc.testnet.near.org"]);
+  },
+  8_000,
+);
 
 it.each([
   [
@@ -439,7 +482,7 @@ it("fails closed when the archival provider cannot serve the historical block", 
   };
   await expect(
     new NearReader(undefined, transport).block(anchor),
-  ).rejects.toThrow("RPC_PROVIDERS_EXHAUSTED");
+  ).rejects.toThrow("UNKNOWN_BLOCK");
   expect(calls).toHaveLength(3);
 });
 

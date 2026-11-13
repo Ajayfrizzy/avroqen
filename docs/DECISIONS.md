@@ -702,3 +702,26 @@ The fallback remains inside the existing read-only method allowlist and bounded
 per-provider/overall deadlines. Explicit 429 cooldown and request-local transient
 failure behavior from D036–D037 are unchanged. Signed transaction submission is
 not accepted by this routing layer.
+
+## D040 — Historical recovery uses an archival-first bounded timing budget
+
+Observed Testnet archival reads for block 277284348 completed in 3,314–3,983 ms,
+which can exceed the ordinary 3.5-second provider limit. Historical recovery now
+identifies only valid hash-pinned `block` and `query` requests as historical and
+tries the approved archival provider first. Each such read permits at most six
+seconds for one provider and eight seconds overall. Ordinary reads retain the
+existing 3.5-second provider and nine-second overall limits from D036–D037.
+
+Historical deployment verification has a 25-second ceiling, and the complete
+anchor/head/key/storage evidence pass shares one 35-second deadline signal. This
+allows an archival block read followed by parallel pinned state reads without an
+unbounded workflow. `/begin` retains its separate current-deployment verification
+before that evidence pass, so failure at either stage prevents the wallet prompt.
+
+Provider timeout, validated `UNKNOWN_BLOCK` and conflicting block data remain
+distinct failures (`RPC_TIMEOUT`, historical state unavailable and
+`RPC_BLOCK_MISMATCH`). None proves that an earlier wallet operation was not
+broadcast. Every archival result still passes exact anchor hash/height, network,
+code, complete deployment-key, signer-key/nonce/permission, storage-credit and
+accounting-domain checks. The approved provider list, 429 cooldown behavior,
+read-only method allowlist and signed-transaction prohibition are unchanged.

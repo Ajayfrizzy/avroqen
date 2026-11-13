@@ -10,6 +10,8 @@ import {
 import type { Intent } from "./reconcile.js";
 import { chainHash, type NearReader } from "./rpc.js";
 
+export const RECOVERY_EVIDENCE_TIMEOUT_MS = 35_000;
+
 const permission = z.union([
   z.literal("FullAccess"),
   z.object({
@@ -51,9 +53,10 @@ function canonicalKeys(value: unknown, blockHash: string) {
   return JSON.stringify(keys);
 }
 
-export async function inspectReplacementEligibility(
+async function inspectReplacementEligibilityWithSignal(
   reader: NearReader,
   intent: Intent,
+  signal: AbortSignal,
 ): Promise<ReplacementInspection> {
   if (intent.reported_hash || intent.verified_hash)
     throw new Error("RECOVERY_HASH_PRESENT");
@@ -65,13 +68,17 @@ export async function inspectReplacementEligibility(
     })
     .passthrough()
     .parse(JSON.parse(intent.canonical_operation));
-  const anchor = await reader.deployment(intent.manifest, intent.anchor_hash);
+  const anchor = await reader.deployment(
+    intent.manifest,
+    intent.anchor_hash,
+    signal,
+  );
   if (
     anchor.block.hash !== intent.anchor_hash ||
     anchor.block.height !== Number(intent.anchor_height)
   )
     throw new Error("CONFLICTING_INTENT_ANCHOR");
-  const current = await reader.deployment(intent.manifest);
+  const current = await reader.deployment(intent.manifest, undefined, signal);
   if (current.block.height < anchor.block.height)
     throw new Error("CONFLICTING_RPC");
   const elapsed = current.block.height - anchor.block.height;
@@ -97,23 +104,29 @@ export async function inspectReplacementEligibility(
         "view_access_key_list",
         operation.signerId,
         anchor.block.hash,
+        {},
+        signal,
       ),
       reader.query(
         "view_access_key_list",
         operation.signerId,
         current.block.hash,
+        {},
+        signal,
       ),
       reader.view(
         operation.receiverId,
         "get_storage_credit",
         { account_id: operation.signerId },
         anchor.block.hash,
+        signal,
       ),
       reader.view(
         operation.receiverId,
         "get_storage_credit",
         { account_id: operation.signerId },
         current.block.hash,
+        signal,
       ),
     ]);
   const anchorKeys = canonicalKeys(anchorKeysRaw, anchor.block.hash);
@@ -145,6 +158,30 @@ export async function inspectReplacementEligibility(
     status: "ELIGIBLE",
     evidence,
   });
+}
+
+export async function inspectReplacementEligibility(
+  reader: NearReader,
+  intent: Intent,
+): Promise<ReplacementInspection> {
+  const deadline = new AbortController();
+  const timer = setTimeout(
+    () =>
+      deadline.abort(
+        new DOMException("Recovery evidence deadline exceeded", "TimeoutError"),
+      ),
+    RECOVERY_EVIDENCE_TIMEOUT_MS,
+  );
+  timer.unref();
+  try {
+    return await inspectReplacementEligibilityWithSignal(
+      reader,
+      intent,
+      deadline.signal,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function replacementEvidenceFor(
