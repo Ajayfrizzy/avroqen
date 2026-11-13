@@ -7,6 +7,7 @@ import {
   HISTORICAL_RPC_PER_PROVIDER_TIMEOUT_MS,
   READ_ONLY_RPC_OVERALL_TIMEOUT_MS,
   READ_ONLY_RPC_RESPONSE_LIMIT,
+  type RpcReadPriority,
   readOnlyRpcFetch,
 } from "./rpc-rate-limit.js";
 export const chainHash = z.string().refine((v) => {
@@ -266,9 +267,33 @@ function historicalPinnedRequest(method: string, params: unknown): boolean {
   );
 }
 
+function waitForCaller<T>(
+  pending: Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (!signal) return pending;
+  return new Promise((resolve, reject) => {
+    const aborted = () => reject(signal.reason);
+    if (signal.aborted) return aborted();
+    signal.addEventListener("abort", aborted, { once: true });
+    pending.then(
+      (value) => {
+        signal.removeEventListener("abort", aborted);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", aborted);
+        reject(error);
+      },
+    );
+  });
+}
+
 export class UnknownBlock extends Error {}
 export class NearReader {
   private requestId = 0n;
+  private historicalInFlight = new Map<string, Promise<unknown>>();
+  private currentPinnedHashes: string[] = [];
   constructor(
     private endpoint: string = endpoints[0],
     private transport: typeof fetch = fetch,
@@ -281,14 +306,45 @@ export class NearReader {
     method: string,
     params: unknown,
     parentSignal?: AbortSignal,
+    priority: RpcReadPriority = "background",
   ): Promise<unknown> {
     if (!rpcMethods.has(method)) throw new Error("READ_ONLY_RPC");
+    const blockId =
+        params && typeof params === "object" && !Array.isArray(params)
+          ? (params as Record<string, unknown>).block_id
+          : undefined,
+      historical =
+        historicalPinnedRequest(method, params) &&
+        !this.currentPinnedHashes.includes(String(blockId));
+    if (!historical)
+      return this.rpcRequest(method, params, parentSignal, false, priority);
+    const key = JSON.stringify([method, params]);
+    let pending = this.historicalInFlight.get(key);
+    if (!pending) {
+      pending = this.rpcRequest(method, params, undefined, true, priority);
+      this.historicalInFlight.set(key, pending);
+      const clear = () => {
+        if (this.historicalInFlight.get(key) === pending)
+          this.historicalInFlight.delete(key);
+      };
+      pending.then(clear, clear);
+    }
+    return waitForCaller(pending, parentSignal);
+  }
+  private async rpcRequest(
+    method: string,
+    params: unknown,
+    parentSignal: AbortSignal | undefined,
+    historical: boolean,
+    priority: RpcReadPriority,
+  ): Promise<unknown> {
     const id = `m6-${++this.requestId}`;
-    const historical = historicalPinnedRequest(method, params);
     let response: Response;
     try {
       const requestSignal = AbortSignal.timeout(
-          READ_ONLY_RPC_OVERALL_TIMEOUT_MS,
+          historical
+            ? HISTORICAL_RPC_OVERALL_TIMEOUT_MS
+            : READ_ONLY_RPC_OVERALL_TIMEOUT_MS,
         ),
         signal = parentSignal
           ? AbortSignal.any([parentSignal, requestSignal])
@@ -309,6 +365,7 @@ export class NearReader {
                       HISTORICAL_RPC_PER_PROVIDER_TIMEOUT_MS,
                     overallTimeoutMs: HISTORICAL_RPC_OVERALL_TIMEOUT_MS,
                     preferArchival: true,
+                    priority,
                     retryResponse: async (candidate: Response) => {
                       try {
                         const parsed = parseRpcResponse(
@@ -356,16 +413,17 @@ export class NearReader {
     }
     const body = parseRpcResponse(Buffer.concat(parts).toString("utf8"), id);
     if ("error" in body) {
-      if (
-        historicalPinnedRequest(method, params) &&
-        unknownBlockFailure(body.error)
-      )
+      if (historical && unknownBlockFailure(body.error))
         throw new UnknownBlock("UNKNOWN_BLOCK");
       throw rpcError("RPC_PROVIDER_ERROR");
     }
     return body.result;
   }
-  async block(id?: string | number, signal?: AbortSignal) {
+  async block(
+    id?: string | number,
+    signal?: AbortSignal,
+    priority: RpcReadPriority = "background",
+  ) {
     if (typeof id === "string" && !chainHash.safeParse(id).success)
       throw rpcError("RPC_BLOCK_INVALID");
     const block = blockSchema.safeParse(
@@ -373,11 +431,17 @@ export class NearReader {
         "block",
         id === undefined ? { finality: "final" } : { block_id: id },
         signal,
+        priority,
       ),
     );
     if (!block.success) throw rpcError("RPC_BLOCK_INVALID");
     if (typeof id === "string" && block.data.header.hash !== id)
       throw rpcError("RPC_BLOCK_MISMATCH");
+    if (id === undefined) {
+      this.currentPinnedHashes.push(block.data.header.hash);
+      if (this.currentPinnedHashes.length > 16)
+        this.currentPinnedHashes.shift();
+    }
     return block.data;
   }
   async query(
@@ -386,6 +450,7 @@ export class NearReader {
     block: string,
     extra: Record<string, unknown> = {},
     signal?: AbortSignal,
+    priority: RpcReadPriority = "background",
   ) {
     if (!chainHash.safeParse(block).success)
       throw rpcError("RPC_BLOCK_INVALID");
@@ -398,6 +463,7 @@ export class NearReader {
         block_id: block,
       },
       signal,
+      priority,
     );
     if (
       result &&
@@ -415,6 +481,7 @@ export class NearReader {
     args: Record<string, unknown>,
     block: string,
     signal?: AbortSignal,
+    priority: RpcReadPriority = "background",
   ): Promise<unknown> {
     if (
       ![
@@ -442,6 +509,7 @@ export class NearReader {
             args_base64: Buffer.from(JSON.stringify(args)).toString("base64"),
           },
           signal,
+          priority,
         ),
       );
     if (r.block_hash !== block) throw new Error("RPC_BLOCK_MISMATCH");
@@ -451,6 +519,7 @@ export class NearReader {
     manifest: Manifest,
     at?: string,
     parentSignal?: AbortSignal,
+    priority: RpcReadPriority = "background",
   ) {
     const deadline = AbortSignal.timeout(
         at === undefined
@@ -462,23 +531,45 @@ export class NearReader {
         : deadline;
     const status = z
       .object({ chain_id: z.literal("testnet") })
-      .parse(await this.rpc("status", [], signal));
+      .parse(await this.rpc("status", [], signal, priority));
     if (status.chain_id !== manifest.network)
       throw new Error("NETWORK_MISMATCH");
-    const b = await this.block(at, signal);
+    const b = await this.block(at, signal, priority);
     if (at === undefined)
       this.assertFreshFinalizedBlock(b.header.timestamp_nanosec);
     const [code, account, keys, domain] = await Promise.all([
-      this.query("view_code", manifest.account, b.header.hash, {}, signal),
-      this.query("view_account", manifest.account, b.header.hash, {}, signal),
+      this.query(
+        "view_code",
+        manifest.account,
+        b.header.hash,
+        {},
+        signal,
+        priority,
+      ),
+      this.query(
+        "view_account",
+        manifest.account,
+        b.header.hash,
+        {},
+        signal,
+        priority,
+      ),
       this.query(
         "view_access_key_list",
         manifest.account,
         b.header.hash,
         {},
         signal,
+        priority,
       ),
-      this.view(manifest.account, "get_accounting", {}, b.header.hash, signal),
+      this.view(
+        manifest.account,
+        "get_accounting",
+        {},
+        b.header.hash,
+        signal,
+        priority,
+      ),
     ]);
     const c = z
       .object({

@@ -261,6 +261,7 @@ beforeAll(async () => {
   await app.ready();
 });
 beforeEach(async () => {
+  chainConfig.reader = reader;
   rpcDown = false;
   guardian = null;
   duringDeployment = undefined;
@@ -835,14 +836,15 @@ it("authorizes an exact storage replacement after the historical mandate expires
     ).rows[0].state,
   ).toBe("PREPARED");
   deploymentCalls = 0;
+  historicalRpcError = "RPC_RATE_LIMITED";
   const begin = await post(
     `/api/chain/intents/${challenge.json().replacementIntentId}/begin`,
     {},
   );
   expect(begin.statusCode).toBe(200);
-  // Historical and current deployment verification are both required, but a
-  // redundant current pass must not consume the archival recovery deadline.
-  expect(deploymentCalls).toBe(2);
+  // The exact immutable anchor was verified while authorizing this replacement;
+  // begin must still perform one fresh current deployment verification.
+  expect(deploymentCalls).toBe(1);
   expect(
     (
       await pool.query(
@@ -884,13 +886,9 @@ it("rechecks fresh chain evidence before opening an authorized replacement walle
   ).toBe("PREPARED");
 });
 
-it.each([
-  ["RPC_TIMEOUT", "RPC_TIMEOUT"],
-  ["UNKNOWN_BLOCK", "RECOVERY_HISTORICAL_STATE_UNAVAILABLE"],
-  ["RPC_BLOCK_MISMATCH", "RECOVERY_EVIDENCE_INCONSISTENT"],
-] as const)(
-  "keeps the replacement prepared when begin historical evidence fails with %s",
-  async (failure, expected) => {
+it.each(["RPC_TIMEOUT", "UNKNOWN_BLOCK", "RPC_BLOCK_MISMATCH"] as const)(
+  "begins from authorized immutable evidence after restart when archival reads fail with %s",
+  async (failure) => {
     const original = await unknownStorageDeposit();
     recoveryHeadHeight = 90_100;
     const challenge = await recoveryChallenge(original.id);
@@ -898,22 +896,49 @@ it.each([
       (await completeRecovery(original.id, challenge.json())).statusCode,
     ).toBe(201);
     historicalRpcError = failure;
+    // Simulate a process restart: the persisted authorization supplies only
+    // immutable anchor facts; current deployment, keys and credit stay fresh.
+    chainConfig.reader = new FixtureReader();
     const begin = await post(
       `/api/chain/intents/${challenge.json().replacementIntentId}/begin`,
       {},
     );
-    expect(begin.statusCode).toBe(503);
-    expect(begin.json().error).toBe(expected);
-    expect(begin.headers["x-correlation-id"]).toEqual(expect.any(String));
+    expect(begin.statusCode).toBe(200);
+    expect(begin.json().state).toBe("AWAITING_WALLET");
     expect(
       (
         await pool.query("SELECT state FROM chain_intents WHERE id=$1", [
           challenge.json().replacementIntentId,
         ])
       ).rows[0].state,
-    ).toBe("PREPARED");
+    ).toBe("AWAITING_WALLET");
   },
 );
+
+it("keeps a restarted replacement prepared when fresh signer evidence changed", async () => {
+  const original = await unknownStorageDeposit();
+  recoveryHeadHeight = 90_100;
+  const challenge = await recoveryChallenge(original.id);
+  expect(
+    (await completeRecovery(original.id, challenge.json())).statusCode,
+  ).toBe(201);
+  recoveryNonce = "8";
+  historicalRpcError = "RPC_RATE_LIMITED";
+  chainConfig.reader = new FixtureReader();
+  const begin = await post(
+    `/api/chain/intents/${challenge.json().replacementIntentId}/begin`,
+    {},
+  );
+  expect(begin.statusCode).toBe(409);
+  expect(begin.json().error).toBe("RECOVERY_SIGNER_NONCE_CHANGED");
+  expect(
+    (
+      await pool.query("SELECT state FROM chain_intents WHERE id=$1", [
+        challenge.json().replacementIntentId,
+      ])
+    ).rows[0].state,
+  ).toBe("PREPARED");
+});
 
 it.each([
   ["RPC_TIMEOUT", "DEPLOYMENT_VERIFICATION_TIMEOUT"],

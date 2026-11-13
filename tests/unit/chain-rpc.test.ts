@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import bs58 from "bs58";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import {
   deploymentConfig,
   FINALIZED_BLOCK_MAX_AGE_MS,
@@ -632,6 +632,46 @@ function deploymentTransport(timestamp?: string, change?: DeploymentChange) {
   };
   return transport;
 }
+
+it("keeps fresh finalized deployment polling off the archival provider", async () => {
+  const urls: string[] = [];
+  const base = deploymentTransport((BigInt(now) * 1_000_000n).toString());
+  const transport: typeof fetch = async (url, init) => {
+    urls.push(String(url));
+    return base(url, init);
+  };
+  await expect(
+    new NearReader(undefined, transport, () => now).deployment(manifest),
+  ).resolves.toBeDefined();
+  expect(urls).toHaveLength(6);
+  expect(urls).not.toContain("https://archival-rpc.testnet.near.org");
+});
+
+it("coalesces identical concurrent historical reads", async () => {
+  const anchor = bs58.encode(Buffer.alloc(32, 9));
+  let release = () => {};
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const transport = vi.fn<typeof fetch>(async (_url, init) => {
+    await pending;
+    return envelope(init, {
+      result: { block_hash: anchor, keys: [] },
+    });
+  });
+  const reader = new NearReader(undefined, transport);
+  const reads = [
+    reader.query("view_access_key_list", "owner.testnet", anchor),
+    reader.query("view_access_key_list", "owner.testnet", anchor),
+  ];
+  await vi.waitFor(() => expect(transport).toHaveBeenCalledOnce());
+  release();
+  await expect(Promise.all(reads)).resolves.toEqual([
+    { block_hash: anchor, keys: [] },
+    { block_hash: anchor, keys: [] },
+  ]);
+  expect(transport).toHaveBeenCalledOnce();
+});
 
 it("keeps deployment reads block-pinned across successful provider failover", async () => {
   const block = bs58.encode(Buffer.alloc(32, 1));

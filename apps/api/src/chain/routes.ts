@@ -526,17 +526,22 @@ export function chainRoutes(
           "RPC_BLOCK_MISMATCH",
           "CONFLICTING_INTENT_ANCHOR",
           "CONFLICTING_RPC",
+          "RECOVERY_PERSISTED_EVIDENCE_INVALID",
         ].includes(error.message)
       )
         return deny(503, "RECOVERY_EVIDENCE_INCONSISTENT");
     }
     return deny(503, "RECOVERY_EVIDENCE_UNAVAILABLE");
   }
-  async function recoveryEvidence(r: Record<string, unknown>) {
+  async function recoveryEvidence(
+    r: Record<string, unknown>,
+    persistedEvidence?: unknown,
+  ) {
     try {
       return await replacementEvidenceFor(
         chain.reader,
         r as unknown as import("../../../../services/chain/reconcile.js").Intent,
+        persistedEvidence,
       );
     } catch (error) {
       if (
@@ -828,7 +833,7 @@ export function chainRoutes(
         const intent = await owned(db, request);
         const recoveryOriginal = (
           await db.query(
-            `SELECT original.*
+            `SELECT original.*, recovery.evidence AS recovery_evidence
              FROM chain_recoveries recovery
              JOIN chain_intents original ON original.id=recovery.original_intent_id
              WHERE recovery.replacement_intent_id=$1`,
@@ -840,11 +845,26 @@ export function chainRoutes(
       if (initial.intent.state !== "PREPARED")
         return deny(409, "INTENT_ALREADY_ATTEMPTED");
       if (initial.recoveryOriginal) {
+        const originalManifest = initial.recoveryOriginal.manifest as Manifest;
+        if (
+          initial.recoveryOriginal.canonical_operation !==
+            initial.intent.canonical_operation ||
+          originalManifest.account !== manifest.account ||
+          originalManifest.network !== manifest.network ||
+          originalManifest.wasmSha256 !== manifest.wasmSha256 ||
+          originalManifest.authorization !== manifest.authorization ||
+          JSON.stringify([...originalManifest.keyFingerprints].sort()) !==
+            JSON.stringify([...manifest.keyFingerprints].sort())
+        )
+          return deny(409, "INTENT_CONFIGURATION_CHANGED");
         stage = "HISTORICAL_RECOVERY_EVIDENCE";
         // Recovery evidence verifies the exact historical deployment and a
         // fresh finalized deployment. Do not make a redundant current-state
         // deployment pass first and consume the archival workflow deadline.
-        await recoveryEvidence(initial.recoveryOriginal);
+        await recoveryEvidence(
+          initial.recoveryOriginal,
+          initial.recoveryOriginal.recovery_evidence,
+        );
       } else {
         stage = "CURRENT_DEPLOYMENT_VERIFICATION";
         try {

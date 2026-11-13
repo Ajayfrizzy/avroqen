@@ -1,7 +1,10 @@
 import bs58 from "bs58";
 import { describe, expect, it } from "vitest";
 import type { Intent } from "../../services/chain/reconcile.js";
-import { replacementEvidenceFor } from "../../services/chain/recovery.js";
+import {
+  inspectReplacementEligibility,
+  replacementEvidenceFor,
+} from "../../services/chain/recovery.js";
 import type { Manifest, NearReader } from "../../services/chain/rpc.js";
 
 const anchorHash = bs58.encode(Buffer.alloc(32, 1));
@@ -51,6 +54,9 @@ type ReaderOptions = {
   fail?: boolean;
   signals?: AbortSignal[];
   historicalDelayMs?: number;
+  deploymentBlocks?: Array<string | undefined>;
+  queryBlocks?: string[];
+  viewBlocks?: string[];
 };
 const fullAccessKey = (nonce: string | number = "7") => ({
   public_key: `ed25519:${bs58.encode(Buffer.alloc(32, 3))}`,
@@ -65,6 +71,7 @@ function reader(options: ReaderOptions = {}): NearReader {
       at?: string,
       signal?: AbortSignal,
     ) => {
+      options.deploymentBlocks?.push(at);
       if (signal) options.signals?.push(signal);
       if (at !== undefined && options.historicalDelayMs)
         await new Promise((resolve) =>
@@ -86,6 +93,7 @@ function reader(options: ReaderOptions = {}): NearReader {
       _extra: Record<string, unknown>,
       signal?: AbortSignal,
     ) => {
+      options.queryBlocks?.push(block);
       if (signal) options.signals?.push(signal);
       if (block === anchorHash && options.historicalDelayMs)
         await new Promise((resolve) =>
@@ -103,6 +111,7 @@ function reader(options: ReaderOptions = {}): NearReader {
       block: string,
       signal?: AbortSignal,
     ) => {
+      options.viewBlocks?.push(block);
       if (signal) options.signals?.push(signal);
       if (block === anchorHash && options.historicalDelayMs)
         await new Promise((resolve) =>
@@ -128,6 +137,139 @@ describe("controlled replacement evidence", () => {
       validityBlocks: 90_000,
     });
     expect(result.signerKeysDigest).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("reuses only exact immutable anchor evidence across the owner workflow", async () => {
+    const options: ReaderOptions = {
+      deploymentBlocks: [],
+      queryBlocks: [],
+      viewBlocks: [],
+    };
+    const source = reader(options);
+    await replacementEvidenceFor(source, intent());
+    await replacementEvidenceFor(source, intent());
+    expect(options.deploymentBlocks).toEqual([
+      anchorHash,
+      undefined,
+      undefined,
+    ]);
+    expect(options.queryBlocks).toEqual([
+      anchorHash,
+      evidenceHash,
+      evidenceHash,
+    ]);
+    expect(options.viewBlocks).toEqual([
+      anchorHash,
+      evidenceHash,
+      evidenceHash,
+    ]);
+  });
+
+  it("reuses persisted immutable anchor evidence after restart but refreshes current state", async () => {
+    const sourceOptions: ReaderOptions = {
+      deploymentBlocks: [],
+      queryBlocks: [],
+      viewBlocks: [],
+    };
+    const source = reader(sourceOptions);
+    const persisted = await replacementEvidenceFor(reader(), intent());
+    await expect(
+      replacementEvidenceFor(source, intent(), persisted),
+    ).resolves.toMatchObject({
+      anchorHeight: "100",
+      anchorHash,
+      evidenceHeight: "90100",
+      evidenceHash,
+    });
+    expect(sourceOptions.deploymentBlocks).toEqual([undefined]);
+    expect(sourceOptions.queryBlocks).toEqual([evidenceHash]);
+    expect(sourceOptions.viewBlocks).toEqual([evidenceHash]);
+  });
+
+  it("fails closed when persisted anchor evidence is malformed or mismatched", async () => {
+    const persisted = await replacementEvidenceFor(reader(), intent());
+    await expect(
+      replacementEvidenceFor(reader(), intent(), { unexpected: true }),
+    ).rejects.toThrow("RECOVERY_PERSISTED_EVIDENCE_INVALID");
+    await expect(
+      replacementEvidenceFor(reader(), intent(), {
+        ...persisted,
+        anchorHash: bs58.encode(Buffer.alloc(32, 9)),
+      }),
+    ).rejects.toThrow("RECOVERY_PERSISTED_EVIDENCE_INVALID");
+    await expect(
+      inspectReplacementEligibility(reader(), intent(), {
+        ...persisted,
+        evidenceHeight: "90099",
+      }),
+    ).rejects.toThrow("RECOVERY_PERSISTED_EVIDENCE_INVALID");
+  });
+
+  it("compares persisted signer evidence with a fresh current key set", async () => {
+    const persisted = await replacementEvidenceFor(reader(), intent());
+    await expect(
+      replacementEvidenceFor(
+        reader({ evidenceKeys: [fullAccessKey(8)] }),
+        intent(),
+        persisted,
+      ),
+    ).rejects.toThrow("RECOVERY_SIGNER_NONCE_CHANGED");
+  });
+
+  it("never reuses current-head storage evidence", async () => {
+    const options: ReaderOptions = {};
+    const source = reader(options);
+    await expect(
+      replacementEvidenceFor(source, intent()),
+    ).resolves.toBeDefined();
+    options.evidenceCredit = "1";
+    await expect(replacementEvidenceFor(source, intent())).rejects.toThrow(
+      "RECOVERY_STORAGE_CREDIT_CHANGED",
+    );
+  });
+
+  it("does not reuse immutable evidence after an operation binding change", async () => {
+    const options: ReaderOptions = { deploymentBlocks: [] };
+    const source = reader(options);
+    await replacementEvidenceFor(source, intent());
+    await replacementEvidenceFor(
+      source,
+      intent({
+        canonical_operation: JSON.stringify({
+          ...operation,
+          policyDigest: "d".repeat(64),
+        }),
+      }),
+    );
+    expect(
+      options.deploymentBlocks?.filter((block) => block === anchorHash),
+    ).toHaveLength(2);
+  });
+
+  it("coalesces concurrent immutable anchor verification", async () => {
+    const options: ReaderOptions = {
+      historicalDelayMs: 20,
+      deploymentBlocks: [],
+      queryBlocks: [],
+      viewBlocks: [],
+    };
+    const source = reader(options);
+    await Promise.all([
+      replacementEvidenceFor(source, intent()),
+      replacementEvidenceFor(source, intent()),
+    ]);
+    expect(
+      options.deploymentBlocks?.filter((block) => block === anchorHash),
+    ).toHaveLength(1);
+    expect(
+      options.queryBlocks?.filter((block) => block === anchorHash),
+    ).toHaveLength(1);
+    expect(
+      options.viewBlocks?.filter((block) => block === anchorHash),
+    ).toHaveLength(1);
+    expect(
+      options.deploymentBlocks?.filter((block) => block === undefined),
+    ).toHaveLength(2);
   });
 
   it("bounds the complete evidence pass with one shared deadline signal", async () => {

@@ -19,6 +19,16 @@ JSON-RPC, chain identity, freshness and deployment checks run on the bounded
 response. Deployment selects one finalized block and pins every subsequent provider
 read to that exact hash; inconsistent fallback data fails closed.
 
+A hash obtained directly from a fresh finalized-block read is treated as current
+for its bounded pinned deployment queries, so periodic status refreshes do not send
+fresh-head code, account, key and accounting reads to the archival endpoint.
+Identical concurrent genuinely historical reads are coalesced. Archival work has a
+single concurrency slot, with interactive recovery checks ahead of future
+background reads. For an archival 429, the client honors bounded `Retry-After` and
+may retry that provider once inside a strict 20-second historical deadline. This
+queue and retry path accepts only the existing read allowlist and cannot broadcast
+a signed transaction.
+
 Diagnostics contain only the read method, network, public provider hostname,
 attempt number, fixed failure category and optional HTTP status/counts. They exclude
 request IDs, parameters, accounts, keys, credentials and response bodies. Signed-
@@ -108,14 +118,22 @@ replacement before wallet approval when possible, preserve both records and perf
 incident reconciliation; do not create a second replacement.
 
 At replacement `/begin`, the bounded recovery pass supplies both required
-deployment observations: the exact historical anchor deployment and a fresh
-finalized current deployment. The API does not run a redundant current deployment
-pass before it. A failure is logged only as a correlation identifier, fixed stage
-and fixed category, and leaves the unsigned replacement `PREPARED` with no wallet
-attempt event. The Payments page distinguishes timeout, unavailable evidence and
-manifest inconsistency from wallet cancellation. Ordinary non-replacement intents
-still perform their current deployment verification before entering
-`AWAITING_WALLET`.
+deployment observations. An exact historical anchor verification completed during
+owner authorization is persisted in the immutable recovery row. After strict
+schema, recovery-relation, operation, manifest, anchor hash/height and 90,000-block
+distance checks, `/begin` may reuse only that anchor deployment identity, signer-key
+digest and null storage credit. This remains valid across a process restart and
+avoids another archival request. The fresh finalized current deployment, complete
+signer-key digest and storage credit are always reread; current-head evidence is
+never reused. Without a valid persisted binding, historical verification remains
+fail closed.
+
+The API does not run a redundant current deployment pass before the recovery pass.
+A failure is logged only as a correlation identifier, fixed stage and fixed
+category, and leaves the unsigned replacement `PREPARED` with no wallet attempt
+event. The Payments page distinguishes timeout, unavailable evidence and manifest
+inconsistency from wallet cancellation. Ordinary non-replacement intents still
+perform their current deployment verification before entering `AWAITING_WALLET`.
 
 ## Manifest and immutable operation boundary
 

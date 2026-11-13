@@ -116,6 +116,117 @@ describe("read-only RPC 429 handling", () => {
     ]);
   });
 
+  it("serializes archival calls through the bounded concurrency gate", async () => {
+    let active = 0;
+    let maximum = 0;
+    const releases: Array<() => void> = [];
+    const transport = vi.fn<typeof fetch>(async () => {
+      active++;
+      maximum = Math.max(maximum, active);
+      await new Promise<void>((resolve) => releases.push(resolve));
+      active--;
+      return new Response("ok");
+    });
+    const options = {
+      preferArchival: true,
+      perProviderTimeoutMs: 1_000,
+      overallTimeoutMs: 2_000,
+    };
+    const first = readOnlyRpcFetch(
+      "testnet",
+      request,
+      transport,
+      Date.now,
+      options,
+    );
+    const second = readOnlyRpcFetch(
+      "testnet",
+      request,
+      transport,
+      Date.now,
+      options,
+    );
+    await vi.waitFor(() => expect(releases).toHaveLength(1));
+    releases.shift()?.();
+    await vi.waitFor(() => expect(releases).toHaveLength(1));
+    releases.shift()?.();
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+    expect(maximum).toBe(1);
+  });
+
+  it("prioritizes interactive archival evidence over queued background reads", async () => {
+    const order: string[] = [];
+    const releases: Array<() => void> = [];
+    const transport = vi.fn<typeof fetch>(async (_url, init) => {
+      const marker = JSON.parse(String(init?.body)).marker as string;
+      order.push(marker);
+      await new Promise<void>((resolve) => releases.push(resolve));
+      return new Response("ok");
+    });
+    const call = (marker: string, priority: "interactive" | "background") =>
+      readOnlyRpcFetch(
+        "testnet",
+        {
+          ...request,
+          body: JSON.stringify({ ...JSON.parse(String(request.body)), marker }),
+        },
+        transport,
+        Date.now,
+        {
+          preferArchival: true,
+          priority,
+          perProviderTimeoutMs: 1_000,
+          overallTimeoutMs: 3_000,
+        },
+      );
+    const active = call("active-background", "background");
+    const background = call("queued-background", "background");
+    const interactive = call("interactive", "interactive");
+    await vi.waitFor(() => expect(order).toEqual(["active-background"]));
+    releases.shift()?.();
+    await vi.waitFor(() =>
+      expect(order).toEqual(["active-background", "interactive"]),
+    );
+    releases.shift()?.();
+    await vi.waitFor(() => expect(order).toHaveLength(3));
+    releases.shift()?.();
+    await expect(
+      Promise.all([active, background, interactive]),
+    ).resolves.toHaveLength(3);
+    expect(order).toEqual([
+      "active-background",
+      "interactive",
+      "queued-background",
+    ]);
+  });
+
+  it("honors archival Retry-After and retries once within the deadline", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response("", {
+          status: 429,
+          headers: { "Retry-After": "1" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("ok"));
+    const pending = readOnlyRpcFetch("testnet", request, transport, Date.now, {
+      preferArchival: true,
+      perProviderTimeoutMs: 1_000,
+      overallTimeoutMs: 5_000,
+    });
+    await vi.waitFor(() => expect(transport).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(pending).resolves.toMatchObject({ ok: true });
+    expect(transport.mock.calls.map((call) => call[0])).toEqual([
+      "https://archival-rpc.testnet.near.org",
+      "https://archival-rpc.testnet.near.org",
+    ]);
+    vi.useRealTimers();
+  });
+
   it.each([
     ["network failure", () => Promise.reject(new TypeError("offline"))],
     ["HTTP 500", () => Promise.resolve(new Response("", { status: 500 }))],
