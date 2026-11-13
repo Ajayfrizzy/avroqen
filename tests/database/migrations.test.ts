@@ -22,7 +22,25 @@ it("applies migrations once, including concurrent runners", async () => {
   expect(
     (await pool.query("SELECT count(*)::int AS count FROM schema_migrations"))
       .rows[0].count,
-  ).toBe(8);
+  ).toBe(9);
+});
+it("installs operation-scoped intent and wallet-prompt constraints", async () => {
+  const indexes = await pool.query(
+    "SELECT indexname,indexdef FROM pg_indexes WHERE schemaname=current_schema() AND tablename='chain_intents' ORDER BY indexname",
+  );
+  const definitions = Object.fromEntries(
+    indexes.rows.map((row) => [row.indexname, row.indexdef]),
+  );
+  expect(definitions.chain_one_unresolved).toBeUndefined();
+  expect(definitions.chain_one_unresolved_mandate).toContain(
+    "actor_account, vault_account, mandate_id",
+  );
+  expect(definitions.chain_one_unresolved_storage_resource).toContain(
+    "STORAGE_DEPOSIT",
+  );
+  expect(definitions.chain_one_active_wallet_prompt).toContain(
+    "state = 'AWAITING_WALLET'",
+  );
 });
 it("rejects invalid roles and account/network mismatches at storage boundaries", async () => {
   const org = randomUUID();

@@ -853,3 +853,20 @@ maximum deferral guarantees monitoring continues. While that probe runs, the nex
 reconciliation iteration waits; database health projection remains independent.
 Neither path signs, broadcasts, changes UNKNOWN to a terminal outcome, or advances
 a scan checkpoint before the complete linked block/chunk batch validates.
+
+## D045 — Transaction isolation follows mandate and onchain resource scope
+
+Settlement isolation correction on November 13, 2026: an unresolved intent no
+longer holds a permanent owner-wallet/vault lock over unrelated mandates. Ordinary
+intents remain exclusive per immutable owner, vault and mandate; account-level
+storage deposits and storage-credit withdrawals remain exclusive across mandates
+because their contract calls are not mandate-addressed. Only one intent per
+owner/vault may be `AWAITING_WALLET`, preventing concurrent wallet prompts from
+racing access-key nonce selection without treating UNKNOWN reconciliation as a
+wallet-wide lock.
+
+Idempotency, immutable tenant/operation bindings, controlled-replacement evidence
+and the original UNKNOWN record remain unchanged. Independent operations still
+receive separate owner wallet approval and finalized receipt verification, while
+the contract atomically rejects insufficient shared storage credit or mandate
+funds. No server nonce reservation, signing, retry or broadcast authority is added.

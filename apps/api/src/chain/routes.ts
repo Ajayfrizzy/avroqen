@@ -20,11 +20,13 @@ import {
   proposalInput,
 } from "../../../../packages/domain/src/proposals.js";
 import {
+  accountStorageOperationKinds,
   buildOperation,
   type ChainOperation,
   chainParams,
   intentInput,
   intentParams,
+  isAccountStorageOperation,
   type OperationInput,
   rebuildHistoricalStorageDeposit,
   replacementChallengeInput,
@@ -70,6 +72,7 @@ const beginPublicErrors = new Set([
   "RECOVERY_STORAGE_CREDIT_CHANGED",
   "RECOVERY_VALIDITY_WINDOW_OPEN",
   "RPC_TIMEOUT",
+  "WALLET_PROMPT_ACTIVE",
 ]);
 function beginFailureCategory(error: unknown): string {
   return error instanceof Error && beginPublicErrors.has(error.message)
@@ -255,6 +258,38 @@ export function chainRoutes(
       return deny(409, "OPERATION_NOT_ALLOWED");
     }
     return { ...d, built };
+  }
+  const accountStorageKinds = [...accountStorageOperationKinds];
+  async function conflictingIntent(
+    db: pg.PoolClient,
+    input: {
+      actor: string;
+      vault: string;
+      mandate: string;
+      kind: ChainOperation["kind"];
+      exclude?: string;
+    },
+  ) {
+    return (
+      await db.query(
+        `SELECT id FROM chain_intents
+         WHERE actor_account=$1 AND vault_account=$2
+           AND ($5::uuid IS NULL OR id<>$5)
+           AND state NOT IN ('CONFIRMED_SUCCESS','CONFIRMED_FAILED')
+           AND replacement_authorized_at IS NULL
+           AND (mandate_id=$3 OR
+             ($4::boolean AND canonical_operation::jsonb->>'kind'=ANY($6::text[])))
+         LIMIT 1`,
+        [
+          input.actor,
+          input.vault,
+          input.mandate,
+          isAccountStorageOperation(input.kind),
+          input.exclude ?? null,
+          accountStorageKinds,
+        ],
+      )
+    ).rows[0] as { id: string } | undefined;
   }
   app.get("/api/chain/assignments", async (request) => {
     const who = await session(request, ctx.pool);
@@ -447,12 +482,12 @@ export function chainRoutes(
         };
       }
       if (
-        (
-          await db.query(
-            "SELECT 1 FROM chain_intents WHERE actor_account=$1 AND vault_account=$2 AND state NOT IN ('CONFIRMED_SUCCESS','CONFIRMED_FAILED') AND replacement_authorized_at IS NULL",
-            [data.who.account_id, manifest.account],
-          )
-        ).rowCount
+        await conflictingIntent(db, {
+          actor: data.who.account_id,
+          vault: manifest.account,
+          mandate: mandateId,
+          kind: data.built.kind,
+        })
       )
         return deny(409, "UNRESOLVED_OPERATION");
       const id = randomUUID(),
@@ -769,12 +804,13 @@ export function chainRoutes(
         const r = await owned(db, request);
         const op = recoverable(r, manifest);
         if (
-          (
-            await db.query(
-              "SELECT 1 FROM chain_intents WHERE actor_account=$1 AND vault_account=$2 AND id<>$3 AND state NOT IN ('CONFIRMED_SUCCESS','CONFIRMED_FAILED') AND replacement_authorized_at IS NULL",
-              [r.actor_account, r.vault_account, r.id],
-            )
-          ).rowCount
+          await conflictingIntent(db, {
+            actor: r.actor_account,
+            vault: r.vault_account,
+            mandate: r.mandate_id,
+            kind: op.kind,
+            exclude: r.id,
+          })
         )
           return deny(409, "UNRESOLVED_OPERATION");
         await historicalStorageDeposit(db, request, r, manifest);
@@ -901,6 +937,9 @@ export function chainRoutes(
           : null;
       stage = "FINAL_BINDING_AND_STATE_TRANSITION";
       const result = await transaction(async (db) => {
+        await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+          `${initial.intent.actor_account}:${manifest.account}`,
+        ]);
         const r = await owned(db, request);
         if (r.state !== "PREPARED")
           return deny(409, "INTENT_ALREADY_ATTEMPTED");
@@ -974,6 +1013,15 @@ export function chainRoutes(
             JSON.stringify([...manifest.keyFingerprints].sort())
         )
           return deny(409, "INTENT_CONFIGURATION_CHANGED");
+        if (
+          (
+            await db.query(
+              "SELECT 1 FROM chain_intents WHERE actor_account=$1 AND vault_account=$2 AND id<>$3 AND state='AWAITING_WALLET' LIMIT 1",
+              [r.actor_account, r.vault_account, r.id],
+            )
+          ).rowCount
+        )
+          return deny(409, "WALLET_PROMPT_ACTIVE");
         await db.query(
           "UPDATE chain_intents SET state='AWAITING_WALLET',reason='WALLET_PROMPT_OPENING',updated_at=clock_timestamp() WHERE id=$1",
           [r.id],
