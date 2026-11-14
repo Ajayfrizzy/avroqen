@@ -1,24 +1,29 @@
 {
-  "observedAtUtc": "2026-11-02T23:42:56.763Z",
+  "observedAtUtc": "2026-11-11T08:54:39.903Z",
   "endpoint": "https://rpc.testnet.near.org",
   "network": "testnet",
   "accountId": "avroqen-vault.testnet",
   "finality": "final",
   "block": {
-    "height": 275969229,
-    "hash": "37MFWf1Df6UbLekt4kWPWMVyADNXH6JNB8dydudjDfph",
-    "timestampNanosec": "1793662970929602288"
+    "height": 277193200,
+    "hash": "GNiBiwNbESuQLMewKMze7YB1g3EvGdKNFpDyZAZ3699A",
+    "timestampNanosec": "1794387273752832974"
   },
   "account": {
-    "amount": "4500000000000000000000000",
-    "block_hash": "37MFWf1Df6UbLekt4kWPWMVyADNXH6JNB8dydudjDfph",
-    "block_height": 275969229,
-    "code_hash": "11111111111111111111111111111111",
+    "amount": "4397068600828031800000000",
+    "block_hash": "GNiBiwNbESuQLMewKMze7YB1g3EvGdKNFpDyZAZ3699A",
+    "block_height": 277193200,
+    "code_hash": "D2zAGc7UvgxXf6BshggjoNnquUN4Am2x2T27F7TfzRSw",
     "locked": "0",
     "storage_paid_at": 0,
-    "storage_usage": 182
+    "storage_usage": 367168
   },
   "keys": [
+    {
+      "publicKey": "ed25519:5hdgdb9oA4sQGYGgzyfsVSY8xvju3vAFhvovcdvTEn6G",
+      "permission": "FullAccess",
+      "fingerprint": "c72304f9847f8b0993c045cadf3fa8fa0d473496d43e5d63d46ef88fa90775d6"
+    },
     {
       "publicKey": "ed25519:8mdwv8CXTf2w5QyP9XwqcJzsPaFVQ5K6vh4fWRxcEpVz",
       "permission": "FullAccess",
@@ -102,7 +107,10 @@
       "send_not_sir": 108059500000,
       "send_sir": 108059500000
     },
-    "burnt_gas_reward": [0, 1],
+    "burnt_gas_reward": [
+      0,
+      1
+    ],
     "data_receipt_creation_config": {
       "base_cost": {
         "execution": 36486732312,
@@ -116,7 +124,10 @@
       }
     },
     "ml_dsa_65_verification_cost": 100000000000,
-    "pessimistic_gas_price_inflation_ratio": [1, 1],
+    "pessimistic_gas_price_inflation_ratio": [
+      1,
+      1
+    ],
     "storage_usage_config": {
       "num_bytes_account": 100,
       "num_extra_bytes_record": 40
@@ -125,8 +136,8 @@
   "gasPrice": "100000000",
   "artifact": {
     "path": "target/wasm32-unknown-unknown/release/mandate_vault.wasm",
-    "bytes": 366735,
-    "sha256": "b2ce7469301f8de912a4af955e254fa4ff2d9a5c097411bde1d00d0dd450ef48"
+    "bytes": 367353,
+    "sha256": "d2ec5048af0577b60c0aef4ecfd1aad1def4289828c841b2d7a7f83dd0f8428d"
   },
   "scope": "Read-only public account observation; not ownership proof or deployment/transaction authorization."
 }
