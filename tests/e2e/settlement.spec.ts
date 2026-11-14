@@ -607,8 +607,13 @@ test("expired and unsafe historical mandates stay readable but cannot authorize"
   await expect(warning).not.toContainText("Unsafe historical verifier policy");
   await expect(prepare).toBeDisabled();
   await page.getByRole("button", { name: "Review unsigned operation" }).click();
+  const review = page.getByRole("region", { name: "Exact transaction review" });
+  await expect(review).toBeFocused();
   await expect(
-    page.getByRole("button", { name: "Open wallet and authorize" }),
+    review.getByRole("heading", { name: "Review before signing" }),
+  ).toBeVisible();
+  await expect(
+    review.getByRole("button", { name: "Open wallet and authorize" }),
   ).toBeEnabled();
 
   await selector.selectOption(unsafe.mandateId);
