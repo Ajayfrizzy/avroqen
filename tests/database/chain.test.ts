@@ -491,12 +491,47 @@ it("prepares synthetic attestation only under explicit Testnet simulation", asyn
     now,
     now + 900_000_000_000n,
   );
+  const expiredPayload = map1For(
+    proposal,
+    review,
+    "verifier.testnet",
+    randomUUID(),
+    now - 120_000_000_000n,
+    now - 60_000_000_000n,
+  );
+  const expiredChallengeId = randomUUID();
   const challengeId = randomUUID();
   const sessionHash = (
     await pool.query(
       "SELECT token_hash FROM auth_sessions WHERE account_id='verifier.testnet' ORDER BY created_at DESC LIMIT 1",
     )
   ).rows[0].token_hash;
+  await pool.query(
+    `INSERT INTO evidence_challenges(id,evidence_id,session_hash,actor_account,canonical_review,canonical_payload,nonce,message,origin,expires_at,consumed_at)
+     VALUES($1,$2,$3,'verifier.testnet',$4,$5,$6,'expired fixture',$7,clock_timestamp()+interval '5 minutes',clock_timestamp())`,
+    [
+      expiredChallengeId,
+      evidenceId,
+      sessionHash,
+      canonicalReview(review),
+      JSON.stringify(expiredPayload),
+      Buffer.alloc(32, 8),
+      origin,
+    ],
+  );
+  const expiredReviewId = randomUUID();
+  await pool.query(
+    `INSERT INTO evidence_reviews(id,evidence_id,challenge_id,actor_account,claim,status,canonical_review,canonical_payload,attestation_nonce)
+     VALUES($1,$2,$3,'verifier.testnet','INVOICE_ISSUED','SYNTHETIC_ONLY',$4,$5,$6)`,
+    [
+      expiredReviewId,
+      evidenceId,
+      expiredChallengeId,
+      canonicalReview(review),
+      JSON.stringify(expiredPayload),
+      expiredPayload.nonce,
+    ],
+  );
   await pool.query(
     `INSERT INTO evidence_challenges(id,evidence_id,session_hash,actor_account,canonical_review,canonical_payload,nonce,message,origin,expires_at,consumed_at)
      VALUES($1,$2,$3,'verifier.testnet',$4,$5,$6,'test fixture',$7,clock_timestamp()+interval '5 minutes',clock_timestamp())`,
@@ -549,6 +584,13 @@ it("prepares synthetic attestation only under explicit Testnet simulation", asyn
     headers: verifierHeaders,
   });
   expect(enabledDetail.statusCode).toBe(200);
+  expect(
+    enabledDetail
+      .json()
+      .reviews.some(
+        (candidate: { id: string }) => candidate.id === expiredReviewId,
+      ),
+  ).toBe(false);
   expect(enabledDetail.json().reviews).toEqual([
     {
       id: reviewId,

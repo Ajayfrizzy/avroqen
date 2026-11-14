@@ -31,7 +31,21 @@ it("applies migrations once, including concurrent runners", async () => {
   expect(
     (await pool.query("SELECT count(*)::int AS count FROM schema_migrations"))
       .rows[0].count,
-  ).toBe(9);
+  ).toBe(10);
+});
+it("replaces permanent final-review uniqueness with expiry-aware serialization", async () => {
+  const indexes = await pool.query(
+    "SELECT indexname FROM pg_indexes WHERE schemaname=current_schema() AND tablename='evidence_reviews'",
+  );
+  expect(indexes.rows.some((row) => row.indexname === "one_final_review")).toBe(
+    false,
+  );
+  const triggers = await pool.query(
+    "SELECT tgname FROM pg_trigger WHERE tgrelid='evidence_reviews'::regclass AND NOT tgisinternal",
+  );
+  expect(triggers.rows.map((row) => row.tgname)).toContain(
+    "active_final_review",
+  );
 });
 it("installs operation-scoped intent and wallet-prompt constraints", async () => {
   const indexes = await pool.query(

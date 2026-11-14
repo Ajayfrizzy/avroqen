@@ -344,7 +344,8 @@ export function evidenceRoutes(app: FastifyInstance, ctx: Context) {
           r.payload.claim_type === input.claim &&
           ["VERIFIED", "REJECTED", "DISPUTED", "SYNTHETIC_ONLY"].includes(
             r.status,
-          ),
+          ) &&
+          BigInt(r.payload.expires_at_ns) > d.now,
       )
     )
       deny(409, "REVIEW_ALREADY_FINAL");

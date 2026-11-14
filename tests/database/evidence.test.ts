@@ -293,6 +293,75 @@ const verifyReview = (p: object, h = verifier) =>
   post(`${evidencePath()}/verify`, p, h);
 const details = (h = verifier) =>
   app.inject({ url: evidencePath(), headers: h });
+async function insertExpiredFinalReview(input: {
+  account: string;
+  claim: "INVOICE_ISSUED" | "OWNER_APPROVED" | "DELIVERY_DISPUTED";
+  status: "VERIFIED" | "SYNTHETIC_ONLY" | "DISPUTED";
+  source: "AUTHENTICATED_PROVIDER_PORTAL" | "LOCAL_EXERCISE" | "OWNER_DECISION";
+}) {
+  const now = BigInt(Date.now()) * 1_000_000n;
+  const historical = review({
+    claim: input.claim,
+    decision: input.status === "DISPUTED" ? "DISPUTE" : "APPROVE",
+  });
+  historical.observation = {
+    ...historical.observation,
+    source: input.source,
+    event:
+      input.claim === "OWNER_APPROVED"
+        ? "OWNER_DECISION"
+        : input.claim === "DELIVERY_DISPUTED"
+          ? "DISPUTED"
+          : "INVOICE_ISSUED",
+  };
+  const payload = map1For(
+    proposalInput.parse(proposal),
+    reviewInput.parse(historical),
+    input.account,
+    randomUUID(),
+    now - 120_000_000_000n,
+    now - 60_000_000_000n,
+  );
+  const sessionHash = (
+    await pool.query(
+      "SELECT token_hash FROM auth_sessions WHERE account_id=$1 AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1",
+      [input.account],
+    )
+  ).rows[0].token_hash;
+  const challengeId = randomUUID();
+  await pool.query(
+    `INSERT INTO evidence_challenges(id,evidence_id,session_hash,actor_account,canonical_review,canonical_payload,nonce,message,origin,expires_at,consumed_at)
+     SELECT $1,id,$2,$3,$4,$5,$6,'historical expired fixture',$7,clock_timestamp()+interval '5 minutes',clock_timestamp()
+     FROM evidence_submissions WHERE proposal_id=$8`,
+    [
+      challengeId,
+      sessionHash,
+      input.account,
+      canonicalReview(historical),
+      JSON.stringify(payload),
+      Buffer.from(randomUUID().replaceAll("-", "").padEnd(64, "0"), "hex"),
+      origin,
+      proposal.proposalId,
+    ],
+  );
+  const id = randomUUID();
+  await pool.query(
+    `INSERT INTO evidence_reviews(id,evidence_id,challenge_id,actor_account,claim,status,canonical_review,canonical_payload,attestation_nonce)
+     SELECT $1,id,$2,$3,$4,$5,$6,$7,$8 FROM evidence_submissions WHERE proposal_id=$9`,
+    [
+      id,
+      challengeId,
+      input.account,
+      input.claim,
+      input.status,
+      canonicalReview(historical),
+      JSON.stringify(payload),
+      payload.nonce,
+      proposal.proposalId,
+    ],
+  );
+  return { id, payload, canonicalReview: canonicalReview(historical) };
+}
 async function insertHistoricalOwnerVerifierReview() {
   const policy = mandatePolicy.parse({
     schemaVersion: 1,
@@ -793,6 +862,120 @@ it("concurrent decisions commit one immutable review", async () => {
   ]);
   expect(responses.filter((r) => r.statusCode === 200)).toHaveLength(1);
   expect((await pool.query("SELECT * FROM evidence_reviews")).rowCount).toBe(1);
+});
+it.each([
+  [
+    "simulated invoice",
+    {
+      account: "verifier.testnet",
+      claim: "INVOICE_ISSUED",
+      status: "SYNTHETIC_ONLY",
+      source: "LOCAL_EXERCISE",
+    },
+    "verifier",
+  ],
+  [
+    "owner approval",
+    {
+      account: "alice.testnet",
+      claim: "OWNER_APPROVED",
+      status: "VERIFIED",
+      source: "OWNER_DECISION",
+    },
+    "owner",
+  ],
+] as const)(
+  "allows a fresh signed %s after expiry without changing history",
+  async (_name, expiredInput, signerKind) => {
+    const expired = await insertExpiredFinalReview(expiredInput);
+    const fresh = review({ claim: expiredInput.claim });
+    fresh.observation = {
+      ...fresh.observation,
+      source: expiredInput.source,
+      event:
+        expiredInput.claim === "OWNER_APPROVED"
+          ? "OWNER_DECISION"
+          : "INVOICE_ISSUED",
+    };
+    const h = signerKind === "verifier" ? verifier : headers;
+    const challenge = await reviewChallenge(fresh, h);
+    const result = await verifyReview(
+      reviewSignature(challenge, expiredInput.account),
+      h,
+    );
+    expect(result.statusCode).toBe(200);
+    const rows = await pool.query(
+      "SELECT id,canonical_review,canonical_payload,attestation_nonce FROM evidence_reviews ORDER BY created_at,id",
+    );
+    expect(rows.rowCount).toBe(2);
+    expect(rows.rows[0]).toMatchObject({
+      id: expired.id,
+      canonical_review: expired.canonicalReview,
+      canonical_payload: JSON.stringify(expired.payload),
+      attestation_nonce: expired.payload.nonce,
+    });
+    expect(rows.rows[1].attestation_nonce).not.toBe(expired.payload.nonce);
+    const duplicate = await post(`${evidencePath()}/challenge`, fresh, h);
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json().error).toBe("REVIEW_ALREADY_FINAL");
+
+    const directPayload = JSON.parse(rows.rows[1].canonical_payload);
+    directPayload.nonce = randomUUID();
+    const directChallenge = randomUUID();
+    const sessionHash = (
+      await pool.query(
+        "SELECT token_hash FROM auth_sessions WHERE account_id=$1 AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1",
+        [expiredInput.account],
+      )
+    ).rows[0].token_hash;
+    await pool.query(
+      `INSERT INTO evidence_challenges(id,evidence_id,session_hash,actor_account,canonical_review,canonical_payload,nonce,message,origin,expires_at,consumed_at)
+       SELECT $1,id,$2,$3,$4,$5,$6,'direct duplicate fixture',$7,clock_timestamp()+interval '5 minutes',clock_timestamp()
+       FROM evidence_submissions WHERE proposal_id=$8`,
+      [
+        directChallenge,
+        sessionHash,
+        expiredInput.account,
+        rows.rows[1].canonical_review,
+        JSON.stringify(directPayload),
+        Buffer.alloc(32, signerKind === "verifier" ? 6 : 7),
+        origin,
+        proposal.proposalId,
+      ],
+    );
+    await expect(
+      pool.query(
+        `INSERT INTO evidence_reviews(id,evidence_id,challenge_id,actor_account,claim,status,canonical_review,canonical_payload,attestation_nonce)
+         SELECT $1,id,$2,$3,$4,$5,$6,$7,$8 FROM evidence_submissions WHERE proposal_id=$9`,
+        [
+          randomUUID(),
+          directChallenge,
+          expiredInput.account,
+          expiredInput.claim,
+          expiredInput.status,
+          rows.rows[1].canonical_review,
+          JSON.stringify(directPayload),
+          directPayload.nonce,
+          proposal.proposalId,
+        ],
+      ),
+    ).rejects.toThrow("active final review exists");
+  },
+);
+it("keeps an expired signed dispute terminal", async () => {
+  await insertExpiredFinalReview({
+    account: "verifier.testnet",
+    claim: "DELIVERY_DISPUTED",
+    status: "DISPUTED",
+    source: "AUTHENTICATED_PROVIDER_PORTAL",
+  });
+  const response = await post(
+    `${evidencePath()}/challenge`,
+    review(),
+    verifier,
+  );
+  expect(response.statusCode).toBe(409);
+  expect(response.json().error).toBe("DELIVERY_DISPUTED");
 });
 it("signed dispute is terminal in application and does not cancel onchain transfers", async () => {
   const r = review({ claim: "DELIVERY_DISPUTED", decision: "DISPUTE" });

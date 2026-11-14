@@ -921,3 +921,18 @@ inclusion after the verified intent anchor, deployment manifest, complete receip
 graph and contract outcome. Forged, malformed, unavailable or omitted index data
 falls back to the complete block/chunk scan and cannot produce a terminal state.
 No transaction is signed, retried or broadcast by this discovery path.
+
+## D049 — Expired signed reviews are superseded append-only
+
+November 14, 2026: a final offchain review blocks another review by the same
+signer and claim only while its exact MAP-1 payload remains unexpired. A dispute
+remains permanently terminal. After expiry, the authorized signer may create a
+fresh challenge and sign a new immutable review with a new transport nonce,
+attestation nonce, issue time and expiry, while the historical review and audit
+events remain unchanged.
+
+Database inserts serialize on the parent evidence row and reject concurrent
+active final reviews, including direct writes that bypass the API. Settlement
+detail exposes only currently valid, exactly bound reviews and the Payments UI
+selects the newest eligible review returned by the API. Expired evidence never
+authorizes ATTEST preparation, execution readiness or payment.
