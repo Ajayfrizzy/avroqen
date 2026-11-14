@@ -107,10 +107,7 @@
       "send_not_sir": 108059500000,
       "send_sir": 108059500000
     },
-    "burnt_gas_reward": [
-      0,
-      1
-    ],
+    "burnt_gas_reward": [0, 1],
     "data_receipt_creation_config": {
       "base_cost": {
         "execution": 36486732312,
@@ -124,10 +121,7 @@
       }
     },
     "ml_dsa_65_verification_cost": 100000000000,
-    "pessimistic_gas_price_inflation_ratio": [
-      1,
-      1
-    ],
+    "pessimistic_gas_price_inflation_ratio": [1, 1],
     "storage_usage_config": {
       "num_bytes_account": 100,
       "num_extra_bytes_record": 40
