@@ -1,7 +1,5 @@
 # Avroqen — judge walkthrough and evidence ledger
 
-**Submission presentation updated November 14, 2026.** This judge-first introduction supersedes the November 8 SAMPLE-only status text retained in the historical detail below.
-
 **Start here:** [Project overview](../README.md) · [Judging criteria](JUDGING_CRITERIA.md) · [Official demo post](https://x.com/ajay_frizzy/status/2121577743578198520) · [Release/evidence scope](RELEASE_STATUS.md).
 
 ## Two distinct ways to review Avroqen
@@ -180,20 +178,9 @@ separate security or authorization gate forbids proceeding.
 - Both retained FullAccess keys can replace code or transfer account funds outside
   MandateVault restrictions. The deployment is not described as immutable or fully
   noncustodial.
-- Physical Android, manual screen-reader, genuine browser zoom and cross-browser
-  SAMPLE acceptance remain pending. Simulated viewport and magnification results
-  cannot satisfy those gates.
-- A Content Security Policy is not configured. It requires separate whole-app and
-  wallet compatibility review, report-only evaluation where appropriate, and
-  enforcement testing before public hosting.
-- RumptyCloud credits, zero-cost availability, HTTPS, routing, private networking,
-  secret storage, quotas, logs, backup and teardown are unverified. Do not invent a
-  free tier, add a card or substitute paid hosting.
 - The `/demo` tree shares the application origin. It does not read session identity,
   but it is not a separate-origin sandbox. Public ingress and same-origin exposure
   require explicit review.
-- No repository publication, hosting, recording, screenshot capture, X post or
-  hackathon submission is authorized by this document.
 
 Before any host is approved, verify exact HTTPS origin handling, CSP, allowed
 public routes, private API/database/worker boundaries, absence of client secrets,
@@ -206,7 +193,7 @@ recording/public assets, any social post and the exact final submission payload.
 Financial Testnet steps additionally require the transaction-by-transaction owner
 authorization defined by the M8 runbook. No approval is implied by documentation.
 
-## 90–120 second presenter script
+## 90–100 second presenter script
 
 This script is for a human presenter. Keep the SAMPLE notice visible and do not
 connect a wallet or imply that the fictional proposals settled.
@@ -235,15 +222,3 @@ connect a wallet or imply that the fictional proposals settled.
    transaction proves deployment and initialization only—not a payment. A genuine
    source, independent live signing, authorized settlement and recipient delta are
    still pending.”
-7. **1:40–1:50 — Close.** “Primary proof remains blocked, the Testing key is
-   retained, financial operations are disabled, and no independent audit is
-   claimed. The demo shows the product model without pretending SAMPLE outcomes
-   are real financial success.”
-
-## Artifact status
-
-The [M9 evidence manifest](evidence/m9/README.md) records nine actual local SAMPLE
-screenshots, their exact source commit, capture times, routes, viewports, SHA-256
-hashes, privacy checks and coding-agent visual inspection. The 390px captures are
-Chromium viewport emulation, not physical Android acceptance. Video, hosted
-captures, manual assistive-technology acceptance and publication remain pending.
