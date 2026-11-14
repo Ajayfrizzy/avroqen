@@ -904,3 +904,20 @@ contract verification, wallet approval, transaction submission or independent
 receipt reconciliation. Owner approval remains a separate real owner-signed
 claim, and every onchain action remains a separate wallet-authorized operation.
 Cached or synthetic state never authorizes settlement.
+
+## D048 — Hashless recovery may use an untrusted index only for discovery
+
+November 14, 2026: public archival RPC rate limits prevented the complete shard
+chunk scan from reaching a verifier transaction that was independently visible
+after the intent anchor. A bounded, read-only NearBlocks account lookup may now
+suggest recent transaction hashes matching the public signer, receiver, method
+and anchor/head height window. The lookup has a five-second deadline, a 512 KiB
+response limit, a strict schema and an eight-candidate cap.
+
+An index response is never transaction or outcome evidence. Every candidate must
+still pass the existing NEAR RPC checks for exact hash, signer, receiver, sole
+function-call action, canonical argument bytes, gas and deposit, finalized
+inclusion after the verified intent anchor, deployment manifest, complete receipt
+graph and contract outcome. Forged, malformed, unavailable or omitted index data
+falls back to the complete block/chunk scan and cannot produce a terminal state.
+No transaction is signed, retried or broadcast by this discovery path.

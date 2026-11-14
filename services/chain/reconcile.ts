@@ -66,6 +66,43 @@ export async function observe(
     (raw.transaction.hash !== hash || !matchesOperation(raw.transaction, op))
   )
     return { state: "UNKNOWN", reason: "TRANSACTION_MISMATCH" };
+  if (!hash) {
+    const candidates = new Map<string, z.infer<typeof transactionResult>>();
+    try {
+      const indexed = await reader.transactionCandidates(
+        op.signerId,
+        op.receiverId,
+        op.methodName,
+        Number(intent.anchor_height),
+        Number.MAX_SAFE_INTEGER,
+      );
+      for (const candidate of indexed) {
+        try {
+          const result = transactionResult.parse(
+            await reader.rpc("EXPERIMENTAL_tx_status", {
+              tx_hash: candidate,
+              sender_account_id: op.signerId,
+              wait_until: "NONE",
+            }),
+          );
+          if (
+            result.transaction.hash === candidate &&
+            matchesOperation(result.transaction, op)
+          )
+            candidates.set(candidate, result);
+        } catch {
+          // An index is discovery-only; unavailable or forged candidates never become evidence.
+        }
+      }
+    } catch {
+      // The complete hashless block/chunk scan remains the authoritative fallback.
+    }
+    if (candidates.size > 1)
+      return { state: "UNKNOWN", reason: "AMBIGUOUS_TRANSACTIONS" };
+    if (candidates.size === 1) {
+      [hash, raw] = required([...candidates.entries()][0]);
+    }
+  }
   const deployment = await reader.deployment(intent.manifest);
   const head = deployment.block;
   if (intent.last_height && head.height < Number(intent.last_height))
