@@ -22,9 +22,15 @@
 | Rust/sandbox tests | Compiled contract enforcement, actual local receipts/accounting | Public Testnet/mainnet settlement |
 | Public Testnet deployment evidence | Deployable NEAR Wasm and recorded code/account checks | An end-to-end recipient settlement |
 
+## Public Testnet settlement — Acceptance Test 7
+
+**November 14, 2026 — verified public Testnet payment (Acceptance Test 7).** Under an existing funded 0.1 NEAR mandate, `lapobaby.testnet` submitted proposal `91330f5c-73ea-43cb-a02c-93aa8411009b`; `ajayfrizzy.testnet` recorded onchain `INVOICE_ISSUED` attestation using the explicitly fictional invoice/Testnet-simulation evidence, and `demo-testing.testnet` separately recorded onchain `OWNER_APPROVED`. The owner-authorized `authorize_and_execute` call succeeded on `avroqen-vault.testnet` (block **277687500**, [transaction `7D8T8mxc…`](https://testnet.nearblocks.io/txns/7D8T8mxcTWxerdehqhPvKFD4zCQ6sWZkFdYqJot1RtjG)). Avroqen's reconciliation independently verified the native **0.1 NEAR transfer to `frizzy.testnet` and finalized callback/accounting**, recording `CONFIRMED_SUCCESS · TRANSFER_AND_CALLBACK_FINALIZED` for intent `2e4a6f1a-d2b8-4011-af8f-81a236cf30f6`. The transaction is a genuine public Testnet payment; the invoice is synthetic simulation evidence, **not** authenticated commercial verification or a production/mainnet claim.
+
+The six-page `/demo` SAMPLE is a separate wallet-free illustration. This public Testnet transaction was completed through the authenticated app and wallet flow; it is not a sample-route transaction.
+
 ## Evidence discipline
 
-Record only verified behavior at its correct level. Existing public Testnet contract deployment/code evidence and local sandbox accounting are useful supporting artifacts; no verified completed public Testnet recipient transfer is represented as finished. No external independent security audit is claimed. The public social video is an explanatory illustration.
+Record only verified behavior at its correct level. Existing public Testnet contract deployment/code evidence and local sandbox accounting are useful supporting artifacts; the completed Acceptance Test 7 public Testnet recipient transfer and its finalized callback reconciliation are separately documented above. No external independent security audit is claimed. The public social video is an explanatory illustration.
 
 ---
 
