@@ -48,6 +48,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   f.signIn.mockResolvedValue({
     identifier: { accountId: "owner.testnet", network: "testnet" },
+    connection: { executionTarget: "v1_ext" },
   });
   f.sign.mockResolvedValue([executionOutcome]);
   f.createAction.mockImplementation(async (v) => ({
@@ -189,13 +190,16 @@ it("distinguishes an explicit Meteor submission failure", async () => {
   });
 });
 it("drops unknown Meteor tags while preserving a sanitized failure", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
   const error = new Error("sensitive wallet detail") as Error & {
-    _reason: { endTags: string[] };
+    _reason: { endTags: string[]; message: string };
   };
   error.name = "MeteorActionError";
   error._reason = {
     endTags: ["EXT_DIRECT_RESPONSE_FAILED", "PRIVATE_PROVIDER_MESSAGE"],
+    message: "private extension response",
   };
+  error.cause = new Error("private cause");
   f.sign.mockRejectedValue(error);
   await expect(submitOperation(operation, async () => {})).resolves.toEqual({
     outcome: "SUBMISSION_FAILED",
@@ -206,6 +210,87 @@ it("drops unknown Meteor tags while preserving a sanitized failure", async () =>
       endTags: ["EXT_DIRECT_RESPONSE_FAILED"],
     },
   });
+  const diagnostic = info.mock.calls.find(
+    ([event]) => event === "METEOR_TRANSACTION_FAILURE",
+  );
+  expect(diagnostic).toBeDefined();
+  expect(JSON.parse(String(diagnostic?.[1]))).toEqual({
+    event: "METEOR_TRANSACTION_FAILURE",
+    action: "near::sign_transactions",
+    operationKind: "FUND",
+    executionTarget: "v1_ext",
+    errorType: "METEOR_ACTION_ERROR",
+    failureCategory: "EXTENSION_TRANSPORT_FAILED",
+    endTagState: "PRESENT",
+    endTags: ["EXT_DIRECT_RESPONSE_FAILED"],
+    hasCause: true,
+  });
+  expect(JSON.stringify(diagnostic)).not.toContain("sensitive wallet detail");
+  expect(JSON.stringify(diagnostic)).not.toContain(
+    "private extension response",
+  );
+  expect(JSON.stringify(diagnostic)).not.toContain("private cause");
+  expect(JSON.stringify(diagnostic)).not.toContain("PRIVATE_PROVIDER_MESSAGE");
+  info.mockRestore();
+});
+it("records an empty Meteor failure tag set without exposing raw details", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const error = new Error("wallet renderer internals") as Error & {
+    _reason: { endTags: string[]; message: string };
+  };
+  error.name = "MeteorActionError";
+  error._reason = { endTags: [], message: "wallet renderer internals" };
+  f.sign.mockRejectedValue(error);
+  await expect(submitOperation(operation, async () => {})).resolves.toEqual({
+    outcome: "SUBMISSION_FAILED",
+    hash: null,
+    failure: {
+      stage: "PROMPT",
+      code: "METEOR_ACTION_FAILED",
+      endTags: [],
+    },
+  });
+  const diagnostic = info.mock.calls.find(
+    ([event]) => event === "METEOR_TRANSACTION_FAILURE",
+  );
+  expect(JSON.parse(String(diagnostic?.[1]))).toMatchObject({
+    executionTarget: "v1_ext",
+    errorType: "METEOR_ACTION_ERROR",
+    failureCategory: "WALLET_REJECTED_UNSPECIFIED",
+    endTagState: "EMPTY",
+    endTags: [],
+    hasCause: false,
+  });
+  expect(JSON.stringify(diagnostic)).not.toContain("wallet renderer internals");
+  info.mockRestore();
+});
+it("classifies official Meteor account failures only in local diagnostics", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const error = new Error("account provider detail") as Error & {
+    _reason: { endTags: string[] };
+  };
+  error.name = "MeteorActionError";
+  error._reason = { endTags: ["NO_ACCOUNTS", "UNTRUSTED_DETAIL"] };
+  f.sign.mockRejectedValue(error);
+  await expect(submitOperation(operation, async () => {})).resolves.toEqual({
+    outcome: "SUBMISSION_FAILED",
+    hash: null,
+    failure: {
+      stage: "PROMPT",
+      code: "METEOR_ACTION_FAILED",
+      endTags: [],
+    },
+  });
+  const diagnostic = info.mock.calls.find(
+    ([event]) => event === "METEOR_TRANSACTION_FAILURE",
+  );
+  expect(JSON.parse(String(diagnostic?.[1]))).toMatchObject({
+    failureCategory: "WALLET_ACCOUNT_UNAVAILABLE",
+    endTags: ["NO_ACCOUNTS"],
+  });
+  expect(JSON.stringify(diagnostic)).not.toContain("account provider detail");
+  expect(JSON.stringify(diagnostic)).not.toContain("UNTRUSTED_DETAIL");
+  info.mockRestore();
 });
 it("keeps an allowlisted Meteor cancellation distinct while dropping unknown tags", async () => {
   const error = new Error("sensitive wallet detail") as Error & {
