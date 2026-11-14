@@ -21,7 +21,12 @@ const origin = "https://app.example.test";
 let keyAllowed = true;
 let keyUnavailable = false;
 let beforeKeyCheck: (() => Promise<void>) | undefined;
-const authConfig = { origin, network: "testnet" as const, secure: true };
+const authConfig = {
+  origin,
+  network: "testnet" as const,
+  secure: true,
+  testnetSimulationEnabled: false,
+};
 const app = buildApi(async () => {}, {
   pool,
   config: authConfig,

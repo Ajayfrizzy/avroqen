@@ -146,3 +146,75 @@ Repeat key transitions on physical Android: login/cancel/retry, readable amount 
 For each case record: commit/artifact, device/version, public account roles, genuine versus synthetic source, consent/proposal/review safe IDs, actual network/hash/receipts, block-height/balance/accounting deltas, expected result, observed result and PASS/FAIL/PENDING. Store redacted screenshots of UI only; exclude private documents, session tokens, signatures, nonces and credentials. Retain signed message material only in the application's intended transient flow, not reports.
 
 Current statuses: November 7, 2026 owner-verified Testnet contract deployment and initialization **recorded**; genuine coordinated public Testnet financial acceptance **pending**; any replacement contract deployment **requires separate explicit owner authorization**; coordinated human session **pending**; genuine source **pending**; physical Android integrated pass **pending**; iOS **deferred**; independent assessment **not performed**. Primary proof remains **BLOCKED**, the temporary Testing FullAccess key **RETAINED**, and financial operations **DISABLED**. At end of a future authorized run disable new submissions, retain read-only reconciliation for unresolved operations and document any incident. No merge/public hosting/mainnet/funds approval is implied.
+
+## Acceptance Test 6 — explicit Testnet simulation
+
+This hackathon-only run uses a fictional invoice. It does not pass the genuine
+source or independent commercial verification gates above. Use a fresh mandate
+and proposal; do not reuse an expired policy or a proposal with a finalized
+review. Required public accounts are owner `demo-testing.testnet`, agent
+`lapobaby.testnet`, designated verifier `ajayfrizzy.testnet`, recipient
+`frizzy.testnet`, and vault `avroqen-vault.testnet`. The exact payment is
+`0.1 NEAR` (`100000000000000000000000` yoctoNEAR).
+
+Preparation, with no wallet action:
+
+1. Confirm `NEAR_NETWORK=testnet`, the reviewed deployment manifest, and
+   `M8_TESTNET_SIMULATION_ENABLED=true`; restart API only after human review.
+   The flag is invalid on Mainnet and defaults to false.
+2. Read finalized balances for the owner and vault. Confirm the owner can cover
+   gas and any storage deposit, and confirm the vault can cover the exact payment,
+   storage reserve and gas. Stop if balances/accounting are insufficient; never
+   top up automatically.
+3. Create a fictional invoice file locally. Record only its SHA-256 digest,
+   media type, byte length, fictional issuer and reference in Avroqen. Do not
+   upload or commit the file. Select an expiry leaving enough time for every
+   wallet prompt and finalized reconciliation.
+
+Sequential UI execution, with a human explicitly approving every signature and
+transaction:
+
+1. Sign in as `demo-testing.testnet`. Create a fresh mandate for
+   `lapobaby.testnet`, vault `avroqen-vault.testnet`, recipient
+   `frizzy.testnet`, maximum payment and budget at least `0.1 NEAR`, one
+   execution, designated verifier `ajayfrizzy.testnet`, required claim
+   `INVOICE_ISSUED`, and separate owner approval. Review the expiry and immutable
+   terms, then sign the offchain consent.
+2. On Payments, prepare `register_mandate`. Inspect signer, vault, policy digest,
+   storage limit, gas and one-yocto deposit, then explicitly approve in Meteor.
+   Wait until Avroqen independently shows confirmed success.
+3. Sign in as `lapobaby.testnet`, open **Assigned to me**, create a proposal for
+   exactly `0.1 NEAR`, `frizzy.testnet`, and the fictional invoice digest. Then
+   prepare `submit_proposal`, inspect the exact call and explicitly approve it in
+   Meteor. Wait for independently reconciled success.
+4. Sign in as `demo-testing.testnet` and submit the fictional invoice metadata
+   for that proposal. This is an untrusted claim and must remain labelled as such.
+5. Sign in as `ajayfrizzy.testnet`, open Evidence assignments, select
+   **Fictional invoice — Testnet simulation only**, claim `INVOICE_ISSUED`, and
+   enter the exact fictional issuer, reference, recipient, amount and digest.
+   Sign the NEP-413 review. Confirm the result remains `SYNTHETIC_ONLY` and says
+   it is not independent commercial verification.
+6. On Payments, inspect the exact MAP-1 payload and zero-deposit
+   `attest_proposal` call. Explicitly approve it in Meteor and wait for independent
+   onchain reconciliation.
+7. Sign in as `demo-testing.testnet`, record a separate `OWNER_APPROVED` review
+   using `OWNER_DECISION`. Sign its NEP-413 message, then inspect and explicitly
+   approve the separate one-yocto `attest_proposal` transaction. Wait for
+   independent reconciliation. Never treat consent or the simulated verifier
+   review as owner approval.
+8. Prepare `fund_mandate` for the exact reviewed allocation needed by the
+   `0.1 NEAR` proposal. Inspect deposit, gas, signer and receiver; explicitly
+   approve it in Meteor and wait until finalized vault accounting is visible.
+9. Record a finalized pre-execution balance for `frizzy.testnet`. Prepare
+   `authorize_and_execute`, verify the exact proposal, recipient and
+   `100000000000000000000000` yoctoNEAR amount, then explicitly approve it in
+   Meteor once.
+10. Wait for Avroqen to verify the transaction, receipt graph, successful
+    recipient transfer, callback, contract proposal state and finalized block.
+    Confirm the recipient delta and vault accounting. A wallet toast or explorer
+    listing alone is not acceptance; an uncertain outcome remains quarantined and
+    must not be replayed.
+11. Record only safe mandate/proposal/intent IDs, transaction/receipt hashes,
+    finalized heights, accounting and redacted UI captures. Never record session
+    tokens, nonces, signatures, signed messages or invoice contents. Disable the
+    simulation flag after the demonstration; this does not alter retained records.

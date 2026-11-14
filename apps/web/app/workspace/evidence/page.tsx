@@ -47,7 +47,15 @@ type View = {
     };
     status: string;
   } | null;
-  reviews: (ReviewRecord & { attestationStatus: string })[];
+  reviews: (ReviewRecord & {
+    attestationStatus: string;
+    sourceClassification: string;
+    simulation: {
+      enabled: boolean;
+      eligible: boolean;
+      provenance: string | null;
+    };
+  })[];
   allowedClaims: Map1["claim_type"][];
   readiness: {
     independentVerifierPolicy: boolean;
@@ -56,6 +64,7 @@ type View = {
     ownerApproved: boolean;
     ownerApprovalRequired: boolean;
     claims: { claim: string; count: number; required: number }[];
+    simulation: { enabled: boolean; eligibleClaims: string[] };
   };
 };
 const labels: Record<string, string> = {
@@ -81,6 +90,7 @@ const labels: Record<string, string> = {
   PENDING_REVIEW: "Waiting for source access",
   DISPUTED: "Disputed — application preparation blocked",
   SYNTHETIC_ONLY: "Local exercise — excluded from live readiness",
+  SIMULATION_READY: "Ready for explicit Testnet simulation only",
 };
 const errors: Record<string, string> = {
   OBSERVATION_IN_FUTURE:
@@ -395,6 +405,13 @@ export default function Evidence() {
                       ? "Offchain human decisions meet the policy. Onchain acceptance is still unverified."
                       : "Required human decisions are missing or expired."}
                 </p>
+                {view.readiness.simulation.enabled && (
+                  <p role="status">
+                    Testnet simulation is enabled. Eligible local exercises are
+                    synthetic hackathon evidence, not independent commercial
+                    verification.
+                  </p>
+                )}
                 <ul>
                   {view.readiness.claims.map((c) => (
                     <li key={c.claim}>
@@ -609,7 +626,9 @@ export default function Evidence() {
                             My authenticated issuer communication
                           </option>
                           <option value="LOCAL_EXERCISE">
-                            Local exercise — never live evidence
+                            {view.readiness.simulation.enabled
+                              ? "Fictional invoice — Testnet simulation only"
+                              : "Local exercise — never live evidence"}
                           </option>
                           <option value="OWNER_DECISION">
                             Separate owner payment decision
@@ -874,6 +893,13 @@ export default function Evidence() {
                         ).toISOString()}
                         .
                       </p>
+                      {r.simulation.provenance && (
+                        <p role="status">
+                          {r.simulation.eligible
+                            ? "Eligible only for the enabled Testnet simulation. This is synthetic evidence, not independent commercial verification."
+                            : "Synthetic local exercise. Excluded from normal evidence readiness and onchain attestation."}
+                        </p>
+                      )}
                       <p>
                         Valid until{" "}
                         {new Date(

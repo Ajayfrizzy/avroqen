@@ -888,3 +888,19 @@ approved fallbacks. Finalized inclusion and anchor blocks, deployment code, keys
 accounting, receipt linkage, successful statuses, mandate policy and contract state
 remain mandatory before confirmation. Provider exhaustion still fails closed, and
 no transaction is signed, retried, rebroadcast or manually reclassified.
+
+## D047 — Hackathon invoice simulation preserves synthetic provenance
+
+November 14, 2026: `M8_TESTNET_SIMULATION_ENABLED` is disabled by default and
+is rejected outside NEAR Testnet. When explicitly enabled, an immutable
+`SYNTHETIC_ONLY` `LOCAL_EXERCISE` review may satisfy the configured Testnet demo
+claim only after the normal designated-verifier signature, exact proposal/MAP-1
+bindings, claim/event, digest, recipient, amount, expiry and replay checks pass.
+The stored review and API/UI provenance remain synthetic and explicitly state
+that no independent commercial verification occurred.
+
+Simulation does not apply to owner approval, disputes, consent, policy safety,
+contract verification, wallet approval, transaction submission or independent
+receipt reconciliation. Owner approval remains a separate real owner-signed
+claim, and every onchain action remains a separate wallet-authorized operation.
+Cached or synthetic state never authorizes settlement.

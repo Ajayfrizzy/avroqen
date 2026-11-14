@@ -6,11 +6,20 @@ import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { buildApi } from "../../apps/api/src/app.js";
 import { migrate } from "../../apps/api/src/db/migrate.js";
 import {
+  canonicalReview,
+  map1For,
+  reviewInput,
+} from "../../packages/domain/src/evidence.js";
+import {
   type ConsentAction,
   canonicalPolicy,
   mandatePolicy,
   readApiConfig,
 } from "../../packages/domain/src/index.js";
+import {
+  canonicalProposal,
+  proposalInput,
+} from "../../packages/domain/src/proposals.js";
 import { NearReader } from "../../services/chain/rpc.js";
 import { runOnce } from "../../services/chain/worker.js";
 import {
@@ -144,12 +153,28 @@ const chainConfig = { manifest, submissionEnabled: true, reader };
 const app = buildApi(async () => {}, {
   pool,
   chain: chainConfig,
-  config: { origin, network: "testnet", secure: true },
+  config: {
+    origin,
+    network: "testnet",
+    secure: true,
+    testnetSimulationEnabled: false,
+  },
   verifyKey: async () => {
     await hook?.();
     if (unavailable) throw new Error("private provider error");
     return keyAllowed;
   },
+});
+const simulationApp = buildApi(async () => {}, {
+  pool,
+  chain: chainConfig,
+  config: {
+    origin,
+    network: "testnet",
+    secure: true,
+    testnetSimulationEnabled: true,
+  },
+  verifyKey: async () => keyAllowed,
 });
 const pair = generateKeyPairSync("ed25519");
 const publicKey = `ed25519:${bs58.encode(pair.publicKey.export({ format: "der", type: "spki" }).subarray(-32))}`;
@@ -259,6 +284,7 @@ beforeAll(async () => {
   await admin.query(`CREATE SCHEMA ${schema}`);
   await migrate(pool);
   await app.ready();
+  await simulationApp.ready();
 });
 beforeEach(async () => {
   chainConfig.reader = reader;
@@ -296,6 +322,7 @@ beforeEach(async () => {
 });
 afterAll(async () => {
   await app.close();
+  await simulationApp.close();
   await pool.end();
   await admin.query(`DROP SCHEMA ${schema} CASCADE`);
   await admin.end();
@@ -382,6 +409,186 @@ async function completeRecovery(
     signature: signature(challenge),
   });
 }
+it("prepares synthetic attestation only under explicit Testnet simulation", async () => {
+  const verifierHeaders = await login("verifier.testnet");
+  mandateId = await approvedMandate({
+    verifierPolicy: {
+      ...terms().verifierPolicy,
+      requiredClaims: ["INVOICE_ISSUED"],
+    },
+  });
+  const policyRow = (
+    await pool.query("SELECT policy_digest FROM mandate_policies WHERE id=$1", [
+      mandateId,
+    ])
+  ).rows[0];
+  const proposal = proposalInput.parse({
+    schemaVersion: 1,
+    proposalId: randomUUID(),
+    idempotencyKey: randomUUID(),
+    organizationId: org,
+    agentId,
+    agentAccount: "agent.testnet",
+    mandateId,
+    policyVersion: 1,
+    policyDigest: policyRow.policy_digest,
+    network: "testnet",
+    vaultAccount: "vault.testnet",
+    recipient: "vendor.testnet",
+    asset: "NativeNear",
+    amountAtomic: "1",
+    evidenceDigest: "d".repeat(64),
+  });
+  await pool.query(
+    "INSERT INTO agent_proposals(id,mandate_id,idempotency_key,canonical_payload) VALUES($1,$2,$3,$4)",
+    [
+      proposal.proposalId,
+      mandateId,
+      proposal.idempotencyKey,
+      canonicalProposal(proposal),
+    ],
+  );
+  const evidenceId = randomUUID();
+  await pool.query(
+    "INSERT INTO evidence_submissions(id,proposal_id,canonical_metadata) VALUES($1,$2,$3)",
+    [
+      evidenceId,
+      proposal.proposalId,
+      JSON.stringify({
+        sourceType: "HUMAN_REVIEW",
+        issuer: "Fictional issuer",
+        reference: "SIM-6",
+        evidenceDigest: proposal.evidenceDigest,
+        mediaType: "application/pdf",
+        byteLength: 100,
+      }),
+    ],
+  );
+  const now = BigInt(Date.now()) * 1_000_000n;
+  const review = reviewInput.parse({
+    claim: "INVOICE_ISSUED",
+    decision: "APPROVE",
+    observation: {
+      source: "LOCAL_EXERCISE",
+      issuer: "Fictional issuer",
+      reference: "SIM-6",
+      observedAtNs: (now - 1_000_000_000n).toString(),
+      event: "INVOICE_ISSUED",
+      recipient: proposal.recipient,
+      amountAtomic: proposal.amountAtomic,
+      evidenceDigest: proposal.evidenceDigest,
+      independentlyObtained: true,
+    },
+  });
+  const payload = map1For(
+    proposal,
+    review,
+    "verifier.testnet",
+    randomUUID(),
+    now,
+    now + 900_000_000_000n,
+  );
+  const challengeId = randomUUID();
+  const sessionHash = (
+    await pool.query(
+      "SELECT token_hash FROM auth_sessions WHERE account_id='verifier.testnet' ORDER BY created_at DESC LIMIT 1",
+    )
+  ).rows[0].token_hash;
+  await pool.query(
+    `INSERT INTO evidence_challenges(id,evidence_id,session_hash,actor_account,canonical_review,canonical_payload,nonce,message,origin,expires_at,consumed_at)
+     VALUES($1,$2,$3,'verifier.testnet',$4,$5,$6,'test fixture',$7,clock_timestamp()+interval '5 minutes',clock_timestamp())`,
+    [
+      challengeId,
+      evidenceId,
+      sessionHash,
+      canonicalReview(review),
+      JSON.stringify(payload),
+      Buffer.alloc(32, 9),
+      origin,
+    ],
+  );
+  const reviewId = randomUUID();
+  await pool.query(
+    `INSERT INTO evidence_reviews(id,evidence_id,challenge_id,actor_account,claim,status,canonical_review,canonical_payload,attestation_nonce)
+     VALUES($1,$2,$3,'verifier.testnet','INVOICE_ISSUED','SYNTHETIC_ONLY',$4,$5,$6)`,
+    [
+      reviewId,
+      evidenceId,
+      challengeId,
+      canonicalReview(review),
+      JSON.stringify(payload),
+      payload.nonce,
+    ],
+  );
+  const url = `${path(mandateId)}/chain/intents`;
+  const detailUrl = `${path(mandateId)}/chain`;
+  const body = {
+    idempotencyKey: randomUUID(),
+    operation: { kind: "ATTEST", reviewId },
+  };
+  const disabledDetail = await app.inject({
+    method: "GET",
+    url: detailUrl,
+    headers: verifierHeaders,
+  });
+  expect(disabledDetail.statusCode).toBe(200);
+  expect(disabledDetail.json().reviews).toEqual([]);
+  const ownerDetail = await simulationApp.inject({
+    method: "GET",
+    url: detailUrl,
+    headers,
+  });
+  expect(ownerDetail.statusCode).toBe(200);
+  expect(ownerDetail.json().reviews).toEqual([]);
+  const enabledDetail = await simulationApp.inject({
+    method: "GET",
+    url: detailUrl,
+    headers: verifierHeaders,
+  });
+  expect(enabledDetail.statusCode).toBe(200);
+  expect(enabledDetail.json().reviews).toEqual([
+    {
+      id: reviewId,
+      payload,
+      simulation: {
+        eligible: true,
+        provenance: "LOCAL_EXERCISE_SYNTHETIC_ONLY",
+      },
+    },
+  ]);
+  const disabled = await app.inject({
+    method: "POST",
+    url,
+    payload: body,
+    headers: verifierHeaders,
+  });
+  expect(disabled.statusCode).toBe(403);
+  expect(disabled.json().error).toBe("AUTHENTIC_REVIEW_REQUIRED");
+
+  const enabled = await simulationApp.inject({
+    method: "POST",
+    url,
+    payload: body,
+    headers: verifierHeaders,
+  });
+  expect(enabled.statusCode).toBe(201);
+  expect(enabled.json().operation).toMatchObject({
+    kind: "ATTEST",
+    signerId: "verifier.testnet",
+    receiverId: "vault.testnet",
+    methodName: "attest_proposal",
+    args: { evidence: payload },
+    deposit: "0",
+  });
+  expect(
+    (
+      await pool.query(
+        "SELECT count(*)::int AS n FROM chain_intents WHERE mandate_id=$1",
+        [mandateId],
+      )
+    ).rows[0].n,
+  ).toBe(1);
+});
 it("persists exact immutable operation and atomically records preparation", async () => {
   const r = await prepare();
   expect(r.statusCode).toBe(201);

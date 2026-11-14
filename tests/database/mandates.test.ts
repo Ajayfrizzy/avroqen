@@ -26,7 +26,12 @@ let keyAllowed = true,
 let hook: (() => Promise<void>) | undefined;
 const app = buildApi(async () => {}, {
   pool,
-  config: { origin, network: "testnet", secure: true },
+  config: {
+    origin,
+    network: "testnet",
+    secure: true,
+    testnetSimulationEnabled: false,
+  },
   verifyKey: async () => {
     await hook?.();
     if (unavailable) throw new Error("private provider error");

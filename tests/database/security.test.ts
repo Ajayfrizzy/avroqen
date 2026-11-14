@@ -18,7 +18,12 @@ const admin = new pg.Pool(settings),
 const origin = "https://app.example.test";
 const app = buildApi(async () => {}, {
   pool,
-  config: { origin, network: "testnet", secure: true },
+  config: {
+    origin,
+    network: "testnet",
+    secure: true,
+    testnetSimulationEnabled: false,
+  },
   verifyKey: async () => true,
 });
 let org: string, other: string, headers: Record<string, string>;
