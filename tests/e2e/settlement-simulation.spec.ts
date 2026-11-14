@@ -135,7 +135,7 @@ test("Payments selects and exactly prepares an eligible simulated invoice attest
   await page.getByLabel("Operation").selectOption("ATTEST");
   const selector = page.getByLabel("Your signed review");
   await expect(selector).toContainText("Simulated Testnet invoice");
-  await selector.selectOption(reviewId);
+  await expect(selector).toHaveValue(reviewId);
   await page.getByRole("button", { name: "Prepare exact operation" }).click();
   await expect.poll(() => prepared).toBe(true);
   const exact = page.getByRole("region", { name: "Exact transaction review" });

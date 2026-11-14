@@ -214,6 +214,11 @@ export default function Settlement() {
           result.policy.organizationId === policy.organizationId
         ) {
           setDetail(result);
+          setReviewId((current) =>
+            result.reviews.some((review) => review.id === current)
+              ? current
+              : (result.reviews[0]?.id ?? ""),
+          );
           setCurrentState(true);
           setEnabled(status.submissionEnabled && status.deploymentVerified);
           if (

@@ -15,6 +15,7 @@ import {
   map1,
   reviewInput,
   simulatedReviewEligible,
+  validateMap1,
 } from "../../../../packages/domain/src/evidence.js";
 import {
   canonicalProposal,
@@ -437,21 +438,29 @@ export function chainRoutes(
       } | null;
     }[] = [];
     for (const r of reviews.rows) {
-      const payload = map1.parse(JSON.parse(r.canonical_payload));
-      if (r.status !== "SYNTHETIC_ONLY") {
-        visibleReviews.push({ id: r.id, payload, simulation: null });
-        continue;
-      }
       try {
+        const payload = map1.parse(JSON.parse(r.canonical_payload));
+        const review = reviewInput.parse(JSON.parse(r.canonical_review));
+        const proposal = proposalInput.parse(JSON.parse(r.proposal_payload));
+        const now = BigInt(r.current_ns);
+        if (r.status !== "SYNTHETIC_ONLY") {
+          if (
+            review.observation.source !== "LOCAL_EXERCISE" &&
+            assessment(review, proposal, now) === r.status &&
+            validateMap1(payload, proposal, data.policy, now)
+          )
+            visibleReviews.push({ id: r.id, payload, simulation: null });
+          continue;
+        }
         const eligible = simulatedReviewEligible(
           {
-            review: reviewInput.parse(JSON.parse(r.canonical_review)),
+            review,
             payload,
             status: r.status,
           },
-          proposalInput.parse(JSON.parse(r.proposal_payload)),
+          proposal,
           data.policy,
-          BigInt(r.current_ns),
+          now,
           config.testnetSimulationEnabled,
         );
         if (eligible)
@@ -464,7 +473,7 @@ export function chainRoutes(
             },
           });
       } catch {
-        // A malformed synthetic candidate is omitted; preparation remains fail-closed.
+        // Malformed or expired candidates are omitted; preparation remains fail-closed.
       }
     }
     return {
