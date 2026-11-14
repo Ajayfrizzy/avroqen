@@ -50,7 +50,98 @@ const safeEndTags = new Set<SafeEndTag>([
   "EXT_DIRECT_RESPONSE_FAILED",
 ]);
 
-function walletFailure(error: unknown): WalletReport {
+const meteorEndTags = new Set([
+  "NEW_ACTION_STARTED",
+  "INCOMPLETE_ACTION",
+  "NO_ACCOUNTS",
+  "WINDOW_CLOSED",
+  "USER_CANCELLED",
+  "POPUP_WINDOW_REFUSED",
+  "POPUP_WINDOW_OPEN_FAILED",
+  "EXT_DIRECT_RESPONSE_FAILED",
+]);
+const meteorExecutionTargets = new Set([
+  "v1_web",
+  "v1_ext",
+  "v1_web_localhost",
+  "v2_bridge_mobile",
+]);
+
+function meteorFailureCategory(endTags: string[]) {
+  if (endTags.includes("EXT_DIRECT_RESPONSE_FAILED"))
+    return "EXTENSION_TRANSPORT_FAILED";
+  if (
+    endTags.includes("POPUP_WINDOW_OPEN_FAILED") ||
+    endTags.includes("POPUP_WINDOW_REFUSED")
+  )
+    return "POPUP_UNAVAILABLE";
+  if (endTags.includes("NO_ACCOUNTS")) return "WALLET_ACCOUNT_UNAVAILABLE";
+  if (endTags.includes("NEW_ACTION_STARTED")) return "ACTION_SUPERSEDED";
+  if (endTags.includes("USER_CANCELLED") || endTags.includes("WINDOW_CLOSED"))
+    return "USER_ENDED_ACTION";
+  return "WALLET_REJECTED_UNSPECIFIED";
+}
+
+function localWalletFailureDiagnostic(
+  error: unknown,
+  executionTarget: unknown,
+  operationKind: ChainOperation["kind"],
+) {
+  const rawTags =
+      error instanceof Error && error.name === "MeteorActionError"
+        ? (error as Error & { _reason?: { endTags?: unknown } })._reason
+            ?.endTags
+        : undefined,
+    endTags = Array.isArray(rawTags)
+      ? [
+          ...new Set(
+            rawTags.filter(
+              (tag): tag is string =>
+                typeof tag === "string" && meteorEndTags.has(tag),
+            ),
+          ),
+        ]
+      : [],
+    endTagState =
+      rawTags === undefined
+        ? "MISSING"
+        : !Array.isArray(rawTags) ||
+            rawTags.some((tag) => typeof tag !== "string")
+          ? "INVALID"
+          : rawTags.length === 0
+            ? "EMPTY"
+            : "PRESENT";
+
+  // Browser-local only. Never include the Error message/cause or wallet request/response data.
+  console.info(
+    "METEOR_TRANSACTION_FAILURE",
+    JSON.stringify({
+      event: "METEOR_TRANSACTION_FAILURE",
+      action: "near::sign_transactions",
+      operationKind,
+      executionTarget:
+        typeof executionTarget === "string" &&
+        meteorExecutionTargets.has(executionTarget)
+          ? executionTarget
+          : "UNKNOWN",
+      errorType:
+        error instanceof Error && error.name === "MeteorActionError"
+          ? "METEOR_ACTION_ERROR"
+          : "UNCLASSIFIED_ERROR",
+      failureCategory: meteorFailureCategory(endTags),
+      endTagState,
+      endTags,
+      hasCause: error instanceof Error && error.cause != null,
+    }),
+  );
+}
+
+function walletFailure(
+  error: unknown,
+  executionTarget: unknown,
+  operationKind: ChainOperation["kind"],
+): WalletReport {
+  localWalletFailureDiagnostic(error, executionTarget, operationKind);
   if (error instanceof Error && error.message === "Action was cancelled")
     return {
       outcome: "CANCELED",
@@ -194,7 +285,11 @@ export async function submitOperation(
             },
           };
     } catch (error) {
-      return walletFailure(error);
+      return walletFailure(
+        error,
+        account.connection.executionTarget,
+        operation.kind,
+      );
     }
   } finally {
     memory.clear();
