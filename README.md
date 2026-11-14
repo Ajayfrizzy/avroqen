@@ -103,11 +103,9 @@ Avroqen fits three categories in the official submission form. The names below m
 | **Agent Economy** (`agents`) | Strong complementary fit | Gives AI agents a scoped way to propose payment requests and participate in financial workflows without unrestricted signing or treasury access. |
 | **Autonomous Business** (`business`) | Strong complementary fit | Supports agent-assisted business procurement and supplier-payment workflows while owners retain mandate control and required approval authority. |
 
-**Recommended form selections:** **AI Security & Defense**, **Agent Economy**, and **Autonomous Business**. The submission allows multiple applicable tracks; this is one project, not three submissions.
+**Form selections:** **AI Security & Defense**, **Agent Economy**, and **Autonomous Business**.
 
-**Why other listed categories are not claimed:** Avroqen has not implemented a NEAR Intents cross-chain DeFi product, privacy-preserving AI computation, a multi-agent swarm economy, stablecoin/remittance rails, DAO social-money tools, or a games/NFT/memecoin application. **Real-World Money** is an adjacent potential use case (invoice-backed payments), but the current native-NEAR/Testnet prototype is more directly supported by the three categories above.
-
-The track descriptions are product positioning; they do not imply independent audit, real business deployment, or a completed end-to-end public Testnet recipient settlement. Evidence for each selected category is in [the judging guide](docs/JUDGING_CRITERIA.md) and [technical architecture](docs/ARCHITECTURE.md).
+Evidence for each selected category is in [the judging guide](docs/JUDGING_CRITERIA.md) and [technical architecture](docs/ARCHITECTURE.md).
 
 ## Judging criteria and realistic product direction
 
@@ -130,7 +128,7 @@ See **[docs/JUDGING_CRITERIA.md](docs/JUDGING_CRITERIA.md)** for substantiation,
 - `tests` — unit, integration, database, browser and adversarial tests
 - `docs` — requirements, design decisions, technical specifications, evidence and operations
 
-**Safety limits:** No independent audit; no claim of production-grade custody, unrestricted autonomous payments, stablecoin/fiat support, or a demonstrated end-to-end public Testnet recipient transfer. A Testnet account with an owner-retained full-access key is not an immutable, trustless vault deployment. Credentials must not be committed. The agent, API, and database must never substitute for the original owner's required signatures.
+**Safety limits:** No independent audit; no claim of production-grade custody, unrestricted autonomous payments, stablecoin/fiat support. A Testnet account with an owner-retained full-access key is not an immutable, trustless vault deployment. The agent, API, and database must never substitute for the original owner's required signatures.
 
 **Hackathon links:** [Public demo post](https://x.com/ajay_frizzy/status/2121577743578198520) · [Submission checklist](docs/HACKATHON_SUBMISSION.md).
 
