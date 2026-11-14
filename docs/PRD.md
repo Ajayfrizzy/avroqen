@@ -57,6 +57,18 @@ RPC/worker outage does not make submitted transfer 'succeeded' or 'failed'. Cont
 ## 7. UX/navigation
 Public landing + architecture explainer; owner dashboard; vault balances; create/view mandates; agents; proposals; approvals/attestations; execution detail; security events; emergency pause/revoke; audit explorer; guided real testnet demo. Mobile-responsive web experience.
 
+### Integrated UX direction (D017)
+
+Simplify owner/verifier workflows as the remaining product is integrated. Prefer
+readable NEAR decimal inputs with exact checked integer conversion and safe local
+SHA-256 calculation over manual atomic-unit/hash entry. Show essential terms and
+actions first, with exact protocol data inspectable before approval. Never derive
+independent verification from the agent’s file alone, silently change signed terms,
+or remove explicit wallet approvals or onchain checks. M8 validates the full journey
+on desktop and physical Android; M9 provides a temporarily hosted RumptyCloud
+judges’ demonstration using genuine NEAR Testnet results, subject to separate
+deployment and transaction authorization.
+
 ## 8. Exclusions / expansion boundaries
 No unrestricted autonomous custody, unsupported mainnet assets, universal verification of real-world delivery, fiat off-ramp, production insurance guarantee, arbitrary cross-chain payment claims, or brand-new AI marketplace. Future chain adapter must satisfy independent safety review; no bridge or Intent call bypasses vault.
 

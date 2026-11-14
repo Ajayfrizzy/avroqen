@@ -1,0 +1,4 @@
+[target.wasm32-unknown-unknown]
+# near-sdk-env 0.1.8 selects NEAR host cryptography/panics with this cfg.
+# Target-scoped: native unit/sandbox clients retain their normal environment.
+rustflags = ["--cfg", "near"]

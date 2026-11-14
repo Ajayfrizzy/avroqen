@@ -1,0 +1,70 @@
+name: Foundation CI
+on:
+  pull_request:
+    branches: [staging, main]
+  push:
+    branches: [staging, main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: foundation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  foundation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm test:workflow
+      - run: pnpm test:secrets
+      - run: pnpm check
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - id: setup-env
+        run: pnpm setup:env
+      - run: docker compose config --quiet
+      - run: docker compose up --build -d --wait
+      - run: pnpm test:containers
+      - run: node scripts/check-monitoring-isolation.mjs
+      - run: pnpm test:database
+      - run: pnpm test:identity-db
+      - run: pnpm test:smoke
+      - name: Database outage must fail readiness, not liveness
+        run: |
+          docker compose stop database
+          node scripts/check-outage.mjs
+          docker compose start database
+          docker compose up -d --wait
+          pnpm test:smoke
+      - if: ${{ always() && steps.setup-env.outcome == 'success' }}
+        run: docker compose down
+  rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: rustup show
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo build -p mandate-vault --target wasm32-unknown-unknown --release --locked
+      - run: node scripts/check-wasm.mjs
+      - run: cargo test --workspace --locked -- --nocapture

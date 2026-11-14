@@ -1,0 +1,1161 @@
+import { randomBytes, randomUUID } from "node:crypto";
+import {
+  canonicalPolicy,
+  independentVerifierPolicy,
+  mandatePolicy,
+} from "@avroqen/domain";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import type pg from "pg";
+import {
+  boundMandate,
+  vaultProposalState,
+} from "../../../../packages/domain/src/chain-state.js";
+import {
+  assessment,
+  map1,
+  reviewInput,
+  simulatedReviewEligible,
+  validateMap1,
+} from "../../../../packages/domain/src/evidence.js";
+import {
+  canonicalProposal,
+  proposalInput,
+} from "../../../../packages/domain/src/proposals.js";
+import {
+  accountStorageOperationKinds,
+  buildOperation,
+  type ChainOperation,
+  chainParams,
+  intentInput,
+  intentParams,
+  isAccountStorageOperation,
+  type OperationInput,
+  rebuildHistoricalStorageDeposit,
+  replacementChallengeInput,
+  replacementEvidence,
+  replacementMessage,
+  replacementProof,
+  walletReport,
+} from "../../../../packages/domain/src/settlement.js";
+import {
+  inspectReplacementEligibility,
+  replacementEvidenceFor,
+} from "../../../../services/chain/recovery.js";
+import {
+  chainHash,
+  type Manifest,
+  NearReader,
+} from "../../../../services/chain/rpc.js";
+import { hash, verifyMessage } from "../identity/crypto.js";
+import type { Context } from "../mandates/routes.js";
+export interface ChainConfig {
+  manifest: Manifest | null;
+  submissionEnabled: boolean;
+  reader: NearReader;
+}
+type HistoricalStorageIntent = {
+  org_id: string;
+  mandate_id: string;
+  actor_account: string;
+  canonical_operation: string;
+};
+const beginPublicErrors = new Set([
+  "DEPLOYMENT_NOT_AUTHORIZED",
+  "DEPLOYMENT_VERIFICATION_INCONSISTENT",
+  "DEPLOYMENT_VERIFICATION_TIMEOUT",
+  "DEPLOYMENT_VERIFICATION_UNAVAILABLE",
+  "INTENT_ALREADY_ATTEMPTED",
+  "INTENT_CONFIGURATION_CHANGED",
+  "RECOVERY_EVIDENCE_INCONSISTENT",
+  "RECOVERY_EVIDENCE_UNAVAILABLE",
+  "RECOVERY_HISTORICAL_STATE_UNAVAILABLE",
+  "RECOVERY_NOT_ELIGIBLE",
+  "RECOVERY_SIGNER_NONCE_CHANGED",
+  "RECOVERY_STORAGE_CREDIT_CHANGED",
+  "RECOVERY_VALIDITY_WINDOW_OPEN",
+  "RPC_TIMEOUT",
+  "WALLET_PROMPT_ACTIVE",
+]);
+function beginFailureCategory(error: unknown): string {
+  return error instanceof Error && beginPublicErrors.has(error.message)
+    ? error.message
+    : "SERVICE_UNAVAILABLE";
+}
+export function chainRoutes(
+  app: FastifyInstance,
+  ctx: Context,
+  chain: ChainConfig = {
+    manifest: null,
+    submissionEnabled: false,
+    reader: new NearReader(),
+  },
+) {
+  const { session, transaction, deny, config } = ctx;
+  const base = "/api/organizations/:orgId/mandates/:mandateId/chain";
+  const enabled = () => {
+    if (
+      !chain.submissionEnabled ||
+      !chain.manifest ||
+      config.network !== "testnet"
+    )
+      return deny(503, "DEPLOYMENT_NOT_AUTHORIZED");
+    return chain.manifest;
+  };
+  async function load(
+    db: pg.PoolClient,
+    request: FastifyRequest,
+    org: string,
+    id: string,
+    write: boolean,
+  ) {
+    const who = await session(request, db, write);
+    const row = (
+      await db.query(
+        "SELECT p.*,c.status,a.disabled_at FROM mandate_policies p JOIN mandate_consents c ON c.mandate_id=p.id JOIN registered_agents a ON a.id=p.agent_id WHERE p.id=$1 AND p.org_id=$2 AND p.network=$3 FOR SHARE OF p,c,a",
+        [id, org, config.network],
+      )
+    ).rows[0];
+    if (!row) return deny(404, "MANDATE_NOT_FOUND");
+    const policy = mandatePolicy.parse(JSON.parse(row.canonical_policy));
+    if (
+      canonicalPolicy(policy) !== row.canonical_policy ||
+      hash(row.canonical_policy) !== row.policy_digest ||
+      policy.organizationId !== org ||
+      policy.mandateId !== id
+    )
+      return deny(503, "POLICY_INTEGRITY_FAILED");
+    const role = (
+      await db.query(
+        "SELECT role FROM memberships WHERE org_id=$1 AND account_id=$2 AND network=$3 AND status='active' FOR SHARE",
+        [org, who.account_id, config.network],
+      )
+    ).rows[0]?.role;
+    const owner = who.account_id === policy.ownerAccount && role === "owner";
+    if (
+      !role &&
+      who.account_id !== policy.agentAccount &&
+      !policy.verifierPolicy.accounts.includes(who.account_id)
+    )
+      return deny(403, "ACCESS_DENIED");
+    return { who, row, policy, owner, role };
+  }
+  // Read immutable policy under authorization locks, release them before RPC,
+  // then operation() rechecks live session/membership under its write transaction.
+  async function verifiedGuardian(
+    request: FastifyRequest,
+    org: string,
+    id: string,
+  ) {
+    const data = await transaction((db) => load(db, request, org, id, true));
+    if (data.owner || !data.role) return null;
+    const manifest = enabled();
+    if (data.policy.vaultAccount !== manifest.account)
+      return deny(409, "VAULT_MISMATCH");
+    const deployment = await chain.reader.deployment(
+      manifest,
+      undefined,
+      undefined,
+      "interactive",
+    );
+    return boundMandate(
+      await chain.reader.view(
+        manifest.account,
+        "get_mandate",
+        { mandate_id: id },
+        deployment.block.hash,
+      ),
+      data.row.canonical_policy,
+      data.row.policy_digest,
+    ).guardian;
+  }
+  async function operation(
+    db: pg.PoolClient,
+    request: FastifyRequest,
+    org: string,
+    id: string,
+    input: OperationInput,
+    guardian: string | null = null,
+  ) {
+    const d = await load(db, request, org, id, true);
+    if (!independentVerifierPolicy(d.policy).eligible)
+      return deny(409, "UNSAFE_VERIFIER_POLICY");
+    const manifest = enabled();
+    if (d.policy.vaultAccount !== manifest.account)
+      return deny(409, "VAULT_MISMATCH");
+    const ownerKind = !["PROPOSE", "ATTEST"].includes(input.kind);
+    if (
+      (ownerKind || d.who.account_id === d.policy.ownerAccount) &&
+      !d.owner &&
+      !(input.kind === "PAUSE" && d.role && guardian === d.who.account_id)
+    )
+      return deny(403, "OWNER_REQUIRED");
+    const emergency = [
+      "PAUSE",
+      "REVOKE",
+      "WITHDRAW",
+      "WITHDRAW_STORAGE",
+    ].includes(input.kind);
+    if (
+      !emergency &&
+      (d.row.status !== "CONSENT_APPROVED_OFFCHAIN" || d.row.disabled_at)
+    )
+      return deny(409, "CONSENT_OR_AGENT_UNAVAILABLE");
+    const now = BigInt(
+      (
+        await db.query(
+          "SELECT trunc(extract(epoch FROM clock_timestamp())*1000000000)::text AS ns",
+        )
+      ).rows[0].ns,
+    );
+    if (!emergency && BigInt(d.policy.expiresAtNs) <= now)
+      return deny(409, "OPERATION_NOT_ALLOWED");
+    let proposal:
+      | import("../../../../packages/domain/src/proposals.js").ProposalInput
+      | undefined;
+    let evidence:
+      | import("../../../../packages/domain/src/evidence.js").Map1
+      | undefined;
+    if ("proposalId" in input) {
+      const row = (
+        await db.query(
+          "SELECT canonical_payload FROM agent_proposals WHERE id=$1 AND mandate_id=$2",
+          [input.proposalId, id],
+        )
+      ).rows[0];
+      if (!row) return deny(404, "PROPOSAL_NOT_FOUND");
+      proposal = proposalInput.parse(JSON.parse(row.canonical_payload));
+      if (canonicalProposal(proposal) !== row.canonical_payload)
+        return deny(503, "PROPOSAL_INTEGRITY_FAILED");
+    }
+    if (input.kind === "ATTEST") {
+      const r = (
+        await db.query(
+          `SELECT r.*,p.canonical_payload AS proposal_payload FROM evidence_reviews r JOIN evidence_submissions e ON e.id=r.evidence_id JOIN agent_proposals p ON p.id=e.proposal_id WHERE r.id=$1 AND p.mandate_id=$2 AND r.actor_account=$3`,
+          [input.reviewId, id, d.who.account_id],
+        )
+      ).rows[0];
+      if (!r) return deny(403, "VERIFIED_REVIEW_REQUIRED");
+      proposal = proposalInput.parse(JSON.parse(r.proposal_payload));
+      evidence = map1.parse(JSON.parse(r.canonical_payload));
+      const review = reviewInput.parse(JSON.parse(r.canonical_review));
+      const simulated = simulatedReviewEligible(
+        { review, payload: evidence, status: r.status },
+        proposal,
+        d.policy,
+        now,
+        config.testnetSimulationEnabled,
+      );
+      if (
+        !simulated &&
+        (!["VERIFIED", "DISPUTED"].includes(r.status) ||
+          review.observation.source === "LOCAL_EXERCISE" ||
+          assessment(review, proposal, now) !== r.status)
+      )
+        return deny(403, "AUTHENTIC_REVIEW_REQUIRED");
+    }
+    let built: ChainOperation;
+    try {
+      built = buildOperation(input, {
+        policy: d.policy,
+        policyDigest: d.row.policy_digest,
+        actor: d.who.account_id,
+        now,
+        guardian,
+        ...(proposal ? { proposal } : {}),
+        ...(evidence ? { evidence } : {}),
+      });
+    } catch {
+      return deny(409, "OPERATION_NOT_ALLOWED");
+    }
+    return { ...d, built };
+  }
+  const accountStorageKinds = [...accountStorageOperationKinds];
+  async function conflictingIntent(
+    db: pg.PoolClient,
+    input: {
+      actor: string;
+      vault: string;
+      mandate: string;
+      kind: ChainOperation["kind"];
+      exclude?: string;
+    },
+  ) {
+    return (
+      await db.query(
+        `SELECT id FROM chain_intents
+         WHERE actor_account=$1 AND vault_account=$2
+           AND ($5::uuid IS NULL OR id<>$5)
+           AND state NOT IN ('CONFIRMED_SUCCESS','CONFIRMED_FAILED')
+           AND replacement_authorized_at IS NULL
+           AND (mandate_id=$3 OR
+             ($4::boolean AND canonical_operation::jsonb->>'kind'=ANY($6::text[])))
+         LIMIT 1`,
+        [
+          input.actor,
+          input.vault,
+          input.mandate,
+          isAccountStorageOperation(input.kind),
+          input.exclude ?? null,
+          accountStorageKinds,
+        ],
+      )
+    ).rows[0] as { id: string } | undefined;
+  }
+  app.get("/api/chain/assignments", async (request) => {
+    const who = await session(request, ctx.pool);
+    const rows = await ctx.pool.query(
+      `SELECT p.canonical_policy FROM mandate_policies p WHERE p.network=$1 AND (p.owner_account=$2 AND EXISTS(SELECT 1 FROM memberships m WHERE m.org_id=p.org_id AND m.account_id=$2 AND m.role='owner' AND m.status='active') OR EXISTS(SELECT 1 FROM memberships m WHERE m.org_id=p.org_id AND m.account_id=$2 AND m.network=p.network AND m.status='active') OR p.agent_account=$2 OR p.canonical_policy::jsonb->'verifierPolicy'->'accounts' ? $2) ORDER BY p.id LIMIT 50`,
+      [config.network, who.account_id],
+    );
+    return {
+      mandates: rows.rows.map((r) =>
+        mandatePolicy.parse(JSON.parse(r.canonical_policy)),
+      ),
+    };
+  });
+  app.get("/api/chain/status", async (request) => {
+    await session(request, ctx.pool);
+    if (!chain.manifest)
+      return {
+        status: "NOT_CONFIGURED",
+        network: "testnet",
+        deploymentConfigured: false,
+        deploymentVerified: false,
+        submissionEnabled: false,
+      };
+    try {
+      const d = await chain.reader.deploymentStatus(chain.manifest);
+      return {
+        status: "VERIFIED",
+        network: "testnet",
+        account: chain.manifest.account,
+        deploymentConfigured: true,
+        deploymentVerified: true,
+        submissionEnabled: chain.submissionEnabled,
+        block: d.block,
+        accounting: d.accounting,
+      };
+    } catch {
+      return {
+        status: "UNAVAILABLE",
+        network: "testnet",
+        deploymentConfigured: true,
+        deploymentVerified: false,
+        submissionEnabled: chain.submissionEnabled,
+      };
+    }
+  });
+  app.get(base, async (request) => {
+    const { orgId, mandateId } = chainParams.parse(request.params);
+    const data = await transaction((db) =>
+      load(db, request, orgId, mandateId, false),
+    );
+    const intents = await ctx.pool.query(
+      `SELECT i.id,i.actor_account,i.canonical_operation,i.state,i.reason,i.verified_hash,i.receipt_ids,i.last_height,i.last_block_hash,i.created_at,i.replacement_authorized_at,
+       (SELECT recovery.original_intent_id FROM chain_recoveries recovery WHERE recovery.replacement_intent_id=i.id) AS controlled_replacement_of,
+       (SELECT e.reason FROM chain_events e WHERE e.intent_id=i.id AND e.reason IN ('UNVERIFIED_WALLET_HASH','WALLET_CANCELED','WALLET_SUBMISSION_FAILED','WALLET_OUTCOME_UNKNOWN') ORDER BY e.occurred_at DESC,e.id DESC LIMIT 1) AS wallet_outcome,
+       (SELECT e.reason FROM chain_events e WHERE e.intent_id=i.id AND e.reason LIKE 'WALLET_DIAGNOSTIC_%' ORDER BY e.occurred_at DESC,e.id DESC LIMIT 1) AS wallet_diagnostic
+       FROM chain_intents i WHERE i.org_id=$1 AND i.mandate_id=$2 AND ($3 OR i.actor_account=$4) ORDER BY i.created_at DESC LIMIT 50`,
+      [orgId, mandateId, data.owner, data.who.account_id],
+    );
+    const onchainProposals: Record<string, unknown> = {};
+    let onchain: unknown = null,
+      block: unknown = null;
+    if (chain.manifest && chain.manifest.account === data.policy.vaultAccount) {
+      try {
+        const d = await chain.reader.deploymentStatus(chain.manifest);
+        const raw = await chain.reader.view(
+          chain.manifest.account,
+          "get_mandate",
+          { mandate_id: mandateId },
+          d.block.hash,
+        );
+        onchain =
+          raw === null
+            ? null
+            : boundMandate(
+                raw,
+                data.row.canonical_policy,
+                data.row.policy_digest,
+              );
+        const rows = await ctx.pool.query(
+          "SELECT canonical_payload FROM agent_proposals WHERE mandate_id=$1 ORDER BY created_at DESC LIMIT 20",
+          [mandateId],
+        );
+        for (const row of rows.rows) {
+          const p = proposalInput.parse(JSON.parse(row.canonical_payload));
+          const value = await chain.reader.view(
+            chain.manifest.account,
+            "get_proposal",
+            { mandate_id: mandateId, proposal_id: p.proposalId },
+            d.block.hash,
+          );
+          if (value === null) continue;
+          const v = vaultProposalState.parse(value);
+          if (
+            v.id !== p.proposalId ||
+            v.mandate_id !== mandateId ||
+            v.recipient !== p.recipient ||
+            v.amount !== p.amountAtomic ||
+            v.evidence_digest !== p.evidenceDigest
+          )
+            throw new Error("ONCHAIN_PROPOSAL_MISMATCH");
+          onchainProposals[p.proposalId] = v;
+        }
+        block = d.block;
+      } catch {
+        onchain = null;
+        block = null;
+        for (const id of Object.keys(onchainProposals))
+          delete onchainProposals[id];
+      }
+    }
+    const proposals = await ctx.pool.query(
+      "SELECT canonical_payload FROM agent_proposals WHERE mandate_id=$1 ORDER BY created_at DESC LIMIT 50",
+      [mandateId],
+    );
+    const reviews = await ctx.pool.query(
+      `SELECT r.id,r.canonical_payload,r.canonical_review,r.status,
+       p.canonical_payload AS proposal_payload,
+       trunc(extract(epoch FROM clock_timestamp())*1000000000)::text AS current_ns
+       FROM evidence_reviews r
+       JOIN evidence_submissions e ON e.id=r.evidence_id
+       JOIN agent_proposals p ON p.id=e.proposal_id
+       WHERE p.mandate_id=$1 AND r.actor_account=$2 AND
+       (r.status IN ('VERIFIED','DISPUTED') OR
+        ($3 AND r.status='SYNTHETIC_ONLY' AND
+         r.canonical_review::jsonb->>'claim'='INVOICE_ISSUED' AND
+         r.canonical_review::jsonb->'observation'->>'source'='LOCAL_EXERCISE'))
+       ORDER BY r.created_at DESC LIMIT 50`,
+      [mandateId, data.who.account_id, config.testnetSimulationEnabled],
+    );
+    const visibleReviews: {
+      id: string;
+      payload: ReturnType<typeof map1.parse>;
+      simulation: {
+        eligible: true;
+        provenance: "LOCAL_EXERCISE_SYNTHETIC_ONLY";
+      } | null;
+    }[] = [];
+    for (const r of reviews.rows) {
+      try {
+        const payload = map1.parse(JSON.parse(r.canonical_payload));
+        const review = reviewInput.parse(JSON.parse(r.canonical_review));
+        const proposal = proposalInput.parse(JSON.parse(r.proposal_payload));
+        const now = BigInt(r.current_ns);
+        if (r.status !== "SYNTHETIC_ONLY") {
+          if (
+            review.observation.source !== "LOCAL_EXERCISE" &&
+            assessment(review, proposal, now) === r.status &&
+            validateMap1(payload, proposal, data.policy, now)
+          )
+            visibleReviews.push({ id: r.id, payload, simulation: null });
+          continue;
+        }
+        const eligible = simulatedReviewEligible(
+          {
+            review,
+            payload,
+            status: r.status,
+          },
+          proposal,
+          data.policy,
+          now,
+          config.testnetSimulationEnabled,
+        );
+        if (eligible)
+          visibleReviews.push({
+            id: r.id,
+            payload,
+            simulation: {
+              eligible: true,
+              provenance: "LOCAL_EXERCISE_SYNTHETIC_ONLY",
+            },
+          });
+      } catch {
+        // Malformed or expired candidates are omitted; preparation remains fail-closed.
+      }
+    }
+    return {
+      onchainProposals,
+      proposals: proposals.rows.map((r) =>
+        proposalInput.parse(JSON.parse(r.canonical_payload)),
+      ),
+      reviews: visibleReviews,
+      intents: intents.rows.map((r) => ({
+        ...r,
+        operation: JSON.parse(r.canonical_operation),
+        canonical_operation: undefined,
+        explorerUrl: r.verified_hash
+          ? `https://testnet.nearblocks.io/txns/${r.verified_hash}`
+          : null,
+      })),
+      onchain,
+      block,
+      policy: data.policy,
+    };
+  });
+  app.post(`${base}/intents`, async (request, reply) => {
+    const { orgId, mandateId } = chainParams.parse(request.params),
+      input = intentInput.parse(request.body),
+      manifest = enabled();
+    const guardian =
+      input.operation.kind === "PAUSE"
+        ? await verifiedGuardian(request, orgId, mandateId)
+        : null;
+    // Authorize before allowing remote work; repeat authorization after network I/O.
+    await transaction((db) =>
+      operation(db, request, orgId, mandateId, input.operation, guardian),
+    );
+    const verified = await chain.reader.deployment(
+      manifest,
+      undefined,
+      undefined,
+      "interactive",
+    );
+    const result = await transaction(async (db) => {
+      const data = await operation(
+        db,
+        request,
+        orgId,
+        mandateId,
+        input.operation,
+        guardian,
+      );
+      // Serialize local preparation for one wallet/vault, including concurrent idempotent requests.
+      await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+        `${data.who.account_id}:${manifest.account}`,
+      ]);
+      await session(request, db, true);
+      const previous = (
+        await db.query(
+          "SELECT * FROM chain_intents WHERE actor_account=$1 AND idempotency_key=$2",
+          [data.who.account_id, input.idempotencyKey],
+        )
+      ).rows[0];
+      const canonical = JSON.stringify(data.built);
+      if (previous) {
+        if (
+          previous.canonical_operation !== canonical ||
+          previous.org_id !== orgId
+        )
+          return deny(409, "IDEMPOTENCY_CONFLICT");
+        return {
+          id: previous.id,
+          operation: data.built,
+          state: previous.state,
+        };
+      }
+      if (
+        await conflictingIntent(db, {
+          actor: data.who.account_id,
+          vault: manifest.account,
+          mandate: mandateId,
+          kind: data.built.kind,
+        })
+      )
+        return deny(409, "UNRESOLVED_OPERATION");
+      const id = randomUUID(),
+        anchor = verified.block;
+      await db.query(
+        `INSERT INTO chain_intents(id,org_id,mandate_id,actor_account,network,vault_account,idempotency_key,canonical_operation,manifest,anchor_height,anchor_hash,scan_height,scan_hash) VALUES($1,$2,$3,$4,'testnet',$5,$6,$7,$8,$9,$10,$9,$10)`,
+        [
+          id,
+          orgId,
+          mandateId,
+          data.who.account_id,
+          manifest.account,
+          input.idempotencyKey,
+          canonical,
+          JSON.stringify(manifest),
+          anchor.height,
+          anchor.hash,
+        ],
+      );
+      await db.query(
+        "INSERT INTO chain_events(intent_id,state,reason) VALUES($1,'PREPARED','UNSIGNED')",
+        [id],
+      );
+      return { id, operation: data.built, state: "PREPARED" };
+    });
+    return reply.code(201).send(result);
+  });
+  async function owned(db: pg.PoolClient, request: FastifyRequest) {
+    const { intentId } = intentParams.parse(request.params),
+      who = await session(request, db, true);
+    const r = (
+      await db.query(
+        "SELECT * FROM chain_intents WHERE id=$1 AND actor_account=$2 FOR UPDATE",
+        [intentId, who.account_id],
+      )
+    ).rows[0];
+    if (!r) return deny(404, "INTENT_NOT_FOUND");
+    return r;
+  }
+  async function ownedRead(request: FastifyRequest) {
+    const { intentId } = intentParams.parse(request.params),
+      who = await session(request, ctx.pool);
+    const r = (
+      await ctx.pool.query(
+        "SELECT * FROM chain_intents WHERE id=$1 AND actor_account=$2",
+        [intentId, who.account_id],
+      )
+    ).rows[0];
+    if (!r) return deny(404, "INTENT_NOT_FOUND");
+    return r;
+  }
+  function recoverable(r: Record<string, unknown>, manifest: Manifest) {
+    const op = JSON.parse(String(r.canonical_operation)) as ChainOperation;
+    if (op.kind !== "STORAGE_DEPOSIT")
+      return deny(409, "RECOVERY_OPERATION_NOT_SUPPORTED");
+    if (
+      r.state !== "UNKNOWN" ||
+      r.reported_hash ||
+      r.verified_hash ||
+      r.replacement_authorized_at
+    )
+      return deny(409, "RECOVERY_NOT_ELIGIBLE");
+    const originalManifest = r.manifest as Manifest;
+    if (
+      originalManifest.account !== manifest.account ||
+      originalManifest.network !== manifest.network ||
+      originalManifest.wasmSha256 !== manifest.wasmSha256 ||
+      originalManifest.authorization !== manifest.authorization ||
+      JSON.stringify([...originalManifest.keyFingerprints].sort()) !==
+        JSON.stringify([...manifest.keyFingerprints].sort())
+    )
+      return deny(409, "INTENT_CONFIGURATION_CHANGED");
+    return op;
+  }
+  function denyRecoveryEvidence(error: unknown) {
+    if (error instanceof Error) {
+      if (error.message === "RPC_TIMEOUT") return deny(503, "RPC_TIMEOUT");
+      if (error.message === "UNKNOWN_BLOCK")
+        return deny(503, "RECOVERY_HISTORICAL_STATE_UNAVAILABLE");
+      if (
+        [
+          "RPC_BLOCK_MISMATCH",
+          "CONFLICTING_INTENT_ANCHOR",
+          "CONFLICTING_RPC",
+          "RECOVERY_PERSISTED_EVIDENCE_INVALID",
+        ].includes(error.message)
+      )
+        return deny(503, "RECOVERY_EVIDENCE_INCONSISTENT");
+    }
+    return deny(503, "RECOVERY_EVIDENCE_UNAVAILABLE");
+  }
+  async function recoveryEvidence(
+    r: Record<string, unknown>,
+    persistedEvidence?: unknown,
+  ) {
+    try {
+      return await replacementEvidenceFor(
+        chain.reader,
+        r as unknown as import("../../../../services/chain/reconcile.js").Intent,
+        persistedEvidence,
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        [
+          "RECOVERY_VALIDITY_WINDOW_OPEN",
+          "RECOVERY_SIGNER_NONCE_CHANGED",
+          "RECOVERY_STORAGE_CREDIT_CHANGED",
+          "RECOVERY_HASH_PRESENT",
+        ].includes(error.message)
+      )
+        return deny(409, error.message);
+      return denyRecoveryEvidence(error);
+    }
+  }
+  function denyDeploymentVerification(error: unknown): never {
+    if (error instanceof Error) {
+      if (error.message === "RPC_TIMEOUT")
+        return deny(503, "DEPLOYMENT_VERIFICATION_TIMEOUT");
+      if (
+        [
+          "DEPLOYMENT_CODE_MISMATCH",
+          "DEPLOYMENT_KEY_MISMATCH",
+          "DEPLOYMENT_DOMAIN_MISMATCH",
+          "NETWORK_MISMATCH",
+          "RPC_BLOCK_MISMATCH",
+        ].includes(error.message)
+      )
+        return deny(503, "DEPLOYMENT_VERIFICATION_INCONSISTENT");
+    }
+    return deny(503, "DEPLOYMENT_VERIFICATION_UNAVAILABLE");
+  }
+  async function historicalStorageDeposit(
+    db: pg.PoolClient,
+    request: FastifyRequest,
+    r: HistoricalStorageIntent,
+    manifest: Manifest,
+  ) {
+    const d = await load(db, request, r.org_id, r.mandate_id, true);
+    if (!d.owner || d.who.account_id !== r.actor_account)
+      return deny(403, "OWNER_REQUIRED");
+    if (d.row.status !== "CONSENT_APPROVED_OFFCHAIN" || d.row.disabled_at)
+      return deny(409, "CONSENT_OR_AGENT_UNAVAILABLE");
+    if (d.policy.vaultAccount !== manifest.account)
+      return deny(409, "VAULT_MISMATCH");
+    try {
+      return rebuildHistoricalStorageDeposit(
+        JSON.parse(String(r.canonical_operation)),
+        {
+          policy: d.policy,
+          policyDigest: d.row.policy_digest,
+          actor: d.who.account_id,
+        },
+      );
+    } catch {
+      return deny(409, "INTENT_CONFIGURATION_CHANGED");
+    }
+  }
+  app.get(
+    "/api/chain/intents/:intentId/recovery/eligibility",
+    async (request) => {
+      const manifest = enabled();
+      const r = await ownedRead(request);
+      recoverable(r, manifest);
+      try {
+        return await inspectReplacementEligibility(
+          chain.reader,
+          r as unknown as import("../../../../services/chain/reconcile.js").Intent,
+        );
+      } catch (error) {
+        return denyRecoveryEvidence(error);
+      }
+    },
+  );
+  app.post(
+    "/api/chain/intents/:intentId/recovery/challenge",
+    async (request) => {
+      replacementChallengeInput.parse(request.body);
+      const manifest = enabled();
+      const initial = await transaction(async (db) => {
+        const r = await owned(db, request);
+        recoverable(r, manifest);
+        await historicalStorageDeposit(db, request, r, manifest);
+        return r;
+      });
+      const evidence = await recoveryEvidence(initial);
+      return transaction(async (db) => {
+        const r = await owned(db, request);
+        const op = recoverable(r, manifest);
+        await historicalStorageDeposit(db, request, r, manifest);
+        if (
+          (
+            await db.query(
+              "SELECT 1 FROM chain_recovery_challenges WHERE original_intent_id=$1 AND consumed_at IS NULL AND expires_at>clock_timestamp()",
+              [r.id],
+            )
+          ).rowCount
+        )
+          return deny(409, "RECOVERY_CHALLENGE_EXISTS");
+        const challengeId = randomUUID(),
+          replacementIntentId = randomUUID(),
+          idempotencyKey = randomUUID(),
+          nonce = randomBytes(32),
+          expiry = (
+            await db.query(
+              "SELECT clock_timestamp()+interval '5 minutes' AS expiry",
+            )
+          ).rows[0].expiry as Date,
+          operationDigest = hash(r.canonical_operation),
+          message = replacementMessage({
+            originalIntentId: r.id,
+            replacementIntentId,
+            operation: op,
+            operationDigest,
+            evidence,
+            challengeId,
+            origin: config.origin,
+            expiresAt: expiry.toISOString(),
+          });
+        await db.query(
+          `INSERT INTO chain_recovery_challenges(id,original_intent_id,replacement_intent_id,idempotency_key,session_hash,actor_account,origin,nonce,message,evidence,expires_at)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [
+            challengeId,
+            r.id,
+            replacementIntentId,
+            idempotencyKey,
+            hash(ctx.tokenOf(request)),
+            r.actor_account,
+            config.origin,
+            nonce,
+            message,
+            JSON.stringify(evidence),
+            expiry,
+          ],
+        );
+        return {
+          challengeId,
+          replacementIntentId,
+          message,
+          nonce: nonce.toString("base64"),
+          recipient: config.origin,
+          expiresAt: expiry.toISOString(),
+          evidence,
+        };
+      });
+    },
+  );
+  app.post(
+    "/api/chain/intents/:intentId/recovery/complete",
+    async (request, reply) => {
+      const input = replacementProof.parse(request.body),
+        manifest = enabled();
+      const inspect = async (db: pg.PoolClient) => {
+        const r = await owned(db, request);
+        const op = recoverable(r, manifest);
+        if (
+          input.accountId !== r.actor_account ||
+          input.network !== config.network
+        )
+          return deny(401, "INVALID_PROOF");
+        const challenge = (
+          await db.query(
+            `SELECT * FROM chain_recovery_challenges WHERE id=$1 AND original_intent_id=$2 AND replacement_intent_id=$3
+             AND session_hash=$4 AND actor_account=$5 AND origin=$6 AND consumed_at IS NULL AND expires_at>clock_timestamp()`,
+            [
+              input.challengeId,
+              r.id,
+              input.replacementIntentId,
+              hash(ctx.tokenOf(request)),
+              r.actor_account,
+              config.origin,
+            ],
+          )
+        ).rows[0];
+        if (!challenge) return deny(401, "INVALID_PROOF");
+        const evidence = replacementEvidence.parse(challenge.evidence);
+        const expected = replacementMessage({
+          originalIntentId: r.id,
+          replacementIntentId: challenge.replacement_intent_id,
+          operation: op,
+          operationDigest: hash(r.canonical_operation),
+          evidence,
+          challengeId: challenge.id,
+          origin: config.origin,
+          expiresAt: challenge.expires_at.toISOString(),
+        });
+        if (
+          expected !== challenge.message ||
+          !verifyMessage(
+            {
+              message: expected,
+              nonce: challenge.nonce,
+              recipient: config.origin,
+              callback_url: "",
+            },
+            input.publicKey,
+            input.signature,
+          )
+        )
+          return deny(401, "INVALID_PROOF");
+        await session(request, db, true);
+        return { r, op, challenge };
+      };
+      const first = await transaction(inspect);
+      if (!(await ctx.verifyKey(input.accountId, input.publicKey)))
+        return deny(401, "INVALID_PROOF");
+      const freshEvidence = await recoveryEvidence(first.r);
+      const result = await transaction(async (db) => {
+        const inspected = await inspect(db);
+        await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+          `${inspected.r.actor_account}:${inspected.r.vault_account}`,
+        ]);
+        const r = await owned(db, request);
+        const op = recoverable(r, manifest);
+        if (
+          await conflictingIntent(db, {
+            actor: r.actor_account,
+            vault: r.vault_account,
+            mandate: r.mandate_id,
+            kind: op.kind,
+            exclude: r.id,
+          })
+        )
+          return deny(409, "UNRESOLVED_OPERATION");
+        await historicalStorageDeposit(db, request, r, manifest);
+        const consumed = await db.query(
+          "UPDATE chain_recovery_challenges SET consumed_at=clock_timestamp() WHERE id=$1 AND consumed_at IS NULL AND expires_at>clock_timestamp() RETURNING id",
+          [input.challengeId],
+        );
+        if (consumed.rowCount !== 1) return deny(401, "INVALID_PROOF");
+        await db.query(
+          `INSERT INTO chain_recoveries(id,original_intent_id,replacement_intent_id,challenge_id,actor_account,public_key,evidence)
+           VALUES($1,$2,$3,$4,$5,$6,$7)`,
+          [
+            randomUUID(),
+            r.id,
+            inspected.challenge.replacement_intent_id,
+            inspected.challenge.id,
+            r.actor_account,
+            input.publicKey,
+            JSON.stringify(freshEvidence),
+          ],
+        );
+        await db.query(
+          "UPDATE chain_intents SET replacement_authorized_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1",
+          [r.id],
+        );
+        await db.query(
+          "INSERT INTO chain_events(intent_id,state,reason,block_hash) VALUES($1,'UNKNOWN','CONTROLLED_REPLACEMENT_AUTHORIZED',$2)",
+          [r.id, freshEvidence.evidenceHash],
+        );
+        await db.query(
+          `INSERT INTO chain_intents(id,org_id,mandate_id,actor_account,network,vault_account,idempotency_key,canonical_operation,manifest,anchor_height,anchor_hash,scan_height,scan_hash)
+           VALUES($1,$2,$3,$4,'testnet',$5,$6,$7,$8,$9,$10,$9,$10)`,
+          [
+            inspected.challenge.replacement_intent_id,
+            r.org_id,
+            r.mandate_id,
+            r.actor_account,
+            r.vault_account,
+            inspected.challenge.idempotency_key,
+            r.canonical_operation,
+            JSON.stringify(manifest),
+            freshEvidence.evidenceHeight,
+            freshEvidence.evidenceHash,
+          ],
+        );
+        await db.query(
+          "INSERT INTO chain_events(intent_id,state,reason) VALUES($1,'PREPARED','CONTROLLED_REPLACEMENT_PREPARED')",
+          [inspected.challenge.replacement_intent_id],
+        );
+        return {
+          id: inspected.challenge.replacement_intent_id,
+          operation: op,
+          state: "PREPARED",
+          controlled_replacement_of: r.id,
+        };
+      });
+      return reply.code(201).send(result);
+    },
+  );
+  app.post("/api/chain/intents/:intentId/begin", async (request) => {
+    const startedAt = Date.now();
+    let stage = "CONFIGURATION_GATE";
+    try {
+      const manifest = enabled();
+      stage = "LOAD_AUTHORIZED_INTENT";
+      const initial = await transaction(async (db) => {
+        const intent = await owned(db, request);
+        const recoveryOriginal = (
+          await db.query(
+            `SELECT original.*, recovery.evidence AS recovery_evidence
+             FROM chain_recoveries recovery
+             JOIN chain_intents original ON original.id=recovery.original_intent_id
+             WHERE recovery.replacement_intent_id=$1`,
+            [intent.id],
+          )
+        ).rows[0];
+        return { intent, recoveryOriginal };
+      });
+      if (initial.intent.state !== "PREPARED")
+        return deny(409, "INTENT_ALREADY_ATTEMPTED");
+      if (initial.recoveryOriginal) {
+        const originalManifest = initial.recoveryOriginal.manifest as Manifest;
+        if (
+          initial.recoveryOriginal.canonical_operation !==
+            initial.intent.canonical_operation ||
+          originalManifest.account !== manifest.account ||
+          originalManifest.network !== manifest.network ||
+          originalManifest.wasmSha256 !== manifest.wasmSha256 ||
+          originalManifest.authorization !== manifest.authorization ||
+          JSON.stringify([...originalManifest.keyFingerprints].sort()) !==
+            JSON.stringify([...manifest.keyFingerprints].sort())
+        )
+          return deny(409, "INTENT_CONFIGURATION_CHANGED");
+        stage = "HISTORICAL_RECOVERY_EVIDENCE";
+        // Recovery evidence verifies the exact historical deployment and a
+        // fresh finalized deployment. Do not make a redundant current-state
+        // deployment pass first and consume the archival workflow deadline.
+        await recoveryEvidence(
+          initial.recoveryOriginal,
+          initial.recoveryOriginal.recovery_evidence,
+        );
+      } else {
+        stage = "CURRENT_DEPLOYMENT_VERIFICATION";
+        try {
+          await chain.reader.deployment(
+            manifest,
+            undefined,
+            undefined,
+            "interactive",
+          );
+        } catch (error) {
+          return denyDeploymentVerification(error);
+        }
+      }
+      stage = "GUARDIAN_AUTHORIZATION";
+      const guardian =
+        (JSON.parse(initial.intent.canonical_operation) as ChainOperation)
+          .kind === "PAUSE"
+          ? await verifiedGuardian(
+              request,
+              initial.intent.org_id,
+              initial.intent.mandate_id,
+            )
+          : null;
+      stage = "FINAL_BINDING_AND_STATE_TRANSITION";
+      const result = await transaction(async (db) => {
+        await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+          `${initial.intent.actor_account}:${manifest.account}`,
+        ]);
+        const r = await owned(db, request);
+        if (r.state !== "PREPARED")
+          return deny(409, "INTENT_ALREADY_ATTEMPTED");
+        const recoveryOriginal = (
+          await db.query(
+            `SELECT original.*
+           FROM chain_recoveries recovery
+           JOIN chain_intents original ON original.id=recovery.original_intent_id
+           WHERE recovery.replacement_intent_id=$1
+           FOR UPDATE OF original`,
+            [r.id],
+          )
+        ).rows[0];
+        if (Boolean(recoveryOriginal) !== Boolean(initial.recoveryOriginal))
+          return deny(409, "INTENT_CONFIGURATION_CHANGED");
+        if (
+          recoveryOriginal &&
+          (recoveryOriginal.state !== "UNKNOWN" ||
+            recoveryOriginal.reported_hash ||
+            recoveryOriginal.verified_hash)
+        )
+          return deny(409, "RECOVERY_NOT_ELIGIBLE");
+        // Rebuild the original operation from immutable inputs; stale app authority cannot open a prompt.
+        const op = JSON.parse(r.canonical_operation) as ChainOperation;
+        let built: ChainOperation;
+        if (recoveryOriginal) {
+          if (recoveryOriginal.canonical_operation !== r.canonical_operation)
+            return deny(409, "INTENT_CONFIGURATION_CHANGED");
+          built = await historicalStorageDeposit(db, request, r, manifest);
+        } else {
+          const input: Record<string, unknown> = { kind: op.kind };
+          if (["FUND", "STORAGE_DEPOSIT"].includes(op.kind))
+            input.amount = op.deposit;
+          if (["WITHDRAW", "WITHDRAW_STORAGE"].includes(op.kind))
+            input.amount = op.args.amount;
+          if (op.kind === "REGISTER") {
+            input.storageLimit = op.args.storage_limit;
+            input.guardian = op.args.guardian;
+          }
+          if (["PROPOSE", "EXECUTE"].includes(op.kind))
+            input.proposalId = op.args.proposal_id;
+          if (op.kind === "ATTEST") {
+            const e = map1.parse(op.args.evidence);
+            const review = (
+              await db.query(
+                "SELECT id FROM evidence_reviews WHERE actor_account=$1 AND attestation_nonce=$2",
+                [op.signerId, e.nonce],
+              )
+            ).rows[0];
+            if (!review) return deny(403, "VERIFIED_REVIEW_REQUIRED");
+            input.reviewId = review.id;
+          }
+          built = (
+            await operation(
+              db,
+              request,
+              r.org_id,
+              r.mandate_id,
+              intentInput.shape.operation.parse(input),
+              guardian,
+            )
+          ).built;
+        }
+        if (
+          JSON.stringify(built) !== r.canonical_operation ||
+          r.manifest.wasmSha256 !== manifest.wasmSha256 ||
+          r.manifest.authorization !== manifest.authorization ||
+          r.manifest.account !== manifest.account ||
+          r.manifest.network !== manifest.network ||
+          JSON.stringify([...r.manifest.keyFingerprints].sort()) !==
+            JSON.stringify([...manifest.keyFingerprints].sort())
+        )
+          return deny(409, "INTENT_CONFIGURATION_CHANGED");
+        if (
+          (
+            await db.query(
+              "SELECT 1 FROM chain_intents WHERE actor_account=$1 AND vault_account=$2 AND id<>$3 AND state='AWAITING_WALLET' LIMIT 1",
+              [r.actor_account, r.vault_account, r.id],
+            )
+          ).rowCount
+        )
+          return deny(409, "WALLET_PROMPT_ACTIVE");
+        await db.query(
+          "UPDATE chain_intents SET state='AWAITING_WALLET',reason='WALLET_PROMPT_OPENING',updated_at=clock_timestamp() WHERE id=$1",
+          [r.id],
+        );
+        await db.query(
+          "INSERT INTO chain_events(intent_id,state,reason) VALUES($1,'AWAITING_WALLET','WALLET_PROMPT_OPENING')",
+          [r.id],
+        );
+        return { id: r.id, operation: built, state: "AWAITING_WALLET" };
+      });
+      console.info(
+        "CHAIN_BEGIN",
+        JSON.stringify({
+          event: "READY_FOR_WALLET",
+          correlationId: request.id,
+          stage,
+          controlledReplacement: Boolean(initial.recoveryOriginal),
+          elapsedMs: Date.now() - startedAt,
+        }),
+      );
+      return result;
+    } catch (error) {
+      console.info(
+        "CHAIN_BEGIN",
+        JSON.stringify({
+          event: "PRE_WALLET_FAILED",
+          correlationId: request.id,
+          stage,
+          category: beginFailureCategory(error),
+          elapsedMs: Date.now() - startedAt,
+        }),
+      );
+      throw error;
+    }
+  });
+  app.post("/api/chain/intents/:intentId/report", async (request) => {
+    const input = walletReport.parse(request.body);
+    if (input.hash) chainHash.parse(input.hash);
+    return transaction(async (db) => {
+      const r = await owned(db, request);
+      if (r.state === "PREPARED") return deny(409, "INTENT_NOT_STARTED");
+      if (["CONFIRMED_SUCCESS", "CONFIRMED_FAILED"].includes(r.state))
+        return { state: r.state };
+      if (r.reported_hash && input.hash !== r.reported_hash)
+        return deny(409, "HASH_ALREADY_REPORTED");
+      const state =
+          input.outcome === "BROADCAST" ? "BROADCAST_REPORTED" : "UNKNOWN",
+        reason = {
+          BROADCAST: "UNVERIFIED_WALLET_HASH",
+          CANCELED: "WALLET_CANCELED",
+          SUBMISSION_FAILED: "WALLET_SUBMISSION_FAILED",
+          UNKNOWN: "WALLET_OUTCOME_UNKNOWN",
+        }[input.outcome];
+      await db.query(
+        "UPDATE chain_intents SET state=$2,reason=$3,reported_hash=$4,next_check=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1",
+        [r.id, state, reason, input.hash],
+      );
+      await db.query(
+        "INSERT INTO chain_events(intent_id,state,reason) VALUES($1,$2,$3)",
+        [r.id, state, reason],
+      );
+      if (input.outcome !== "BROADCAST" && input.failure) {
+        const diagnostic = `WALLET_DIAGNOSTIC_${input.failure.stage}_${input.failure.code}${input.failure.endTags.length ? `_${input.failure.endTags.join("_")}` : ""}`;
+        await db.query(
+          "INSERT INTO chain_events(intent_id,state,reason) VALUES($1,$2,$3)",
+          [r.id, state, diagnostic],
+        );
+      }
+      return { state };
+    });
+  });
+}

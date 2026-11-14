@@ -1,0 +1,61 @@
+{
+  "name": "avroqen",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": "24.22.1"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @avroqen/web --filter @avroqen/api dev",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "tsc --noEmit && pnpm --filter @avroqen/web typecheck",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:adversarial": "vitest run tests/adversarial",
+    "test:e2e": "playwright test",
+    "test:database": "node --env-file=.env --import tsx scripts/check-database.ts",
+    "build": "pnpm --filter @avroqen/web build && tsc --noEmit",
+    "check": "pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:integration && pnpm test:adversarial",
+    "test:contract": "pnpm build:contract && cargo test --workspace --locked",
+    "build:contract": "cargo build -p mandate-vault --target wasm32-unknown-unknown --release --locked",
+    "setup:env": "node scripts/setup-env.mjs",
+    "dev:api": "node --env-file=.env --import tsx apps/api/src/index.ts",
+    "test:smoke": "node scripts/smoke.mjs",
+    "test:secrets": "node scripts/scan-secrets.mjs",
+    "test:wasm": "node scripts/check-wasm.mjs",
+    "test:workflow": "node scripts/check-workflow.mjs",
+    "test:containers": "node scripts/check-containers.mjs",
+    "db:migrate": "node --env-file=.env --import tsx scripts/migrate.ts",
+    "test:identity-db": "node --env-file=.env node_modules/vitest/vitest.mjs run tests/database",
+    "setup:https": "node --import tsx scripts/setup-local-https.ts",
+    "renew:https": "node --import tsx scripts/setup-local-https.ts --renew-leaf",
+    "dev:https": "node --import tsx scripts/local-https-proxy.ts",
+    "test:https": "node --import tsx scripts/check-local-https.ts",
+    "test:sandbox": "cargo test -p mandate-vault --test sandbox --locked -- --nocapture",
+    "security:status": "node --env-file=.env --import tsx scripts/security-status.ts"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@biomejs/biome": "2.6.4",
+    "@playwright/test": "1.64.1",
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "borsh": "2.0.0",
+    "bs58": "6.0.0",
+    "pg": "8.23.1",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  },
+  "type": "module",
+  "pnpm": {
+    "overrides": {
+      "@tanstack/react-query": "5.101.2"
+    },
+    "patchedDependencies": {
+      "@meteorwallet/sdk@3.24.1": "patches/@meteorwallet__sdk@3.24.1.patch"
+    }
+  }
+}
