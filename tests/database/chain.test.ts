@@ -57,6 +57,9 @@ let recoveryRpcError = "outage";
 let historicalRpcError: string | undefined;
 let deploymentCalls = 0;
 class FixtureReader extends NearReader {
+  override async transactionCandidates() {
+    return [];
+  }
   override async deployment(_manifest?: unknown, at?: string) {
     deploymentCalls++;
     if (rpcDown) throw new Error(recoveryRpcError);

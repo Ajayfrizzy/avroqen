@@ -44,6 +44,10 @@ class ScanReader extends NearReader {
   found = false;
   chunkOutageAt: number | undefined;
   chunkCalls: number[] = [];
+  candidates: string[] = [];
+  override async transactionCandidates() {
+    return this.candidates;
+  }
   override async deployment() {
     return {
       block: { height: 3, hash: h(3), prev_hash: h(2), timestamp_nanosec: "3" },
@@ -194,7 +198,7 @@ it("queries an exact known hash and signer before deployment verification", asyn
   });
   expect(steps.slice(0, 2)).toEqual(["EXPERIMENTAL_tx_status", "deployment"]);
 });
-it("confirms a known hash only after exact finalized receipt evidence", async () => {
+it("confirms an indexed candidate only after exact finalized receipt evidence", async () => {
   const operation = {
       ...op,
       kind: "REGISTER",
@@ -282,11 +286,12 @@ it("confirms a known hash only after exact finalized receipt evidence", async ()
       };
     }
   }
+  const reader = new FinalizedReader();
+  reader.candidates = [h(7)];
   await expect(
-    observe(new FinalizedReader(), {
+    observe(reader, {
       ...intent,
       canonical_operation: JSON.stringify(operation),
-      reported_hash: h(7),
     }),
   ).resolves.toMatchObject({
     state: "CONFIRMED_SUCCESS",
@@ -341,6 +346,28 @@ it("retries the same batch after a chunk failure without returning a checkpoint"
   await expect(observe(r, intent)).rejects.toThrow("chunk outage");
   await expect(observe(r, intent)).rejects.toThrow("chunk outage");
   expect(r.chunkCalls).toEqual([2, 3, 2, 3]);
+});
+it("uses an untrusted index only to discover an exactly matching transaction", async () => {
+  const r = new ScanReader();
+  r.candidates = [h(7)];
+  expect(await observe(r, intent)).toMatchObject({
+    state: "FINALIZING",
+    reason: "WAITING_FINALITY",
+    reportedHash: h(7),
+    verifiedHash: h(7),
+  });
+  expect(r.chunkCalls).toEqual([]);
+});
+
+it("ignores a forged index candidate and retains the complete chunk scan", async () => {
+  const r = new ScanReader();
+  r.candidates = [h(8)];
+  expect(await observe(r, intent)).toMatchObject({
+    state: "UNKNOWN",
+    reason: "HASH_NOT_RECOVERED",
+    scanHeight: 3,
+  });
+  expect(r.chunkCalls).toEqual([2, 3]);
 });
 it("rejects stale or same-height conflicting finalized projections", async () => {
   await expect(

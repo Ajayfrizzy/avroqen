@@ -437,6 +437,70 @@ it("fails closed when every historical provider lacks a scanner chunk", async ()
   ]);
 });
 
+it("returns only bounded account-index candidates for the exact operation scope", async () => {
+  const matching = bs58.encode(Buffer.alloc(32, 11));
+  const wrongMethod = bs58.encode(Buffer.alloc(32, 12));
+  const duplicate = {
+    predecessor_account_id: "verifier.testnet",
+    receiver_account_id: "vault.testnet",
+    transaction_hash: matching,
+    block: { block_height: 102 },
+    actions: [{ action: "FUNCTION_CALL", method: "attest_proposal" }],
+  };
+  const transport = vi.fn<typeof fetch>(async (url, init) => {
+    expect(String(url)).toContain(
+      "/v1/account/verifier.testnet/txns?limit=25&page=1&order=desc",
+    );
+    expect(init?.method).toBe("GET");
+    return Response.json({
+      txns: [
+        duplicate,
+        duplicate,
+        {
+          ...duplicate,
+          transaction_hash: wrongMethod,
+          actions: [{ action: "FUNCTION_CALL", method: "fund_mandate" }],
+        },
+        { ...duplicate, block: { block_height: 100 } },
+      ],
+    });
+  });
+  await expect(
+    new NearReader(undefined, transport).transactionCandidates(
+      "verifier.testnet",
+      "vault.testnet",
+      "attest_proposal",
+      100,
+      103,
+    ),
+  ).resolves.toEqual([matching]);
+});
+
+it("rejects malformed account-index candidates without treating them as evidence", async () => {
+  const transport = vi.fn<typeof fetch>(async () =>
+    Response.json({
+      txns: [
+        {
+          predecessor_account_id: "verifier.testnet",
+          receiver_account_id: "vault.testnet",
+          transaction_hash: "not-a-hash",
+          block: { block_height: 102 },
+          actions: [{ action: "FUNCTION_CALL", method: "attest_proposal" }],
+        },
+      ],
+    }),
+  );
+  await expect(
+    new NearReader(undefined, transport).transactionCandidates(
+      "verifier.testnet",
+      "vault.testnet",
+      "attest_proposal",
+      100,
+      103,
+    ),
+  ).rejects.toThrow("RPC_CANDIDATE_RESPONSE_INVALID");
+});
+
 it("evicts the oldest immutable read after the bounded cache limit", async () => {
   const transport = vi.fn<typeof fetch>(async (_url, init) => {
     const request = JSON.parse(String(init?.body)) as {

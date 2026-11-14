@@ -72,6 +72,9 @@ export const HISTORICAL_DEPLOYMENT_VERIFICATION_TIMEOUT_MS = 25_000;
 export const DEPLOYMENT_STATUS_CACHE_TTL_MS = 5_000;
 export const IMMUTABLE_RPC_CACHE_MAX_ENTRIES = 32;
 export const IMMUTABLE_RPC_CACHE_MAX_BYTES = 8 * 1024 * 1024;
+export const TRANSACTION_CANDIDATE_RESPONSE_LIMIT = 512 * 1024;
+export const TRANSACTION_CANDIDATE_LIMIT = 8;
+const TRANSACTION_CANDIDATE_TIMEOUT_MS = 5_000;
 const RPC_JSON_MAX_DEPTH = 64;
 const RPC_JSON_MAX_NUMBER_LENGTH = 128;
 const TIMESTAMP_NANOSECONDS_MAX_DIGITS = 20;
@@ -588,6 +591,97 @@ export class NearReader {
       signal,
     );
   }
+  async transactionCandidates(
+    signer: string,
+    receiver: string,
+    method: string,
+    afterHeight: number,
+    throughHeight: number,
+    parentSignal?: AbortSignal,
+  ): Promise<string[]> {
+    nearAccount.parse(signer);
+    nearAccount.parse(receiver);
+    if (!/^[a-z][a-z0-9_]{0,63}$/u.test(method))
+      throw rpcError("RPC_CANDIDATE_REQUEST_INVALID");
+    if (
+      !Number.isSafeInteger(afterHeight) ||
+      !Number.isSafeInteger(throughHeight) ||
+      afterHeight < 0 ||
+      throughHeight <= afterHeight
+    )
+      throw rpcError("RPC_CANDIDATE_REQUEST_INVALID");
+    const deadline = AbortSignal.timeout(TRANSACTION_CANDIDATE_TIMEOUT_MS),
+      signal = parentSignal
+        ? AbortSignal.any([parentSignal, deadline])
+        : deadline,
+      url = new URL(
+        `/v1/account/${encodeURIComponent(signer)}/txns`,
+        "https://api-testnet.nearblocks.io",
+      );
+    url.searchParams.set("limit", "25");
+    url.searchParams.set("page", "1");
+    url.searchParams.set("order", "desc");
+    let response: Response;
+    try {
+      response = await this.transport(url, {
+        method: "GET",
+        redirect: "error",
+        headers: { Accept: "application/json" },
+        signal,
+      });
+    } catch {
+      throw rpcError("RPC_CANDIDATE_INDEX_UNAVAILABLE");
+    }
+    if (!response.ok || !response.body)
+      throw rpcError("RPC_CANDIDATE_INDEX_UNAVAILABLE");
+    const reader = response.body.getReader(),
+      parts: Uint8Array[] = [];
+    let bytes = 0;
+    try {
+      while (true) {
+        const part = await reader.read();
+        if (part.done) break;
+        bytes += part.value.length;
+        if (bytes > TRANSACTION_CANDIDATE_RESPONSE_LIMIT)
+          throw rpcError("RPC_CANDIDATE_RESPONSE_LIMIT");
+        parts.push(part.value);
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "RPC_CANDIDATE_RESPONSE_LIMIT"
+      )
+        throw error;
+      throw rpcError("RPC_CANDIDATE_INDEX_UNAVAILABLE");
+    } finally {
+      await reader.cancel().catch(() => {});
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(Buffer.concat(parts).toString("utf8"));
+    } catch {
+      throw rpcError("RPC_CANDIDATE_RESPONSE_INVALID");
+    }
+    const parsed = transactionCandidateResponse.safeParse(body);
+    if (!parsed.success) throw rpcError("RPC_CANDIDATE_RESPONSE_INVALID");
+    return [
+      ...new Set(
+        parsed.data.txns
+          .filter(
+            (entry) =>
+              entry.predecessor_account_id === signer &&
+              entry.receiver_account_id === receiver &&
+              entry.block.block_height > afterHeight &&
+              entry.block.block_height <= throughHeight &&
+              entry.actions.some(
+                (action) =>
+                  action.action === "FUNCTION_CALL" && action.method === method,
+              ),
+          )
+          .map((entry) => entry.transaction_hash),
+      ),
+    ].slice(0, TRANSACTION_CANDIDATE_LIMIT);
+  }
   async query(
     type: string,
     account: string,
@@ -863,4 +957,20 @@ const historicalChunkSchema = z.object({
     height_included: z.number().int().nonnegative().safe(),
   }),
   transactions: z.array(z.unknown()),
+});
+const transactionCandidateResponse = z.object({
+  txns: z.array(
+    z.object({
+      predecessor_account_id: nearAccount,
+      receiver_account_id: nearAccount,
+      transaction_hash: chainHash,
+      block: z.object({ block_height: z.number().int().nonnegative().safe() }),
+      actions: z.array(
+        z.object({
+          action: z.string(),
+          method: z.string().nullable(),
+        }),
+      ),
+    }),
+  ),
 });
