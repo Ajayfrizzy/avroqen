@@ -36,7 +36,26 @@ let keyAllowed = true,
 let hook: (() => Promise<void>) | undefined;
 const app = buildApi(async () => {}, {
   pool,
-  config: { origin, network: "testnet", secure: true },
+  config: {
+    origin,
+    network: "testnet",
+    secure: true,
+    testnetSimulationEnabled: false,
+  },
+  verifyKey: async () => {
+    await hook?.();
+    if (unavailable) throw new Error("private provider error");
+    return keyAllowed;
+  },
+});
+const simulationApp = buildApi(async () => {}, {
+  pool,
+  config: {
+    origin,
+    network: "testnet",
+    secure: true,
+    testnetSimulationEnabled: true,
+  },
   verifyKey: async () => {
     await hook?.();
     if (unavailable) throw new Error("private provider error");
@@ -122,7 +141,7 @@ function terms() {
       version: 1,
       accounts: ["verifier.testnet"],
       threshold: 1,
-      requiredClaims: ["SERVICE_CONFIRMED"],
+      requiredClaims: ["INVOICE_ISSUED"],
       requireOwnerApproval: true,
     },
   };
@@ -152,6 +171,7 @@ beforeAll(async () => {
   await admin.query(`CREATE SCHEMA ${schema}`);
   await migrate(pool);
   await app.ready();
+  await simulationApp.ready();
 });
 beforeEach(async () => {
   hook = undefined;
@@ -206,6 +226,7 @@ beforeEach(async () => {
 });
 afterAll(async () => {
   await app.close();
+  await simulationApp.close();
   await pool.end();
   await admin.query(`DROP SCHEMA ${schema} CASCADE`);
   await admin.end();
@@ -232,14 +253,14 @@ function metadata() {
 }
 function review(change: Record<string, unknown> = {}) {
   return {
-    claim: "SERVICE_CONFIRMED",
+    claim: "INVOICE_ISSUED",
     decision: "APPROVE",
     observation: {
       source: "AUTHENTICATED_PROVIDER_PORTAL",
       issuer: "Issuer",
       reference: "INV-1",
       observedAtNs: (BigInt(Date.now() - 60000) * 1000000n).toString(),
-      event: "SERVICE_ACTIVATED",
+      event: "INVOICE_ISSUED",
       recipient: "vendor.testnet",
       amountAtomic: "1",
       evidenceDigest: "a".repeat(64),
@@ -517,7 +538,7 @@ it.each([
     issuer: "Fake",
     reference: "INV-2",
     independentlyObtained: false,
-    event: "INVOICE_ISSUED",
+    event: "SERVICE_ACTIVATED",
   };
   r.observation = { ...r.observation, [field]: replacements[field] };
   expect(
@@ -561,6 +582,45 @@ it("local exercise never contributes to quorum or prepares a live intent", async
   expect(out.json().reviews[0].status).toBe("SYNTHETIC_ONLY");
   expect(out.json().reviews[0].intent).toBeNull();
   expect(out.json().readiness.claims[0].count).toBe(0);
+});
+it("admits a bound local exercise only through explicit Testnet simulation", async () => {
+  const r = review();
+  r.observation.source = "LOCAL_EXERCISE";
+  const c = await reviewChallenge(r);
+  const out = await verifyReview(reviewSignature(c));
+  expect(out.json().reviews[0]).toMatchObject({
+    status: "SYNTHETIC_ONLY",
+    intent: null,
+  });
+
+  const simulated = await simulationApp.inject({
+    url: evidencePath(),
+    headers: verifier,
+  });
+  expect(simulated.statusCode).toBe(200);
+  expect(simulated.json().reviews[0]).toMatchObject({
+    status: "SYNTHETIC_ONLY",
+    sourceClassification:
+      "TESTNET_SIMULATION_NOT_INDEPENDENT_COMMERCIAL_VERIFICATION",
+    simulation: {
+      enabled: true,
+      eligible: true,
+      provenance: "LOCAL_EXERCISE_SYNTHETIC_ONLY",
+    },
+    attestationStatus: "AWAITING_VERIFIER_SIGNATURE",
+    intent: {
+      signerId: "verifier.testnet",
+      receiverId: "vault.testnet",
+      methodName: "attest_proposal",
+      deposit: "0",
+      network: "testnet",
+    },
+  });
+  expect(simulated.json().readiness).toMatchObject({
+    simulation: { enabled: true, eligibleClaims: ["INVOICE_ISSUED"] },
+    ownerApproved: false,
+    offchainReady: false,
+  });
 });
 it("verifies a Meteor-compatible ASCII review proof after removing the legacy Unicode header", async () => {
   const challenge = await reviewChallenge();

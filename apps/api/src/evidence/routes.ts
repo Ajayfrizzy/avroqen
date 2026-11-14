@@ -18,6 +18,7 @@ import {
   reviewInput,
   reviewMessage,
   reviewProof,
+  simulatedReviewEligible,
   validateMap1,
 } from "../../../../packages/domain/src/evidence.js";
 import {
@@ -190,7 +191,10 @@ export function evidenceRoutes(app: FastifyInstance, ctx: Context) {
     data: Awaited<ReturnType<typeof load>>,
   ) {
     const rs = data.evidence ? await records(db, data.evidence.id) : [];
-    const summary = readiness(data.policy, rs, data.now);
+    const summary = readiness(data.policy, rs, data.now, {
+      enabled: config.testnetSimulationEnabled,
+      proposal: data.proposal,
+    });
     const verifierPolicyStatus = independentVerifierPolicy(data.policy);
     const active =
       verifierPolicyStatus.eligible &&
@@ -211,32 +215,55 @@ export function evidenceRoutes(app: FastifyInstance, ctx: Context) {
             status: summary.disputed
               ? "DISPUTED"
               : summary.offchainReady
-                ? "VERIFIED"
+                ? summary.simulation.eligibleClaims.length > 0
+                  ? "SIMULATION_READY"
+                  : "VERIFIED"
                 : rs.length
                   ? "PENDING_REVIEW"
                   : "SUBMITTED",
             provenance: "UNTRUSTED_CLAIM",
           }
         : null,
-      reviews: rs.map((r) => ({
-        ...r,
-        sourceClassification:
-          "HUMAN_ASSERTION_NOT_AUTOMATED_PROVIDER_VERIFICATION",
-        attestationStatus:
-          active &&
-          BigInt(r.payload.expires_at_ns) > data.now &&
-          ((r.status === "VERIFIED" && !summary.disputed) ||
-            r.status === "DISPUTED")
-            ? "AWAITING_VERIFIER_SIGNATURE"
-            : "NOT_PREPARED",
-        intent:
-          active &&
-          BigInt(r.payload.expires_at_ns) > data.now &&
-          ((r.status === "VERIFIED" && !summary.disputed) ||
-            r.status === "DISPUTED")
-            ? attestationIntent(r.payload, data.policy)
-            : null,
-      })),
+      reviews: rs.map((r) => {
+        const simulated = simulatedReviewEligible(
+          r,
+          data.proposal,
+          data.policy,
+          data.now,
+          config.testnetSimulationEnabled,
+        );
+        return {
+          ...r,
+          sourceClassification:
+            r.review.observation.source === "LOCAL_EXERCISE"
+              ? "TESTNET_SIMULATION_NOT_INDEPENDENT_COMMERCIAL_VERIFICATION"
+              : "HUMAN_ASSERTION_NOT_AUTOMATED_PROVIDER_VERIFICATION",
+          simulation: {
+            enabled: config.testnetSimulationEnabled,
+            eligible: simulated,
+            provenance:
+              r.review.observation.source === "LOCAL_EXERCISE"
+                ? "LOCAL_EXERCISE_SYNTHETIC_ONLY"
+                : null,
+          },
+          attestationStatus:
+            active &&
+            BigInt(r.payload.expires_at_ns) > data.now &&
+            ((r.status === "VERIFIED" && !summary.disputed) ||
+              r.status === "DISPUTED" ||
+              (simulated && !summary.disputed))
+              ? "AWAITING_VERIFIER_SIGNATURE"
+              : "NOT_PREPARED",
+          intent:
+            active &&
+            BigInt(r.payload.expires_at_ns) > data.now &&
+            ((r.status === "VERIFIED" && !summary.disputed) ||
+              r.status === "DISPUTED" ||
+              (simulated && !summary.disputed))
+              ? attestationIntent(r.payload, data.policy)
+              : null,
+        };
+      }),
       readiness: summary,
       deploymentStatus: "NOT_DEPLOYED",
       allowedClaims: verifierPolicyStatus.eligible

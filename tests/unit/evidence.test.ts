@@ -10,6 +10,7 @@ import {
   readiness,
   reviewInput,
   reviewMessage,
+  simulatedReviewEligible,
   validateMap1,
 } from "../../packages/domain/src/evidence.js";
 import { mandatePolicy } from "../../packages/domain/src/index.js";
@@ -334,6 +335,149 @@ it("synthetic dispute cannot masquerade as actual delivery dispute", () => {
       200n,
     ),
   ).toBe("SYNTHETIC_ONLY");
+});
+it("admits an exactly bound local exercise only to explicit Testnet simulation", () => {
+  const simulatedReview = reviewInput.parse({
+    ...review,
+    claim: "INVOICE_ISSUED",
+    observation: {
+      ...review.observation,
+      source: "LOCAL_EXERCISE",
+      event: "INVOICE_ISSUED",
+    },
+  });
+  const record: ReviewRecord = {
+    review: simulatedReview,
+    payload: map1For(
+      proposal,
+      simulatedReview,
+      "v1.testnet",
+      randomUUID(),
+      100n,
+      1000n,
+    ),
+    status: "SYNTHETIC_ONLY",
+  };
+  expect(simulatedReviewEligible(record, proposal, policy, 200n, false)).toBe(
+    false,
+  );
+  expect(simulatedReviewEligible(record, proposal, policy, 200n, true)).toBe(
+    true,
+  );
+  expect(
+    simulatedReviewEligible(
+      {
+        ...record,
+        review: {
+          ...record.review,
+          claim: "SERVICE_CONFIRMED",
+          observation: {
+            ...record.review.observation,
+            event: "SERVICE_FULFILLED",
+          },
+        },
+        payload: { ...record.payload, claim_type: "SERVICE_CONFIRMED" },
+      },
+      proposal,
+      policy,
+      200n,
+      true,
+    ),
+  ).toBe(false);
+  expect(
+    readiness(policy, [record], 200n, { enabled: true, proposal }).claims.find(
+      (claim) => claim.claim === "INVOICE_ISSUED",
+    )?.count,
+  ).toBe(1);
+  expect(
+    readiness(policy, [record], 200n, { enabled: false, proposal }).claims.find(
+      (claim) => claim.claim === "INVOICE_ISSUED",
+    )?.count,
+  ).toBe(0);
+  expect(
+    simulatedReviewEligible(
+      {
+        ...record,
+        review: {
+          ...simulatedReview,
+          observation: {
+            ...simulatedReview.observation,
+            amountAtomic: "2",
+          },
+        },
+      },
+      proposal,
+      policy,
+      200n,
+      true,
+    ),
+  ).toBe(false);
+});
+it("keeps separate owner approval mandatory for simulated readiness", () => {
+  const simulationPolicy = mandatePolicy.parse({
+    ...policy,
+    verifierPolicy: {
+      ...policy.verifierPolicy,
+      accounts: ["v1.testnet"],
+      threshold: 1,
+      requiredClaims: ["INVOICE_ISSUED"],
+    },
+  });
+  const simulatedReview = reviewInput.parse({
+    ...review,
+    claim: "INVOICE_ISSUED",
+    observation: {
+      ...review.observation,
+      source: "LOCAL_EXERCISE",
+      event: "INVOICE_ISSUED",
+    },
+  });
+  const simulated: ReviewRecord = {
+    review: simulatedReview,
+    payload: map1For(
+      proposal,
+      simulatedReview,
+      "v1.testnet",
+      randomUUID(),
+      100n,
+      1000n,
+    ),
+    status: "SYNTHETIC_ONLY",
+  };
+  const ownerReview = reviewInput.parse({
+    ...review,
+    claim: "OWNER_APPROVED",
+    observation: {
+      ...review.observation,
+      source: "OWNER_DECISION",
+      event: "OWNER_DECISION",
+      independentlyObtained: false,
+    },
+  });
+  const owner: ReviewRecord = {
+    review: ownerReview,
+    payload: map1For(
+      proposal,
+      ownerReview,
+      policy.ownerAccount,
+      randomUUID(),
+      100n,
+      1000n,
+    ),
+    status: "VERIFIED",
+  };
+  expect(
+    readiness(simulationPolicy, [simulated], 200n, {
+      enabled: true,
+      proposal,
+    }).offchainReady,
+  ).toBe(false);
+  expect(
+    readiness(simulationPolicy, [simulated, owner], 200n, {
+      enabled: true,
+      proposal,
+    }).offchainReady,
+  ).toBe(true);
 });
 it("transaction preparation exposes exact contract args but never enables submission", () => {
   const intent = attestationIntent(proof, policy);

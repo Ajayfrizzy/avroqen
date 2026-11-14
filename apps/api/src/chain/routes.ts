@@ -14,6 +14,7 @@ import {
   assessment,
   map1,
   reviewInput,
+  simulatedReviewEligible,
 } from "../../../../packages/domain/src/evidence.js";
 import {
   canonicalProposal,
@@ -232,14 +233,22 @@ export function chainRoutes(
           [input.reviewId, id, d.who.account_id],
         )
       ).rows[0];
-      if (!r || !["VERIFIED", "DISPUTED"].includes(r.status))
-        return deny(403, "VERIFIED_REVIEW_REQUIRED");
+      if (!r) return deny(403, "VERIFIED_REVIEW_REQUIRED");
       proposal = proposalInput.parse(JSON.parse(r.proposal_payload));
       evidence = map1.parse(JSON.parse(r.canonical_payload));
       const review = reviewInput.parse(JSON.parse(r.canonical_review));
+      const simulated = simulatedReviewEligible(
+        { review, payload: evidence, status: r.status },
+        proposal,
+        d.policy,
+        now,
+        config.testnetSimulationEnabled,
+      );
       if (
-        review.observation.source === "LOCAL_EXERCISE" ||
-        assessment(review, proposal, now) !== r.status
+        !simulated &&
+        (!["VERIFIED", "DISPUTED"].includes(r.status) ||
+          review.observation.source === "LOCAL_EXERCISE" ||
+          assessment(review, proposal, now) !== r.status)
       )
         return deny(403, "AUTHENTIC_REVIEW_REQUIRED");
     }

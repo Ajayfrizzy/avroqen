@@ -157,6 +157,7 @@ export async function uiFixture(page: Page, mode: Mode = "populated") {
             ownerApprovalRequired: true,
             disputed: false,
             claims: [{ claim: "SERVICE_CONFIRMED", count: 0, required: 1 }],
+            simulation: { enabled: false, eligibleClaims: [] },
           },
         },
       });

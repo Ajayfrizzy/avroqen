@@ -70,7 +70,8 @@ async function setup(page: Page, mode = "normal") {
         })
       : policy;
   await page.route("**/api/**", async (route) => {
-    const path = new URL(route.request().url()).pathname;
+    const requestUrl = new URL(route.request().url());
+    const path = requestUrl.pathname;
     if (path === "/api/auth/session")
       return route.fulfill({
         json: {
@@ -81,7 +82,7 @@ async function setup(page: Page, mode = "normal") {
       });
     if (path === "/api/auth/config")
       return route.fulfill({
-        json: { origin: "http://127.0.0.1:3000", network: "testnet" },
+        json: { origin: requestUrl.origin, network: "testnet" },
       });
     if (mode === "denied")
       return route.fulfill({ status: 403, json: { error: "ACCESS_DENIED" } });
@@ -109,7 +110,7 @@ async function setup(page: Page, mode = "normal") {
         review,
         payload,
         challengeId: uuid(200 + challenges),
-        origin: "http://127.0.0.1:3000",
+        origin: requestUrl.origin,
         expiresAt: new Date(Date.now() + 300000).toISOString(),
       };
       return route.fulfill({
@@ -146,6 +147,10 @@ async function setup(page: Page, mode = "normal") {
           ownerApproved: false,
           ownerApprovalRequired: true,
           claims: [{ claim: "SERVICE_CONFIRMED", count: 0, required: 1 }],
+          simulation: {
+            enabled: mode === "simulation",
+            eligibleClaims: [],
+          },
         },
       },
     });
@@ -297,6 +302,18 @@ test("read-only member cannot initiate a verifier review", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: "Review exact decision", exact: true }),
   ).toHaveCount(0);
+});
+test("Testnet simulation is explicit and does not claim commercial verification", async ({
+  page,
+}) => {
+  await setup(page, "simulation");
+  await expect(
+    page.getByText("Testnet simulation is enabled", { exact: false }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.getByLabel("How you obtained evidence")).toContainText(
+    "Fictional invoice — Testnet simulation only",
+  );
 });
 test("dispute dominates readiness and removes review controls", async ({
   page,

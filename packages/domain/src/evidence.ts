@@ -257,17 +257,53 @@ export interface ReviewRecord {
   review: ReviewInput;
   status: string;
 }
+export function simulatedReviewEligible(
+  record: ReviewRecord,
+  proposal: ProposalInput,
+  policy: MandatePolicy,
+  now: bigint,
+  enabled: boolean,
+) {
+  const { review, payload, status } = record;
+  const eventMatches =
+    review.claim === "INVOICE_ISSUED" &&
+    review.observation.event === "INVOICE_ISSUED";
+  return (
+    enabled &&
+    policy.network === "testnet" &&
+    proposal.network === "testnet" &&
+    status === "SYNTHETIC_ONLY" &&
+    review.decision === "APPROVE" &&
+    review.observation.source === "LOCAL_EXERCISE" &&
+    assessment(review, proposal, now) === "SYNTHETIC_ONLY" &&
+    review.observation.independentlyObtained &&
+    eventMatches &&
+    review.observation.evidenceDigest === proposal.evidenceDigest &&
+    review.observation.recipient === proposal.recipient &&
+    review.observation.amountAtomic === proposal.amountAtomic &&
+    validateMap1(payload, proposal, policy, now)
+  );
+}
 export function readiness(
   policy: MandatePolicy,
   records: ReviewRecord[],
   now: bigint,
+  simulation?: { enabled: boolean; proposal: ProposalInput },
 ) {
   const independent = independentVerifierPolicy(policy).eligible;
   const disputed = records.some((r) => r.status === "DISPUTED");
   const valid = records.filter(
     (r) =>
       independent &&
-      r.status === "VERIFIED" &&
+      (r.status === "VERIFIED" ||
+        (simulation?.proposal !== undefined &&
+          simulatedReviewEligible(
+            r,
+            simulation.proposal,
+            policy,
+            now,
+            simulation.enabled,
+          ))) &&
       BigInt(r.payload.expires_at_ns) > now &&
       allowedReviewer(policy, r.payload.verifier_account, r.payload.claim_type),
   );
@@ -291,6 +327,22 @@ export function readiness(
     claims,
     ownerApprovalRequired: policy.verifierPolicy.requireOwnerApproval,
     ownerApproved,
+    simulation: {
+      enabled: simulation?.enabled === true && policy.network === "testnet",
+      eligibleClaims: valid
+        .filter(
+          (r) =>
+            simulation?.proposal !== undefined &&
+            simulatedReviewEligible(
+              r,
+              simulation.proposal,
+              policy,
+              now,
+              simulation.enabled,
+            ),
+        )
+        .map((r) => r.payload.claim_type),
+    },
     offchainReady:
       independent &&
       !disputed &&

@@ -3,6 +3,7 @@ export interface IdentityConfig {
   origin: string;
   network: Network;
   secure: boolean;
+  testnetSimulationEnabled: boolean;
 }
 export function identityConfig(
   env: Record<string, string | undefined>,
@@ -25,5 +26,20 @@ export function identityConfig(
   const network = env.NEAR_NETWORK ?? "testnet";
   if (network !== "testnet" && network !== "mainnet")
     throw new Error("Invalid identity network");
-  return { origin, network, secure: url.protocol === "https:" };
+  const simulation = env.M8_TESTNET_SIMULATION_ENABLED;
+  if (
+    simulation !== undefined &&
+    simulation !== "true" &&
+    simulation !== "false"
+  )
+    throw new Error("Invalid Testnet simulation configuration");
+  const testnetSimulationEnabled = simulation === "true";
+  if (testnetSimulationEnabled && network !== "testnet")
+    throw new Error("Testnet simulation requires NEAR Testnet");
+  return {
+    origin,
+    network,
+    secure: url.protocol === "https:",
+    testnetSimulationEnabled,
+  };
 }

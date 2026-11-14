@@ -103,6 +103,30 @@ it("requires HTTPS except explicit loopback development", () => {
   expect(identityConfig({ PUBLIC_ORIGIN: "https://example.test" }).secure).toBe(
     true,
   );
+  expect(
+    identityConfig({ PUBLIC_ORIGIN: "https://example.test" })
+      .testnetSimulationEnabled,
+  ).toBe(false);
+  expect(
+    identityConfig({
+      PUBLIC_ORIGIN: "https://example.test",
+      NEAR_NETWORK: "testnet",
+      M8_TESTNET_SIMULATION_ENABLED: "true",
+    }).testnetSimulationEnabled,
+  ).toBe(true);
+  expect(() =>
+    identityConfig({
+      PUBLIC_ORIGIN: "https://example.test",
+      NEAR_NETWORK: "mainnet",
+      M8_TESTNET_SIMULATION_ENABLED: "true",
+    }),
+  ).toThrow("Testnet simulation requires NEAR Testnet");
+  expect(() =>
+    identityConfig({
+      PUBLIC_ORIGIN: "https://example.test",
+      M8_TESTNET_SIMULATION_ENABLED: "yes",
+    }),
+  ).toThrow("Invalid Testnet simulation configuration");
 });
 
 it("rejects missing access keys and malformed or mismatched RPC envelopes", async () => {
