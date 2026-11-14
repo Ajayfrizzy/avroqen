@@ -5,6 +5,7 @@
 const rateLimitCooldowns = new Map<string, number>();
 const DEFAULT_COOLDOWN_MS = 15_000;
 const MAX_COOLDOWN_MS = 120_000;
+const ARCHIVAL_INLINE_RETRY_MAX_MS = 1_000;
 export const READ_ONLY_RPC_PER_PROVIDER_TIMEOUT_MS = 3_500;
 export const READ_ONLY_RPC_OVERALL_TIMEOUT_MS = 9_000;
 export const HISTORICAL_RPC_PER_PROVIDER_TIMEOUT_MS = 6_000;
@@ -324,7 +325,14 @@ export async function readOnlyRpcFetch(
         if (cooldown && cooldown > now()) {
           const waitMs = cooldown - now();
           rateLimitedProviders++;
-          if (!waitForRateLimit) {
+          // A short Retry-After received by this request may be retried once.
+          // Longer or inherited cooldowns must not consume the whole historical
+          // deadline before an approved fallback provider gets a chance.
+          if (
+            !waitForRateLimit ||
+            rateLimitRetries === 0 ||
+            waitMs > ARCHIVAL_INLINE_RETRY_MAX_MS
+          ) {
             failures.push("RATE_LIMITED");
             diagnostic({
               event: "RPC_PROVIDER_SKIPPED",
