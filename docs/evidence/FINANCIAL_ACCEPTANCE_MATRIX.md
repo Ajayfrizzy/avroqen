@@ -1,6 +1,13 @@
 # Financial acceptance traceability
 
-**Judging presentation note (November 14, 2026):** This matrix is historical test-case evidence, **not** a claim that every public Testnet scenario has been executed. Automated/API/DB checks, local compiled-Wasm sandbox receipts, deployed contract evidence, and recipient settlement proof are separate classes. Only independently attributable finalized transfer/accounting evidence would establish completed public-Testnet payment; this document does not assert one. Judge-facing explanation: [README](../../README.md), [judging criteria](../JUDGING_CRITERIA.md), and [release status](../RELEASE_STATUS.md).
+**Judging presentation note (November 14, 2026):** This matrix is historical test-case evidence, **not** a claim that every public Testnet scenario has been executed. Automated/API/DB checks, local compiled-Wasm sandbox receipts, deployed contract evidence, and recipient settlement proof are separate classes. Only independently attributable finalized transfer/accounting evidence would establish completed public-Testnet payment; the current Acceptance Test 7 evidence is recorded separately below; historical rows retain their dated scope. Judge-facing explanation: [README](../../README.md), [judging criteria](../JUDGING_CRITERIA.md), and [release status](../RELEASE_STATUS.md).
+
+
+## Public Testnet acceptance evidence — November 14, 2026
+
+**November 14, 2026 — verified public Testnet payment (Acceptance Test 7).** Under an existing funded 0.1 NEAR mandate, `lapobaby.testnet` submitted proposal `91330f5c-73ea-43cb-a02c-93aa8411009b`; `ajayfrizzy.testnet` recorded onchain `INVOICE_ISSUED` attestation using the explicitly fictional invoice/Testnet-simulation evidence, and `demo-testing.testnet` separately recorded onchain `OWNER_APPROVED`. The owner-authorized `authorize_and_execute` call succeeded on `avroqen-vault.testnet` (block **277687500**, [transaction `7D8T8mxc…`](https://testnet.nearblocks.io/txns/7D8T8mxcTWxerdehqhPvKFD4zCQ6sWZkFdYqJot1RtjG)). Avroqen's reconciliation independently verified the native **0.1 NEAR transfer to `frizzy.testnet` and finalized callback/accounting**, recording `CONFIRMED_SUCCESS · TRANSFER_AND_CALLBACK_FINALIZED` for intent `2e4a6f1a-d2b8-4011-af8f-81a236cf30f6`. The transaction is a genuine public Testnet payment; the invoice is synthetic simulation evidence, **not** authenticated commercial verification or a production/mainnet claim.
+
+**Scope:** This confirms the four end-to-end Testnet payment steps (verifier attestation, separate owner attestation, authorized execution, and finalized transfer/callback accounting). It does not upgrade every S01–S20 negative/security scenario or the synthetic invoice into genuine source verification. The historical matrix below retains its original recorded scope.
 
 ---
 
