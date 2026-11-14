@@ -121,7 +121,7 @@ class ScanReader extends NearReader {
           : [],
     };
   }
-  override async rpc() {
+  override async rpc(_method?: string, _params?: unknown): Promise<unknown> {
     return {
       final_execution_status: "INCLUDED",
       transaction: {
@@ -168,6 +168,156 @@ it("recovers an exact operation hash but waits for final receipts", async () => 
     reason: "WAITING_FINALITY",
     verifiedHash: h(7),
   });
+});
+it("queries an exact known hash and signer before deployment verification", async () => {
+  const steps: string[] = [];
+  class KnownHashReader extends ScanReader {
+    override async rpc(method?: string, params?: unknown) {
+      steps.push(method ?? "missing");
+      expect(params).toEqual({
+        tx_hash: h(7),
+        sender_account_id: op.signerId,
+        wait_until: "NONE",
+      });
+      return super.rpc();
+    }
+    override async deployment() {
+      steps.push("deployment");
+      return super.deployment();
+    }
+  }
+  await expect(
+    observe(new KnownHashReader(), { ...intent, reported_hash: h(7) }),
+  ).resolves.toMatchObject({
+    state: "FINALIZING",
+    verifiedHash: h(7),
+  });
+  expect(steps.slice(0, 2)).toEqual(["EXPERIMENTAL_tx_status", "deployment"]);
+});
+it("confirms a known hash only after exact finalized receipt evidence", async () => {
+  const operation = {
+      ...op,
+      kind: "REGISTER",
+      methodName: "register_mandate",
+    },
+    actions = [
+      {
+        FunctionCall: {
+          method_name: operation.methodName,
+          args: Buffer.from(JSON.stringify(operation.args)).toString("base64"),
+          gas: operation.gas,
+          deposit: operation.deposit,
+        },
+      },
+    ],
+    receipt = h(6);
+  class FinalizedReader extends ScanReader {
+    override async rpc(method?: string, params?: unknown) {
+      expect(method).toBe("EXPERIMENTAL_tx_status");
+      expect(params).toEqual({
+        tx_hash: h(7),
+        sender_account_id: operation.signerId,
+        wait_until: "NONE",
+      });
+      return {
+        final_execution_status: "FINAL",
+        transaction: {
+          hash: h(7),
+          signer_id: operation.signerId,
+          receiver_id: operation.receiverId,
+          actions,
+        },
+        transaction_outcome: {
+          id: h(7),
+          block_hash: h(2),
+          outcome: {
+            executor_id: operation.signerId,
+            receipt_ids: [receipt],
+            status: { SuccessReceiptId: receipt },
+          },
+        },
+        receipts_outcome: [
+          {
+            id: receipt,
+            block_hash: h(2),
+            outcome: {
+              executor_id: operation.receiverId,
+              receipt_ids: [],
+              status: { SuccessValue: "" },
+            },
+          },
+        ],
+        receipts: [
+          {
+            receipt_id: receipt,
+            predecessor_id: operation.signerId,
+            receiver_id: operation.receiverId,
+            receipt: {
+              Action: {
+                actions,
+                input_data_ids: [],
+                output_data_receivers: [],
+              },
+            },
+          },
+        ],
+      };
+    }
+    override async deployment(_manifest?: unknown, at?: string) {
+      const height = at ? 2 : 3;
+      return {
+        block: {
+          height,
+          hash: h(height),
+          prev_hash: h(height - 1),
+          timestamp_nanosec: String(height),
+        },
+        account: {
+          block_hash: h(height),
+          code_hash: h(9),
+          amount: "1",
+          storage_usage: 1,
+        },
+        accounting: { network: "testnet" as const, vault: "vault.testnet" },
+      };
+    }
+  }
+  await expect(
+    observe(new FinalizedReader(), {
+      ...intent,
+      canonical_operation: JSON.stringify(operation),
+      reported_hash: h(7),
+    }),
+  ).resolves.toMatchObject({
+    state: "CONFIRMED_SUCCESS",
+    reason: "CALL_FINALIZED",
+    verifiedHash: h(7),
+    receiptIds: [receipt],
+    blockHash: h(3),
+  });
+});
+it("rejects a known-hash transaction mismatch before expensive verification", async () => {
+  let deploymentCalls = 0;
+  class MismatchReader extends ScanReader {
+    override async rpc() {
+      const raw = (await super.rpc()) as {
+        transaction: { receiver_id: string };
+      };
+      raw.transaction.receiver_id = "attacker.testnet";
+      return raw;
+    }
+    override async deployment() {
+      deploymentCalls++;
+      return super.deployment();
+    }
+  }
+  await expect(
+    observe(new MismatchReader(), { ...intent, reported_hash: h(7) }),
+  ).resolves.toEqual({
+    state: "UNKNOWN",
+    reason: "TRANSACTION_MISMATCH",
+  });
+  expect(deploymentCalls).toBe(0);
 });
 it("quarantines ambiguous multiple matching transactions", async () => {
   const r = new ScanReader();

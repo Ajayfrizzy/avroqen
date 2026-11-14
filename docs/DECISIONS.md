@@ -870,3 +870,21 @@ and the original UNKNOWN record remain unchanged. Independent operations still
 receive separate owner wallet approval and finalized receipt verification, while
 the contract atomically rejects insufficient shared storage credit or mandate
 funds. No server nonce reservation, signing, retry or broadcast authority is added.
+
+## D046 — Known-hash reconciliation skips long archival cooldowns
+
+Testnet correction on November 14, 2026: a known-hash transaction-status read
+could succeed, then its hash-pinned inclusion block was routed through the
+historical provider pool. An active 15–120 second archival `Retry-After` cooldown
+was awaited before FastNEAR or NEAR RPC was attempted, consuming the 20-second
+request deadline and repeatedly returning `RPC_TIMEOUT` despite those approved
+fallbacks retaining the recent finalized block.
+
+Known-hash reconciliation now requests and exactly validates the supplied hash,
+signer, receiver and action before the more expensive deployment bundle. A short
+one-second archival retry may still be honored once within the same request;
+longer or inherited cooldowns skip that provider and immediately try the existing
+approved fallbacks. Finalized inclusion and anchor blocks, deployment code, keys,
+accounting, receipt linkage, successful statuses, mandate policy and contract state
+remain mandatory before confirmation. Provider exhaustion still fails closed, and
+no transaction is signed, retried, rebroadcast or manually reclassified.

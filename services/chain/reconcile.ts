@@ -51,6 +51,21 @@ export async function observe(
   intent: Intent,
 ): Promise<Observation> {
   const op = JSON.parse(intent.canonical_operation) as ChainOperation;
+  let hash = intent.reported_hash ?? intent.verified_hash;
+  let raw = hash
+    ? transactionResult.parse(
+        await reader.rpc("EXPERIMENTAL_tx_status", {
+          tx_hash: hash,
+          sender_account_id: op.signerId,
+          wait_until: "NONE",
+        }),
+      )
+    : undefined;
+  if (
+    raw &&
+    (raw.transaction.hash !== hash || !matchesOperation(raw.transaction, op))
+  )
+    return { state: "UNKNOWN", reason: "TRANSACTION_MISMATCH" };
   const deployment = await reader.deployment(intent.manifest);
   const head = deployment.block;
   if (intent.last_height && head.height < Number(intent.last_height))
@@ -68,7 +83,6 @@ export async function observe(
       intent.last_block_hash
   )
     throw new Error("CONFLICTING_RPC");
-  let hash = intent.reported_hash ?? intent.verified_hash;
   if (!hash) {
     const anchor = await reader.block(intent.scan_hash);
     if (anchor.header.hash !== intent.scan_hash)
@@ -115,7 +129,7 @@ export async function observe(
       };
     hash = required([...matches][0]);
   }
-  const raw = transactionResult.parse(
+  raw ??= transactionResult.parse(
     await reader.rpc("EXPERIMENTAL_tx_status", {
       tx_hash: hash,
       sender_account_id: op.signerId,

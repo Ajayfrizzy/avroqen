@@ -20,6 +20,19 @@ const request: RequestInit = {
     },
   }),
 };
+const transactionStatusRequest: RequestInit = {
+  method: "POST",
+  body: JSON.stringify({
+    jsonrpc: "2.0",
+    id: "known-hash",
+    method: "EXPERIMENTAL_tx_status",
+    params: {
+      tx_hash: "public-transaction-hash",
+      sender_account_id: "public-signer.testnet",
+      wait_until: "NONE",
+    },
+  }),
+};
 
 afterEach(() => {
   clearRpcCooldownForTests();
@@ -268,6 +281,80 @@ describe("read-only RPC 429 handling", () => {
       "https://archival-rpc.testnet.near.org",
     ]);
     vi.useRealTimers();
+  });
+
+  it("skips a long archival cooldown and tries historical fallback immediately", async () => {
+    const diagnostics: RpcDiagnostic[] = [];
+    const now = () => 1_000;
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response("", {
+          status: 429,
+          headers: { "Retry-After": "72" },
+        }),
+      )
+      .mockImplementation(() => Promise.resolve(new Response("ok")));
+    const options = {
+      preferArchival: true,
+      diagnostic: (event: RpcDiagnostic) => diagnostics.push(event),
+    };
+    await expect(
+      readOnlyRpcFetch("testnet", request, transport, now, options),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      readOnlyRpcFetch("testnet", request, transport, now, options),
+    ).resolves.toMatchObject({ ok: true });
+    expect(transport.mock.calls.map((call) => call[0])).toEqual([
+      "https://archival-rpc.testnet.near.org",
+      "https://rpc.testnet.fastnear.com",
+      "https://rpc.testnet.fastnear.com",
+    ]);
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        event: "RPC_PROVIDER_SKIPPED",
+        route: "HISTORICAL",
+        category: "RATE_LIMITED",
+        provider: "archival-rpc.testnet.near.org",
+      }),
+    );
+  });
+
+  it("falls back after a known-hash status timeout with a fresh signal", async () => {
+    const signals: AbortSignal[] = [];
+    const transport = vi.fn<typeof fetch>(async (_url, init) => {
+      const signal = init?.signal as AbortSignal;
+      signals.push(signal);
+      if (signals.length === 1)
+        return new Promise<Response>((_resolve, reject) =>
+          signal.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          }),
+        );
+      return new Response("ok");
+    });
+    await expect(
+      readOnlyRpcFetch(
+        "testnet",
+        transactionStatusRequest,
+        transport,
+        Date.now,
+        { perProviderTimeoutMs: 5, overallTimeoutMs: 100 },
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    expect(signals).toHaveLength(2);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
+  });
+
+  it("fails closed when known-hash status providers are exhausted", async () => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new TypeError("private provider detail"));
+    await expect(
+      readOnlyRpcFetch("testnet", transactionStatusRequest, transport),
+    ).rejects.toThrow("RPC_PROVIDERS_EXHAUSTED");
+    expect(transport).toHaveBeenCalledTimes(2);
   });
 
   it("labels scanner-owned archival chunk cooldown diagnostics", async () => {
