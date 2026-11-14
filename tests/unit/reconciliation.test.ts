@@ -164,6 +164,29 @@ it("advances a contiguous finalized scan without declaring failure when no hash 
     scanHash: h(3),
   });
 });
+it("advances past block-header chunks with the canonical empty transaction root", async () => {
+  class EmptyTransactionChunks extends ScanReader {
+    override async block(id?: string | number) {
+      const block = await super.block(id);
+      return {
+        ...block,
+        chunks: block.chunks.map((chunk) => ({
+          ...chunk,
+          height_included: block.header.height,
+          tx_root: "11111111111111111111111111111111",
+        })),
+      };
+    }
+  }
+  const reader = new EmptyTransactionChunks();
+  expect(await observe(reader, intent)).toMatchObject({
+    state: "UNKNOWN",
+    reason: "HASH_NOT_RECOVERED",
+    scanHeight: 3,
+    scanHash: h(3),
+  });
+  expect(reader.chunkCalls).toEqual([]);
+});
 it("recovers an exact operation hash but waits for final receipts", async () => {
   const r = new ScanReader();
   r.found = true;
@@ -346,6 +369,24 @@ it("retries the same batch after a chunk failure without returning a checkpoint"
   await expect(observe(r, intent)).rejects.toThrow("chunk outage");
   await expect(observe(r, intent)).rejects.toThrow("chunk outage");
   expect(r.chunkCalls).toEqual([2, 3, 2, 3]);
+});
+it("advances a hashless scan after a transient historical chunk failure", async () => {
+  class RecoveringReader extends ScanReader {
+    attempts = 0;
+    override async historicalChunk(chunkHash: string) {
+      if (++this.attempts === 1) throw new Error("RPC_RATE_LIMITED");
+      return super.historicalChunk(chunkHash);
+    }
+  }
+  const reader = new RecoveringReader();
+  await expect(observe(reader, intent)).rejects.toThrow("RPC_RATE_LIMITED");
+  await expect(observe(reader, intent)).resolves.toMatchObject({
+    state: "UNKNOWN",
+    reason: "HASH_NOT_RECOVERED",
+    scanHeight: 3,
+    scanHash: h(3),
+  });
+  expect(reader.attempts).toBe(3);
 });
 it("uses an untrusted index only to discover an exactly matching transaction", async () => {
   const r = new ScanReader();

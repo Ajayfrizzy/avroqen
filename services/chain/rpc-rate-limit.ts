@@ -14,14 +14,17 @@ export const READ_ONLY_RPC_RESPONSE_LIMIT = 4 * 1024 * 1024;
 export const READ_ONLY_RPC_MAX_CONCURRENCY = 4;
 export const ARCHIVAL_RPC_MAX_CONCURRENCY = 1;
 const urls = {
-  testnet: ["https://rpc.testnet.fastnear.com", "https://rpc.testnet.near.org"],
+  testnet: [
+    "https://near-testnet.drpc.org",
+    "https://rpc.testnet.fastnear.com",
+    "https://rpc.testnet.near.org",
+  ],
   mainnet: ["https://rpc.mainnet.near.org"],
 } as const;
 const historicalUrls = {
   testnet: [
-    "https://archival-rpc.testnet.near.org",
+    "https://near-testnet.drpc.org",
     "https://rpc.testnet.fastnear.com",
-    "https://rpc.testnet.near.org",
   ],
   mainnet: [
     "https://archival-rpc.mainnet.near.org",
@@ -146,10 +149,6 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
     }
     signal.addEventListener("abort", aborted, { once: true });
   });
-}
-
-function archival(endpoint: string): boolean {
-  return publicProvider(endpoint).startsWith("archival-rpc.");
 }
 
 export function retryAfterMs(header: string | null, now = Date.now()): number {
@@ -317,7 +316,7 @@ export async function readOnlyRpcFetch(
       : urls[network];
     for (const [index, endpoint] of providers.entries()) {
       const provider = publicProvider(endpoint),
-        waitForRateLimit = options.preferArchival && archival(endpoint);
+        historicalRoute = options.preferArchival === true;
       let rateLimitRetries = 0;
       while (true) {
         if (overallSignal.aborted) throw abortReason(overallSignal);
@@ -329,7 +328,7 @@ export async function readOnlyRpcFetch(
           // Longer or inherited cooldowns must not consume the whole historical
           // deadline before an approved fallback provider gets a chance.
           if (
-            !waitForRateLimit ||
+            !historicalRoute ||
             rateLimitRetries === 0 ||
             waitMs > ARCHIVAL_INLINE_RETRY_MAX_MS
           ) {
@@ -357,7 +356,7 @@ export async function readOnlyRpcFetch(
           });
           await wait(waitMs, overallSignal);
         }
-        const archivalRelease = waitForRateLimit
+        const archivalRelease = historicalRoute
           ? await acquireGate(
               archivalGate,
               ARCHIVAL_RPC_MAX_CONCURRENCY,
@@ -413,7 +412,7 @@ export async function readOnlyRpcFetch(
               waitMs,
             });
             await response.body?.cancel().catch(() => {});
-            if (waitForRateLimit && rateLimitRetries++ < 1) continue;
+            if (historicalRoute && rateLimitRetries++ < 1) continue;
             break;
           }
           if (transientStatus(response.status)) {

@@ -936,3 +936,35 @@ active final reviews, including direct writes that bypass the API. Settlement
 detail exposes only currently valid, exactly bound reviews and the Payments UI
 selects the newest eligible review returned by the API. Expired evidence never
 authorizes ATTEST preparation, execution readiness or payment.
+
+## D050 — Signed review validity is one hour, bounded by the mandate
+
+November 14, 2026: newly issued MAP-1 review payloads remain valid for 60 minutes,
+or until the immutable mandate expiry when that is earlier. The longer window
+reduces avoidable review renewal during explicit wallet and Testnet workflows; it
+does not extend a mandate or revive an expired review.
+
+The NEP-413 wallet-signing challenge remains single-use and valid for five minutes.
+Verifier assignment, independent source requirements, exact policy/proposal/evidence
+bindings, nonce replay protection, finalized signing-key verification, append-only
+history and all onchain authorization checks remain unchanged. Existing signed
+records retain their original immutable issue and expiry times.
+
+## D051 — Historical reconciliation uses verified-capable Testnet providers
+
+November 14, 2026: live read-only probes at Acceptance Test 7 anchor height
+277687461 showed that dRPC and FastNEAR returned the same exact block hash, chunk
+identity and block-pinned vault account state. The official Testnet and archival
+NEAR.org endpoints instead returned JSON-RPC `-429` deprecation errors over HTTP
+200, which bypassed HTTP rate-limit failover and could stop a scan before a capable
+provider was attempted.
+
+Historical routing now uses dRPC first and FastNEAR second. All HISTORICAL requests,
+regardless of provider hostname, share the existing single-request priority gate,
+bounded deadlines, cooldowns and `Retry-After` handling. Block-header chunks with
+the canonical empty transaction root skip the unnecessary body request; any missing
+or nonempty root still requires exact chunk-hash and inclusion-height validation.
+Checkpoint persistence remains all-or-nothing for each linked batch. No absence,
+timeout or provider response proves non-broadcast, changes UNKNOWN, or authorizes a
+retry; terminal outcomes still require exact finalized transaction and receipt
+evidence plus deployment and contract-state verification.

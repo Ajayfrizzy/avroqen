@@ -40,7 +40,7 @@ afterEach(() => {
 });
 
 describe("read-only RPC 429 handling", () => {
-  it("uses the secondary current provider after 429, then cools down the primary", async () => {
+  it("uses FastNEAR after dRPC rate limiting, then cools down dRPC", async () => {
     const transport = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -65,12 +65,30 @@ describe("read-only RPC 429 handling", () => {
     const first = await readOnlyRpcFetch("testnet", request, transport, now);
     expect(first.ok).toBe(true);
     expect(transport.mock.calls.map((call) => call[0])).toEqual([
+      "https://near-testnet.drpc.org",
       "https://rpc.testnet.fastnear.com",
-      "https://rpc.testnet.near.org",
     ]);
     const second = await readOnlyRpcFetch("testnet", request, transport, now);
     expect(second.ok).toBe(true);
-    expect(transport.mock.calls[2]?.[0]).toBe("https://rpc.testnet.near.org");
+    expect(transport.mock.calls[2]?.[0]).toBe(
+      "https://rpc.testnet.fastnear.com",
+    );
+  });
+
+  it("falls back through all three current providers in order", async () => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("", { status: 503 }))
+      .mockRejectedValueOnce(new TypeError("FastNEAR unavailable"))
+      .mockResolvedValueOnce(new Response("ok"));
+    await expect(
+      readOnlyRpcFetch("testnet", request, transport),
+    ).resolves.toMatchObject({ ok: true });
+    expect(transport.mock.calls.map((call) => call[0])).toEqual([
+      "https://near-testnet.drpc.org",
+      "https://rpc.testnet.fastnear.com",
+      "https://rpc.testnet.near.org",
+    ]);
   });
 
   it("uses a fresh signal and falls back after a provider timeout", async () => {
@@ -100,12 +118,10 @@ describe("read-only RPC 429 handling", () => {
     expect(signals[1]?.aborted).toBe(false);
   });
 
-  it("bounds archival-first historical fallback exhaustion", async () => {
+  it("bounds dRPC-first historical fallback exhaustion", async () => {
     const calls: string[] = [];
     const transport = vi.fn<typeof fetch>(async (url, init) => {
       calls.push(String(url));
-      if (url === "https://rpc.testnet.fastnear.com")
-        return new Response("UNKNOWN_BLOCK");
       const signal = init?.signal as AbortSignal;
       return new Promise<Response>((_resolve, reject) =>
         signal.addEventListener("abort", () => reject(signal.reason), {
@@ -123,9 +139,8 @@ describe("read-only RPC 429 handling", () => {
       }),
     ).rejects.toMatchObject({ name: "TimeoutError" });
     expect(calls).toEqual([
-      "https://archival-rpc.testnet.near.org",
+      "https://near-testnet.drpc.org",
       "https://rpc.testnet.fastnear.com",
-      "https://rpc.testnet.near.org",
     ]);
   });
 
@@ -277,8 +292,8 @@ describe("read-only RPC 429 handling", () => {
     await vi.advanceTimersByTimeAsync(1_000);
     await expect(pending).resolves.toMatchObject({ ok: true });
     expect(transport.mock.calls.map((call) => call[0])).toEqual([
-      "https://archival-rpc.testnet.near.org",
-      "https://archival-rpc.testnet.near.org",
+      "https://near-testnet.drpc.org",
+      "https://near-testnet.drpc.org",
     ]);
     vi.useRealTimers();
   });
@@ -306,7 +321,7 @@ describe("read-only RPC 429 handling", () => {
       readOnlyRpcFetch("testnet", request, transport, now, options),
     ).resolves.toMatchObject({ ok: true });
     expect(transport.mock.calls.map((call) => call[0])).toEqual([
-      "https://archival-rpc.testnet.near.org",
+      "https://near-testnet.drpc.org",
       "https://rpc.testnet.fastnear.com",
       "https://rpc.testnet.fastnear.com",
     ]);
@@ -315,9 +330,36 @@ describe("read-only RPC 429 handling", () => {
         event: "RPC_PROVIDER_SKIPPED",
         route: "HISTORICAL",
         category: "RATE_LIMITED",
-        provider: "archival-rpc.testnet.near.org",
+        provider: "near-testnet.drpc.org",
       }),
     );
+  });
+
+  it("falls back from a historical dRPC timeout to FastNEAR", async () => {
+    const calls: string[] = [];
+    const transport = vi.fn<typeof fetch>(async (url, init) => {
+      calls.push(String(url));
+      if (calls.length === 1) {
+        const signal = init?.signal as AbortSignal;
+        return new Promise<Response>((_resolve, reject) =>
+          signal.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          }),
+        );
+      }
+      return new Response("ok");
+    });
+    await expect(
+      readOnlyRpcFetch("testnet", request, transport, Date.now, {
+        preferArchival: true,
+        perProviderTimeoutMs: 5,
+        overallTimeoutMs: 100,
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(calls).toEqual([
+      "https://near-testnet.drpc.org",
+      "https://rpc.testnet.fastnear.com",
+    ]);
   });
 
   it("falls back after a known-hash status timeout with a fresh signal", async () => {
@@ -354,7 +396,7 @@ describe("read-only RPC 429 handling", () => {
     await expect(
       readOnlyRpcFetch("testnet", transactionStatusRequest, transport),
     ).rejects.toThrow("RPC_PROVIDERS_EXHAUSTED");
-    expect(transport).toHaveBeenCalledTimes(2);
+    expect(transport).toHaveBeenCalledTimes(3);
   });
 
   it("labels scanner-owned archival chunk cooldown diagnostics", async () => {
@@ -438,7 +480,7 @@ describe("read-only RPC 429 handling", () => {
     await expect(
       readOnlyRpcFetch("testnet", request, transport),
     ).rejects.toThrow("RPC_PROVIDERS_EXHAUSTED");
-    expect(transport).toHaveBeenCalledTimes(2);
+    expect(transport).toHaveBeenCalledTimes(3);
     expect(transport.mock.calls.map((call) => call[0])).not.toContain(
       "https://archival-rpc.testnet.near.org",
     );
@@ -449,6 +491,7 @@ describe("read-only RPC 429 handling", () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(new Response("", { status: 503 }))
       .mockResolvedValueOnce(new Response("", { status: 503 }))
+      .mockResolvedValueOnce(new Response("", { status: 503 }))
       .mockResolvedValue(new Response("ok"));
     await expect(
       readOnlyRpcFetch("testnet", request, transport),
@@ -456,10 +499,8 @@ describe("read-only RPC 429 handling", () => {
     await expect(
       readOnlyRpcFetch("testnet", request, transport),
     ).resolves.toMatchObject({ ok: true });
-    expect(transport).toHaveBeenCalledTimes(3);
-    expect(transport.mock.calls[2]?.[0]).toBe(
-      "https://rpc.testnet.fastnear.com",
-    );
+    expect(transport).toHaveBeenCalledTimes(4);
+    expect(transport.mock.calls[3]?.[0]).toBe("https://near-testnet.drpc.org");
   });
 
   it("recovers after the reported timeout, HTTP, and cooldown-exhaustion sequence", async () => {
@@ -484,7 +525,7 @@ describe("read-only RPC 429 handling", () => {
     await expect(
       readOnlyRpcFetch("testnet", request, httpFailure),
     ).rejects.toThrow("RPC_PROVIDERS_EXHAUSTED");
-    expect(httpFailure).toHaveBeenCalledTimes(2);
+    expect(httpFailure).toHaveBeenCalledTimes(3);
 
     const recovered = vi
       .fn<typeof fetch>()
@@ -534,7 +575,7 @@ describe("read-only RPC 429 handling", () => {
     expect(diagnostics).toEqual([
       expect.objectContaining({
         method: "query",
-        provider: "rpc.testnet.fastnear.com",
+        provider: "near-testnet.drpc.org",
         attempt: 1,
         category: "TRANSIENT_HTTP",
         status: 503,
@@ -572,11 +613,11 @@ describe("read-only RPC 429 handling", () => {
     await expect(
       readOnlyRpcFetch("testnet", request, transport, now),
     ).rejects.toThrow("RPC_RATE_LIMITED");
-    expect(transport).toHaveBeenCalledTimes(2);
+    expect(transport).toHaveBeenCalledTimes(3);
     await expect(
       readOnlyRpcFetch("testnet", request, transport, now),
     ).rejects.toThrow("RPC_RATE_LIMITED");
-    expect(transport).toHaveBeenCalledTimes(2);
+    expect(transport).toHaveBeenCalledTimes(3);
   });
 
   it("rejects RPC mutations and malformed requests before any network I/O", async () => {

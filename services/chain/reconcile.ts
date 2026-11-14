@@ -20,6 +20,8 @@ import {
   type NearReader,
   UnknownBlock,
 } from "./rpc.js";
+
+const EMPTY_TRANSACTION_ROOT = "11111111111111111111111111111111";
 export interface Intent {
   id: string;
   canonical_operation: string;
@@ -145,6 +147,12 @@ export async function observe(
       if (b.header.prev_hash !== previous)
         throw new Error("MISSING_BLOCK_HISTORY");
       for (const chunk of b.chunks) {
+        if (
+          (chunk.height_included !== undefined &&
+            chunk.height_included !== height) ||
+          chunk.tx_root === EMPTY_TRANSACTION_ROOT
+        )
+          continue;
         const c = await reader.historicalChunk(chunk.chunk_hash);
         if (c.header.height_included !== height) continue;
         for (const tx of c.transactions) {

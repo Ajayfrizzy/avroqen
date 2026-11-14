@@ -61,6 +61,7 @@ export function deploymentConfig(env: NodeJS.ProcessEnv): Manifest | null {
 export const fingerprint = (v: string) =>
   createHash("sha256").update(v).digest("hex");
 const endpoints = [
+  "https://near-testnet.drpc.org",
   "https://rpc.testnet.fastnear.com",
   "https://rpc.testnet.near.org",
   "https://archival-rpc.testnet.near.org",
@@ -949,7 +950,13 @@ export const blockSchema = z.object({
     height: z.number().int().nonnegative().safe(),
     timestamp_nanosec: timestampNanoseconds,
   }),
-  chunks: z.array(z.object({ chunk_hash: chainHash })),
+  chunks: z.array(
+    z.object({
+      chunk_hash: chainHash,
+      height_included: z.number().int().nonnegative().safe().optional(),
+      tx_root: chainHash.optional(),
+    }),
+  ),
 });
 const historicalChunkSchema = z.object({
   header: z.object({

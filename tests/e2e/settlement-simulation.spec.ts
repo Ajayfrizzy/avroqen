@@ -56,7 +56,7 @@ const payload = map1For(
   "verifier.testnet",
   "77777777-7777-4777-8777-777777777777",
   fixtureNow,
-  fixtureNow + 900_000_000_000n,
+  fixtureNow + 60n * 60n * 1_000_000_000n,
 );
 
 test("Payments selects and exactly prepares an eligible simulated invoice attestation", async ({

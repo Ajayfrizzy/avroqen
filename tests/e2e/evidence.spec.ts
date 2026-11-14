@@ -98,7 +98,7 @@ async function setup(page: Page, mode = "normal") {
         "verifier.testnet",
         uuid(100 + challenges),
         now,
-        now + 900000000000n,
+        now + 60n * 60n * 1_000_000_000n,
       );
       const values = {
         organizationId: policy.organizationId,

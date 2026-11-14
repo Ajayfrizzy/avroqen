@@ -73,6 +73,17 @@ it.each([
   expect(() => new NearReader(endpoint)).toThrow();
 });
 
+it("accepts the approved dRPC Testnet read endpoint", async () => {
+  const transport: typeof fetch = async (_url, init) =>
+    envelope(init, { result: { chain_id: "testnet" } });
+  await expect(
+    new NearReader("https://near-testnet.drpc.org", transport).rpc(
+      "status",
+      [],
+    ),
+  ).resolves.toEqual({ chain_id: "testnet" });
+});
+
 it.each(["broadcast_tx_commit", "send_tx", "broadcast_tx_async"])(
   "reader cannot submit %s",
   async (method) => {
@@ -309,13 +320,13 @@ it("preserves the explicit unknown-block classification for block scans", async 
   ).rejects.toThrow("UNKNOWN_BLOCK");
 });
 
-it("prioritizes the archival provider for a hash-pinned historical block", async () => {
+it("prioritizes dRPC for a hash-pinned historical block", async () => {
   const anchor = bs58.encode(Buffer.alloc(32, 9));
   const previous = bs58.encode(Buffer.alloc(32, 8));
   const calls: string[] = [];
   const transport: typeof fetch = async (url, init) => {
     calls.push(String(url));
-    if (url !== "https://archival-rpc.testnet.near.org")
+    if (url !== "https://near-testnet.drpc.org")
       return envelope(init, {
         error: {
           code: -32000,
@@ -342,7 +353,7 @@ it("prioritizes the archival provider for a hash-pinned historical block", async
   await expect(reader.block(anchor)).resolves.toMatchObject({
     header: { hash: anchor, height: 277_284_348 },
   });
-  expect(calls).toEqual(["https://archival-rpc.testnet.near.org"]);
+  expect(calls).toEqual(["https://near-testnet.drpc.org"]);
 });
 
 it("routes scanner chunks through archival RPC and caches only identity-bound success", async () => {
@@ -364,7 +375,7 @@ it("routes scanner chunks through archival RPC and caches only identity-bound su
     header: { chunk_hash: chunk, height_included: 277_541_501 },
     transactions: [],
   });
-  expect(calls).toEqual(["https://archival-rpc.testnet.near.org"]);
+  expect(calls).toEqual(["https://near-testnet.drpc.org"]);
 });
 
 it("single-flight coalesces concurrent scanner chunk reads", async () => {
@@ -431,9 +442,8 @@ it("fails closed when every historical provider lacks a scanner chunk", async ()
     new NearReader(undefined, transport).historicalChunk(chunk),
   ).rejects.toThrow("HISTORICAL_CHUNK_UNAVAILABLE");
   expect(calls).toEqual([
-    "https://archival-rpc.testnet.near.org",
+    "https://near-testnet.drpc.org",
     "https://rpc.testnet.fastnear.com",
-    "https://rpc.testnet.near.org",
   ]);
 });
 
@@ -526,12 +536,12 @@ it("evicts the oldest immutable read after the bounded cache limit", async () =>
   expect(transport).toHaveBeenCalledTimes(IMMUTABLE_RPC_CACHE_MAX_ENTRIES + 2);
 });
 
-it("prioritizes archival state for an exact hash-pinned query", async () => {
+it("prioritizes dRPC state for an exact hash-pinned query", async () => {
   const anchor = bs58.encode(Buffer.alloc(32, 9));
   const calls: string[] = [];
   const transport: typeof fetch = async (url, init) => {
     calls.push(String(url));
-    if (url !== "https://archival-rpc.testnet.near.org")
+    if (url !== "https://near-testnet.drpc.org")
       return envelope(init, {
         error: {
           code: -32000,
@@ -550,7 +560,7 @@ it("prioritizes archival state for an exact hash-pinned query", async () => {
       anchor,
     ),
   ).resolves.toEqual({ block_hash: anchor, keys: [] });
-  expect(calls).toEqual(["https://archival-rpc.testnet.near.org"]);
+  expect(calls).toEqual(["https://near-testnet.drpc.org"]);
 });
 
 it.each([
@@ -595,7 +605,7 @@ it.each([
           anchor,
         ),
       ).resolves.toEqual({ block_hash: anchor, keys: [] });
-    expect(calls).toEqual(["https://archival-rpc.testnet.near.org"]);
+    expect(calls).toEqual(["https://near-testnet.drpc.org"]);
   },
   8_000,
 );
@@ -649,12 +659,12 @@ it.each([
   },
 );
 
-it("fails closed when the archival provider cannot serve the historical block", async () => {
+it("fails closed when neither historical provider can serve the block", async () => {
   const anchor = bs58.encode(Buffer.alloc(32, 9));
   const calls: string[] = [];
   const transport: typeof fetch = async (url, init) => {
     calls.push(String(url));
-    if (url === "https://archival-rpc.testnet.near.org")
+    if (url === "https://near-testnet.drpc.org")
       return new Response("", { status: 503 });
     return envelope(init, {
       error: {
@@ -667,7 +677,7 @@ it("fails closed when the archival provider cannot serve the historical block", 
   await expect(
     new NearReader(undefined, transport).block(anchor),
   ).rejects.toThrow("UNKNOWN_BLOCK");
-  expect(calls).toHaveLength(3);
+  expect(calls).toHaveLength(2);
 });
 
 it("rejects invalid and inconsistent historical block hashes", async () => {
@@ -693,20 +703,20 @@ it("rejects invalid and inconsistent historical block hashes", async () => {
   ).rejects.toThrow("RPC_BLOCK_MISMATCH");
 });
 
-it("rejects inconsistent archival query state after fallback", async () => {
+it("rejects inconsistent historical query state after fallback", async () => {
   const anchor = bs58.encode(Buffer.alloc(32, 9));
   const conflicting = bs58.encode(Buffer.alloc(32, 7));
   const transport: typeof fetch = async (url, init) =>
-    url === "https://archival-rpc.testnet.near.org"
+    url === "https://near-testnet.drpc.org"
       ? envelope(init, {
-          result: { block_hash: conflicting, keys: [] },
-        })
-      : envelope(init, {
           error: {
             code: -32000,
             message: "unknown block",
             cause: { name: "UNKNOWN_BLOCK" },
           },
+        })
+      : envelope(init, {
+          result: { block_hash: conflicting, keys: [] },
         });
   await expect(
     new NearReader(undefined, transport).query(
@@ -933,7 +943,7 @@ it("keeps deployment reads block-pinned across successful provider failover", as
   const base = deploymentTransport((BigInt(now) * 1_000_000n).toString());
   const pinned: unknown[] = [];
   const transport: typeof fetch = async (url, init) => {
-    if (url === "https://rpc.testnet.fastnear.com")
+    if (url === "https://near-testnet.drpc.org")
       return new Response("", { status: 503 });
     const request = JSON.parse(String(init?.body)) as {
       method: string;
@@ -955,7 +965,7 @@ it("rejects inconsistent block-pinned evidence returned after failover", async (
     "account",
   );
   const transport: typeof fetch = async (url, init) =>
-    url === "https://rpc.testnet.fastnear.com"
+    url === "https://near-testnet.drpc.org"
       ? new Response("", { status: 503 })
       : base(url, init);
   await expect(

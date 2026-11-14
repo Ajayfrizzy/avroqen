@@ -34,6 +34,9 @@ import {
 import { hash, verifyMessage } from "../identity/crypto.js";
 import type { Context } from "../mandates/routes.js";
 
+const WALLET_SIGNING_CHALLENGE_TIMEOUT_MS = 5 * 60 * 1000;
+const MAP1_REVIEW_VALIDITY_NS = 60n * 60n * 1_000_000_000n;
+
 export async function intakeEvidence(
   db: pg.PoolClient,
   proposalId: string,
@@ -386,10 +389,12 @@ export function evidenceRoutes(app: FastifyInstance, ctx: Context) {
       if (count >= 256) deny(409, "CHALLENGE_LIMIT");
       const id = randomUUID(),
         nonce = randomBytes(32),
-        expiry = new Date(Number(d.now / 1000000n) + 300000);
+        expiry = new Date(
+          Number(d.now / 1_000_000n) + WALLET_SIGNING_CHALLENGE_TIMEOUT_MS,
+        );
       const end =
-        d.now + 900000000000n < BigInt(d.policy.expiresAtNs)
-          ? d.now + 900000000000n
+        d.now + MAP1_REVIEW_VALIDITY_NS < BigInt(d.policy.expiresAtNs)
+          ? d.now + MAP1_REVIEW_VALIDITY_NS
           : BigInt(d.policy.expiresAtNs);
       const payload = map1For(
         d.proposal,

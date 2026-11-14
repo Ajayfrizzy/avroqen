@@ -143,6 +143,26 @@ it("expiry and future issuance fail exact bigint comparison", () => {
   expect(validateMap1(proof, proposal, policy, 99n)).toBe(false);
   expect(validateMap1(proof, proposal, policy, 200n)).toBe(true);
 });
+it("accepts a 60-minute MAP-1 payload only before its exact expiry", () => {
+  const issued = 100n;
+  const expiry = issued + 60n * 60n * 1_000_000_000n;
+  const oneHour = map1For(
+    proposal,
+    review,
+    "v1.testnet",
+    randomUUID(),
+    issued,
+    expiry,
+  );
+  const unexpiredPolicy = {
+    ...policy,
+    expiresAtNs: (expiry + 1n).toString(),
+  };
+  expect(validateMap1(oneHour, proposal, unexpiredPolicy, expiry - 1n)).toBe(
+    true,
+  );
+  expect(validateMap1(oneHour, proposal, unexpiredPolicy, expiry)).toBe(false);
+});
 it("per-claim distinct quorum and owner approval cannot substitute for one another", () => {
   const rows: ReviewRecord[] = [];
   for (const claim of policy.verifierPolicy.requiredClaims)

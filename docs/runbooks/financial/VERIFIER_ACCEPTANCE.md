@@ -98,8 +98,9 @@ access are automated with isolated PostgreSQL and synthetic cryptographic identi
 Do not hand-edit a real signed payload or share browser auth bodies to repeat them.
 For manual expiry, prepare a review challenge and delay signing beyond five minutes;
 expect rejection, then prepare a fresh review. A signed final record expires after
-15 minutes (or earlier mandate expiry); the same signer/claim cannot be refreshed on
-that proposal, matching M3 duplicate-attestation semantics. Use a new proposal.
+60 minutes (or earlier mandate expiry). After expiry, the same authorized signer may
+append a newly signed review for that claim; the expired review and audit history
+remain immutable, and an active final review still blocks duplicates.
 
 ## Operations and limits
 

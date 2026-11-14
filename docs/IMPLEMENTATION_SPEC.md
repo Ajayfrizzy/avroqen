@@ -429,7 +429,7 @@ opaque session binding, not a session token in the message. Use a random32-byte
 NEP-413 nonce and atomic consumption. Raw proofs/tokens must never appear in audit,
 logs or reports. Recheck all permissions and source state after RPC and under locks.
 A separately generated UUID MAP-1 nonce is unique per verifier; it is not the
-NEP-413 transport nonce. Prepared attestations expire after15 minutes or mandate
+NEP-413 transport nonce. Prepared attestations expire after 60 minutes or mandate
 expiry, whichever is earlier; expired records never contribute to a current quorum.
 
 A selected verifier may access only assigned proposal evidence and required claim

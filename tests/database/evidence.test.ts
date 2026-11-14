@@ -135,7 +135,9 @@ function terms() {
     taskReference: "Hosting",
     maxPerPaymentAtomic: "1",
     totalBudgetAtomic: "10",
-    expiresAtNs: (BigInt(Date.now() + 3600000) * 1000000n).toString(),
+    expiresAtNs: (
+      BigInt(Date.now() + 2 * 60 * 60 * 1000) * 1_000_000n
+    ).toString(),
     maxExecutions: 10,
     verifierPolicy: {
       version: 1,
@@ -535,6 +537,59 @@ it("human-signed source assessment prepares exact MAP-1 but never claims chain a
   expect(ownerResult.json().readiness.offchainReady).toBe(true);
   expect(ownerResult.json().reviews[1].intent.deposit).toBe("1");
 });
+it("issues a 60-minute MAP-1 review while keeping the wallet challenge at five minutes", async () => {
+  const c = await reviewChallenge();
+  expect(BigInt(c.payload.expires_at_ns) - BigInt(c.payload.issued_at_ns)).toBe(
+    60n * 60n * 1_000_000_000n,
+  );
+  expect(
+    Date.parse(c.expiresAt) -
+      Number(BigInt(c.payload.issued_at_ns) / 1_000_000n),
+  ).toBe(5 * 60 * 1000);
+});
+it("caps MAP-1 review validity at the original mandate expiry", async () => {
+  const mandateExpiry = BigInt(Date.now() + 30 * 60 * 1000) * 1_000_000n;
+  const d = await draft({ expiresAtNs: mandateExpiry.toString() });
+  const cappedMandateId = d.policy.mandateId;
+  expect(
+    (
+      await post(
+        `${path(cappedMandateId)}/verify`,
+        await proof(cappedMandateId),
+      )
+    ).statusCode,
+  ).toBe(200);
+  const capability = await post(`${path(cappedMandateId)}/credentials`, {
+    purpose: "demo",
+  });
+  expect(capability.statusCode).toBe(200);
+  const cappedProposal = {
+    ...proposal,
+    proposalId: randomUUID(),
+    idempotencyKey: randomUUID(),
+    mandateId: cappedMandateId,
+    policyDigest: d.policyDigest,
+  };
+  expect(
+    (await submit(cappedProposal, capability.json().token)).statusCode,
+  ).toBe(200);
+  expect(
+    (
+      await post(
+        `/api/evidence/${cappedProposal.proposalId}/intake`,
+        metadata(),
+      )
+    ).statusCode,
+  ).toBe(200);
+  const challenge = await post(
+    `/api/evidence/${cappedProposal.proposalId}/challenge`,
+    review(),
+    verifier,
+  );
+  expect(challenge.statusCode).toBe(200);
+  expect(challenge.json().payload.expires_at_ns).toBe(d.policy.expiresAtNs);
+  expect(BigInt(challenge.json().payload.expires_at_ns)).toBe(mandateExpiry);
+});
 it("keeps historical overlapping reviews visible but excludes them from authorization", async () => {
   const historical = await insertHistoricalOwnerVerifierReview();
   const response = await app.inject({
@@ -843,6 +898,22 @@ it("five-minute challenge expiry and replay reject", async () => {
   const replay = await verifyReview(reviewSignature(second));
   expect(replay.statusCode).toBe(401);
   expect(replay.json().error).toBe("REVIEW_PROOF_CHALLENGE_CONSUMED");
+});
+it("excludes a signed review after its MAP-1 expiry", async () => {
+  await insertExpiredFinalReview({
+    account: "verifier.testnet",
+    claim: "INVOICE_ISSUED",
+    status: "VERIFIED",
+    source: "AUTHENTICATED_PROVIDER_PORTAL",
+  });
+  const response = await details();
+  expect(response.statusCode).toBe(200);
+  expect(response.json().reviews[0]).toMatchObject({
+    attestationStatus: "NOT_PREPARED",
+    intent: null,
+  });
+  expect(response.json().readiness.claims[0].count).toBe(0);
+  expect(response.json().readiness.offchainReady).toBe(false);
 });
 it("concurrent decisions commit one immutable review", async () => {
   const a = await reviewChallenge(),
