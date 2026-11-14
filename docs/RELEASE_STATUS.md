@@ -1,5 +1,23 @@
 # Release and acceptance status
 
+## Hackathon-facing implementation snapshot — November 14, 2026
+
+**Purpose:** Distinguish implementation and demonstrated evidence without implying that the product has completed every public-chain financial acceptance test. The original November 11 status and audit trail are retained below for provenance; this heading is the newer presentation-level summary.
+
+- **Implemented:** identity/organization and agent boundaries; typed immutable mandates; proposal capabilities; independent human evidence review; separation of owner approval; NEAR Rust MandateVault; typed wallet preparation; chain read/reconciliation; security monitoring; responsive integrated workspaces; six-page SAMPLE judge walkthrough.
+- **Verified through repository test suites and recorded local sandbox evidence:** policy denial paths, role separation, replay/concurrency protections, callback/accounting and local Wasm transfers, plus browser/database/API flows as recorded in their historical reports.
+- **Recorded public Testnet evidence:** owner-supplied finalized contract deployment/code/account inspection in [November 11 evidence](evidence/2026-11-11-VAULT-CODE-REPLACEMENT.md). Public wallet interaction/evidence can be separately presented only with attributable finalized receipts and clearly scoped claims.
+- **Evidence boundary:** no independent security audit; no claim of a verified completed end-to-end **public Testnet recipient settlement**; no production mainnet or cross-chain functionality. The animated social media explainer is not a financial transaction recording.
+- **Judge route:** [README](../README.md) → [JUDGE_DEMO](JUDGE_DEMO.md) → [JUDGING_CRITERIA](JUDGING_CRITERIA.md). The SAMPLE demo is runnable without signing keys or a Testnet wallet.
+- **Publication:** [NEAR Hackathon X demo post](https://x.com/ajay_frizzy/status/2121577743578198520) is published. Public repository visibility, complete submission details and any hosting/production operations remain separate final actions.
+
+This snapshot is not authorization to initiate finance, remove protected signing keys, or reinterpret unknown chain state. Historical dated evidence below remains bounded by its recorded date and test scope.
+
+---
+
+## Previously recorded release and acceptance status (November 11 snapshot)
+
+
 Documentation status as of November 11, 2026. This is the current acceptance entry
 point; the [milestone plan](archive/milestones/MILESTONES.md) is preserved as historical planning.
 Specifications define required behavior, while dated reports and test results

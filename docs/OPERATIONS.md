@@ -30,3 +30,12 @@ old and new versions use different lock keys. Do not treat a skipped monitoring
 cycle as settlement failure or release an obligation. Reconciliation remains
 independent. This is upgrade guidance, not an instruction to restart services now.
 See the [historical correction and database regression evidence](archive/milestones/M8_REPORT.md#monitoring-contention-correction--2026-11-04).
+
+
+## Sustainability and operational feasibility — hackathon proposal (November 14, 2026)
+
+Avroqen is a financial authorization **prototype**, not an already monetized business. Plausible customers are agent developers, small teams and organizations integrating controlled procurement. A potential delivery model is organization-controlled self-hosting plus an optional managed workflow/API service. Potential revenue would come from integration/service fees, not undisclosed custody of customer funds. No current pricing, revenue, customers, commercial contracts or audited production security are asserted.
+
+Operational costs requiring validation include NEAR network gas/storage, wallet support, RPC reliability and redundancy, database/worker hosting, evidence-handling policies, incident response, ongoing upgrades and an independent smart-contract audit. Hardening and mainnet/cross-chain payment support are **future work**, not judge-demo features. The hackathon build uses local/testnet and already available resources without requiring personal spend.
+
+This is a roadmap and cost framework, not measured commercial sustainability. See [JUDGING_CRITERIA](JUDGING_CRITERIA.md) and [VAULT_GOVERNANCE](VAULT_GOVERNANCE.md).

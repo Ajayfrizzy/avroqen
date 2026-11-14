@@ -1,5 +1,12 @@
 # Avroqen documentation index
 
+**Hackathon judging entry points (November 14, 2026):** [README](../README.md) · [Judge walkthrough](JUDGE_DEMO.md) · [Judging criteria and evidence](JUDGING_CRITERIA.md) · [Release status](RELEASE_STATUS.md) · [Submission checklist](HACKATHON_SUBMISSION.md) · [Published demo](https://x.com/ajay_frizzy/status/2121577743578198520).
+
+The product-facing pages above supersede older headline descriptions of the project as only a foundation or SAMPLE. Deep technical and historical evidence remains preserved below, including explicit limitations and dated acceptance records.
+
+---
+
+
 Use the [project README](../README.md), [current release status](RELEASE_STATUS.md)
 and [judge walkthrough](JUDGE_DEMO.md) first. Permanent specifications live here;
 active procedures have stable names under `runbooks/`. Milestone-named history,

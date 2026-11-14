@@ -1,4 +1,9 @@
-# M8 S01–S20 traceability
+# Financial acceptance traceability
+
+**Judging presentation note (November 14, 2026):** This matrix is historical test-case evidence, **not** a claim that every public Testnet scenario has been executed. Automated/API/DB checks, local compiled-Wasm sandbox receipts, deployed contract evidence, and recipient settlement proof are separate classes. Only independently attributable finalized transfer/accounting evidence would establish completed public-Testnet payment; this document does not assert one. Judge-facing explanation: [README](../../README.md), [judging criteria](../JUDGING_CRITERIA.md), and [release status](../RELEASE_STATUS.md).
+
+---
+
 
 Provenance: relocated from `docs/M8_TEST_MATRIX.md`, whose last source update was
 `0d5852e7038ad8d6114b6be508533d48a2ce6b86` on November 3, 2026. Existing scenario

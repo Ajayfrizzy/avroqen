@@ -1,4 +1,37 @@
-# M9.5 judge walkthrough and evidence ledger
+# Avroqen — judge walkthrough and evidence ledger
+
+**Submission presentation updated November 14, 2026.** This judge-first introduction supersedes the November 8 SAMPLE-only status text retained in the historical detail below.
+
+**Start here:** [Project overview](../README.md) · [Judging criteria](JUDGING_CRITERIA.md) · [Official demo post](https://x.com/ajay_frizzy/status/2121577743578198520) · [Release/evidence scope](RELEASE_STATUS.md).
+
+## Two distinct ways to review Avroqen
+
+**A. Immediate, no-wallet explanation:** run `pnpm install --frozen-lockfile --ignore-scripts`, then `pnpm --filter @avroqen/web dev`, and open `http://127.0.0.1:3000/demo`. This is six-page **SAMPLE** content, not a payment transaction. Follow: Start → Mandate → Agent proposal → Independent review → Outcomes → Evidence and limits. The outcomes page contrasts an eligible request with an above-cap rejection.
+
+**B. Inspect the actual implemented system:** from the repository root, run `pnpm setup:env` and `docker compose up --build -d --wait`, then inspect `http://127.0.0.1:3000/workspace`. Identity, mandates, proposals, evidence reviews, settlement observations and incident/security screens are implemented. Wallet signing needs a properly configured Testnet wallet, HTTPS and the [financial runbook](runbooks/financial/TESTNET_ACCEPTANCE.md). No public/test wallet credentials are supplied. Never sign or fund solely to complete a judge's SAMPLE walkthrough.
+
+**Checks:** `pnpm check`, `pnpm build`, `pnpm test:e2e`, `pnpm test:contract`, `pnpm test:wasm`; database-backed commands require Docker. The repository's CI workflow specifies the broader checks.
+
+## What each screen proves
+
+| View or test | Demonstrates | Does not demonstrate |
+| --- | --- | --- |
+| SAMPLE Mandate | Concrete recipient, spending ceilings, expiry and execution count | A funded live mandate |
+| SAMPLE Proposal | Agent cannot pay or approve its own request | A wallet-signed onchain proposal |
+| SAMPLE Review | Different verifier and owner responsibilities | Independent verification of a real-world invoice |
+| SAMPLE Outcomes | Amount-denial and conservative unknown-state semantics | A real recipient transfer |
+| Authenticated workspace | Working UI/API authorizations with suitable local setup | Automatically validated production custody |
+| Rust/sandbox tests | Compiled contract enforcement, actual local receipts/accounting | Public Testnet/mainnet settlement |
+| Public Testnet deployment evidence | Deployable NEAR Wasm and recorded code/account checks | An end-to-end recipient settlement |
+
+## Evidence discipline
+
+Record only verified behavior at its correct level. Existing public Testnet contract deployment/code evidence and local sandbox accounting are useful supporting artifacts; no verified completed public Testnet recipient transfer is represented as finished. No external independent security audit is claimed. The public social video is an explanatory illustration.
+
+---
+
+## Historical SAMPLE-specific walkthrough and earlier acceptance notes
+
 
 **Status — November 8, 2026:** the six-page read-only SAMPLE walkthrough is
 implemented on `staging`, with [nine captured, inspected and hash-verified local SAMPLE screenshots](evidence/m9/README.md).

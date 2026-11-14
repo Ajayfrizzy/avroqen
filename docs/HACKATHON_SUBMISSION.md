@@ -1,4 +1,23 @@
-# NEAR Hackathon 2026 — submission rules and checklist
+# NEAR Hackathon 2026 — submission readiness
+
+**Updated November 14, 2026.** Demo post published by project owner: [Avroqen's X post](https://x.com/ajay_frizzy/status/2121577743578198520). The post is a social explainer, not a transaction receipt.
+
+## Final judge-facing package
+
+- [Project README](../README.md): practical product overview, implemented features, NEAR integration, quick-start and limits.
+- [Judging criteria](JUDGING_CRITERIA.md): evidence for technical implementation, design, impact, originality and sustainability.
+- [Judge walkthrough](JUDGE_DEMO.md): no-wallet SAMPLE instructions plus actual code/test entry points and evidence classes.
+- [Release status](RELEASE_STATUS.md) / [financial test matrix](evidence/FINANCIAL_ACCEPTANCE_MATRIX.md): traceable boundaries, no unsupported settlement claim.
+- **Public post:** [https://x.com/ajay_frizzy/status/2121577743578198520](https://x.com/ajay_frizzy/status/2121577743578198520).
+- **Target tracks:** `security` (strongest), `agents` and `business` (related fit); final selection follows current official rules.
+- **Still require verification before submission:** repository public visibility, license choice, final CI, correct payout NEAR account, team/contact fields, published URL accessibility when signed out, organizer's current rules and the owner's final submission confirmation.
+
+A runnable read-only SAMPLE, local sandbox contract tests and published product video can substantiate different claims; none should be misrepresented as a successful public transfer. Do not expose wallet keys, private evidence, account secrets or transaction-signing session data.
+
+---
+
+## Preserved submission checklist and organizer snapshot
+
 
 **Historical source:** included unchanged `../HACKATHON.md`, downloaded by the
 user on 2026-10-29. Its dates, API contract and form behavior are a historical

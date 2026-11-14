@@ -81,3 +81,14 @@ E) README lets human and AI judges reproduce each path; no unsupported security 
 
 ## 10. Success metrics
 Blocked unauthorized transfer count in controlled tests; zero accounting violations; verified finality of authorized demo; incident detection latency measured in test environment; reproducible journey success rate; time to revoke as measured in chain inclusion (not promise of instantaneous finality).
+
+
+## Hackathon judging: realistic use cases and impact (November 14, 2026)
+
+**Supplier-payment assistant.** A purchasing agent drafts a payment to a preapproved supplier, bounded by the original owner's recipient, expiry, per-payment and total ceilings. It cannot change the mandate or sign as the treasury owner.
+
+**Invoice-backed procurement.** An agent's invoice reference and hash are treated as untrusted assertions until a designated reviewer independently checks the relevant claim. Any required distinct owner approval is a separate authorization step, not inferred from verifier assent.
+
+**Operational spending control.** An organization permits narrowly scoped routine payment proposals while retaining the ability to stop further authorized actions under the explicitly documented onchain governance and revocation model.
+
+The intended impact is limiting the blast radius of compromised agent credentials, separating duties and making payment intent auditable. **No customer traction, measured loss reduction, production deployment or complete public-Testnet settlement is claimed.** For judging-specific mapping, see [JUDGING_CRITERIA](JUDGING_CRITERIA.md).

@@ -58,3 +58,17 @@ without parsing/normalizing, upload or URL fetch. The verifier must independentl
 obtain authenticated source bytes and affirm issuer/reference/recipient/amount and
 independence. Selecting an agent file or calculating a hash cannot supply that
 affirmation or a signed approval. Manual exact-digest entry remains available.
+
+
+## Hackathon judging: experience rationale (November 14, 2026)
+
+The experience organizes Avroqen around **decisions and authority**, not an AI chat transcript: owner defines mandate → scoped agent submits proposal → designated verifier reviews evidence → owner authorizes if required → wallet/contract execution is separately reviewed → chain state is observed conservatively. This prevents the common ambiguity that a proposal, evidence approval or submitted hash equals money delivered.
+
+Design priorities include:
+1. Display human-readable NEAR decimals while using exact integer conversions and inspectable typed signing arguments.
+2. Make roles, immutable policy conditions, expiry and cap denials obvious before action.
+3. Clearly distinguish read-only SAMPLE explanation from authenticated workspaces and public-chain state.
+4. Provide useful pending/unknown/denied feedback; never turn a failed refresh into apparent success.
+5. Support responsive navigation and automated accessibility checks without claiming a full independent accessibility certification.
+
+See [judge guide](JUDGE_DEMO.md) and [judging criteria](JUDGING_CRITERIA.md) for user-facing evidence.
