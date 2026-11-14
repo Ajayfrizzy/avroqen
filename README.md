@@ -35,7 +35,7 @@ The financial scope demonstrated here uses **native NEAR**, not a claim of imple
 | Transaction observation and incident UX | Read-only RPC/receipt verification, reconciliation, security events and wallet-reviewed actions | `services/chain`, `services/security`, [architecture](docs/ARCHITECTURE.md) |
 | Judge SAMPLE | Six publicly readable explanatory routes, clearly separated from live identity or transactions | `/demo`, [judge walkthrough](docs/JUDGE_DEMO.md) |
 
-**Evidence labels matter.** Implemented application flows, deterministic automated tests, local contract sandbox receipts, and publicly observable Testnet contract operations are different evidence classes. The repository records Testnet deployment/code checks and local sandbox payment behavior; **it does not present a verified end-to-end public Testnet recipient settlement as complete**. The source has not undergone an independent security audit. See [release status](docs/RELEASE_STATUS.md) and the [acceptance matrix](docs/evidence/FINANCIAL_ACCEPTANCE_MATRIX.md).
+**Evidence labels matter.** Implemented application flows, deterministic automated tests, local contract sandbox receipts, and publicly observable Testnet contract operations are different evidence classes. The repository records Testnet deployment/code checks and local sandbox payment behavior. See [release status](docs/RELEASE_STATUS.md) and the [acceptance matrix](docs/evidence/FINANCIAL_ACCEPTANCE_MATRIX.md).
 
 ## Quick-start: reproduce a runnable demonstration
 
