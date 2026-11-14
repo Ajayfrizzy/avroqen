@@ -334,7 +334,7 @@ for (const width of [1440, 390]) {
           accountId: "other.testnet",
           network: "testnet",
           csrfToken: "synthetic-other",
-          expiresAt: "2030-01-01T00:00:00Z",
+          expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
         },
       }),
     );

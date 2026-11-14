@@ -78,7 +78,7 @@ export async function uiFixture(page: Page, mode: Mode = "populated") {
           accountId: policy.ownerAccount,
           network: "testnet",
           csrfToken: "synthetic-ui-fixture",
-          expiresAt: "2030-01-01T00:00:00Z",
+          expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
         },
       });
     }
