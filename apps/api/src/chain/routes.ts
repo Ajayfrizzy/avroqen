@@ -414,18 +414,65 @@ export function chainRoutes(
       [mandateId],
     );
     const reviews = await ctx.pool.query(
-      "SELECT r.id,r.canonical_payload FROM evidence_reviews r JOIN evidence_submissions e ON e.id=r.evidence_id JOIN agent_proposals p ON p.id=e.proposal_id WHERE p.mandate_id=$1 AND r.actor_account=$2 AND r.status IN ('VERIFIED','DISPUTED') ORDER BY r.created_at DESC LIMIT 50",
-      [mandateId, data.who.account_id],
+      `SELECT r.id,r.canonical_payload,r.canonical_review,r.status,
+       p.canonical_payload AS proposal_payload,
+       trunc(extract(epoch FROM clock_timestamp())*1000000000)::text AS current_ns
+       FROM evidence_reviews r
+       JOIN evidence_submissions e ON e.id=r.evidence_id
+       JOIN agent_proposals p ON p.id=e.proposal_id
+       WHERE p.mandate_id=$1 AND r.actor_account=$2 AND
+       (r.status IN ('VERIFIED','DISPUTED') OR
+        ($3 AND r.status='SYNTHETIC_ONLY' AND
+         r.canonical_review::jsonb->>'claim'='INVOICE_ISSUED' AND
+         r.canonical_review::jsonb->'observation'->>'source'='LOCAL_EXERCISE'))
+       ORDER BY r.created_at DESC LIMIT 50`,
+      [mandateId, data.who.account_id, config.testnetSimulationEnabled],
     );
+    const visibleReviews: {
+      id: string;
+      payload: ReturnType<typeof map1.parse>;
+      simulation: {
+        eligible: true;
+        provenance: "LOCAL_EXERCISE_SYNTHETIC_ONLY";
+      } | null;
+    }[] = [];
+    for (const r of reviews.rows) {
+      const payload = map1.parse(JSON.parse(r.canonical_payload));
+      if (r.status !== "SYNTHETIC_ONLY") {
+        visibleReviews.push({ id: r.id, payload, simulation: null });
+        continue;
+      }
+      try {
+        const eligible = simulatedReviewEligible(
+          {
+            review: reviewInput.parse(JSON.parse(r.canonical_review)),
+            payload,
+            status: r.status,
+          },
+          proposalInput.parse(JSON.parse(r.proposal_payload)),
+          data.policy,
+          BigInt(r.current_ns),
+          config.testnetSimulationEnabled,
+        );
+        if (eligible)
+          visibleReviews.push({
+            id: r.id,
+            payload,
+            simulation: {
+              eligible: true,
+              provenance: "LOCAL_EXERCISE_SYNTHETIC_ONLY",
+            },
+          });
+      } catch {
+        // A malformed synthetic candidate is omitted; preparation remains fail-closed.
+      }
+    }
     return {
       onchainProposals,
       proposals: proposals.rows.map((r) =>
         proposalInput.parse(JSON.parse(r.canonical_payload)),
       ),
-      reviews: reviews.rows.map((r) => ({
-        id: r.id,
-        payload: map1.parse(JSON.parse(r.canonical_payload)),
-      })),
+      reviews: visibleReviews,
       intents: intents.rows.map((r) => ({
         ...r,
         operation: JSON.parse(r.canonical_operation),

@@ -521,10 +521,41 @@ it("prepares synthetic attestation only under explicit Testnet simulation", asyn
     ],
   );
   const url = `${path(mandateId)}/chain/intents`;
+  const detailUrl = `${path(mandateId)}/chain`;
   const body = {
     idempotencyKey: randomUUID(),
     operation: { kind: "ATTEST", reviewId },
   };
+  const disabledDetail = await app.inject({
+    method: "GET",
+    url: detailUrl,
+    headers: verifierHeaders,
+  });
+  expect(disabledDetail.statusCode).toBe(200);
+  expect(disabledDetail.json().reviews).toEqual([]);
+  const ownerDetail = await simulationApp.inject({
+    method: "GET",
+    url: detailUrl,
+    headers,
+  });
+  expect(ownerDetail.statusCode).toBe(200);
+  expect(ownerDetail.json().reviews).toEqual([]);
+  const enabledDetail = await simulationApp.inject({
+    method: "GET",
+    url: detailUrl,
+    headers: verifierHeaders,
+  });
+  expect(enabledDetail.statusCode).toBe(200);
+  expect(enabledDetail.json().reviews).toEqual([
+    {
+      id: reviewId,
+      payload,
+      simulation: {
+        eligible: true,
+        provenance: "LOCAL_EXERCISE_SYNTHETIC_ONLY",
+      },
+    },
+  ]);
   const disabled = await app.inject({
     method: "POST",
     url,

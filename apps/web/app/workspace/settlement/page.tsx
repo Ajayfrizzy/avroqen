@@ -52,7 +52,14 @@ type Detail = {
       attestations: { signer: string; claim: string; expires_at_ns: string }[];
     }
   >;
-  reviews: { id: string; payload: Map1 }[];
+  reviews: {
+    id: string;
+    payload: Map1;
+    simulation: {
+      eligible: true;
+      provenance: "LOCAL_EXERCISE_SYNTHETIC_ONLY";
+    } | null;
+  }[];
 };
 type RecoveryAuthorization =
   | "idle"
@@ -979,6 +986,9 @@ export default function Settlement() {
                         <option key={r.id} value={r.id}>
                           {r.payload.claim_type} · {r.payload.recipient} ·{" "}
                           {atomicToNear(r.payload.amount_atomic)} NEAR
+                          {r.simulation?.eligible
+                            ? " · Simulated Testnet invoice"
+                            : ""}
                         </option>
                       ))}
                     </select>
